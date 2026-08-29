@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { Nav } from '@/components/nav';
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
@@ -16,33 +17,29 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     .eq('id', user.id)
     .single();
 
+  const displayName = profile?.full_name ?? profile?.email ?? 'Unbekannt';
+
   return (
-    <div className="container">
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'baseline',
-          justifyContent: 'space-between',
-          gap: 16,
-          marginBottom: 28,
-        }}
-      >
-        <div>
-          <strong>Norra OS</strong>{' '}
-          <span className="muted">{profile?.organizations?.name ?? 'Organisation'}</span>
+    <div className="shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true">N</span>
+          <span className="brand-name">Norra OS</span>
         </div>
-        <div className="muted" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span>
-            {profile?.full_name ?? profile?.email} · {profile?.role}
-          </span>
-          <form action="/auth/signout" method="post">
-            <button type="submit" style={{ background: 'transparent', color: 'inherit', border: '1px solid var(--border)' }}>
+        <Nav />
+        <div className="sidebar-foot">
+          <div className="small" style={{ fontWeight: 550 }}>{displayName}</div>
+          <div className="tiny muted">
+            {profile?.organizations?.name ?? 'Organisation'} · {profile?.role ?? '—'}
+          </div>
+          <form action="/auth/signout" method="post" style={{ marginTop: 10 }}>
+            <button type="submit" className="btn-secondary btn-sm" style={{ width: '100%' }}>
               Abmelden
             </button>
           </form>
         </div>
-      </header>
-      {children}
+      </aside>
+      <div className="main">{children}</div>
     </div>
   );
 }
