@@ -362,5 +362,9 @@
   "norra": {
     "workflowId": "Q3XhlP6eet9eqnm0",
     "slug": "kb-ingest"
-  }
+  },
+  "tags": [
+    "norra",
+    "norra:core"
+  ]
 }

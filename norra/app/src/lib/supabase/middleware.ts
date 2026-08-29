@@ -4,7 +4,7 @@ import { clientEnv } from '@/lib/env';
 import type { Database } from '@/types/database';
 
 /** Routes reachable without a session. Everything else requires one. */
-const PUBLIC_PATHS = ['/login', '/signup', '/auth', '/api/agent-turn'];
+const PUBLIC_PATHS = ['/login', '/signup', '/auth', '/api/agent-turn', '/api/feedback'];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));

@@ -375,5 +375,9 @@
   "norra": {
     "workflowId": "LwyJZr8WFsjd0L9v",
     "slug": "tool-create-refund"
-  }
+  },
+  "tags": [
+    "norra",
+    "norra:tool"
+  ]
 }

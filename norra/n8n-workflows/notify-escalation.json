@@ -253,5 +253,9 @@
   "norra": {
     "workflowId": "zU1x0scrqFmPClmg",
     "slug": "notify-escalation"
-  }
+  },
+  "tags": [
+    "norra",
+    "norra:notify"
+  ]
 }

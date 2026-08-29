@@ -9,12 +9,18 @@ on:
       - master
     paths:
       - norra/n8n-workflows/**
-      - norra/scripts/n8n-sync.mjs
+      - norra/scripts/**
+      - norra/supabase/migrations/**
+      - norra/app/src/lib/n8n/**
+      - norra/app/src/app/api/**
       - .github/workflows/norra-n8n-deploy.yml
   pull_request:
     paths:
       - norra/n8n-workflows/**
-      - norra/scripts/n8n-sync.mjs
+      - norra/scripts/**
+      - norra/supabase/migrations/**
+      - norra/app/src/lib/n8n/**
+      - norra/app/src/app/api/**
       - .github/workflows/norra-n8n-deploy.yml
   workflow_dispatch:
 
@@ -53,6 +59,10 @@ jobs:
             "
             echo "ok  $file"
           done
+
+      - name: Check app and workflows still agree
+        working-directory: norra
+        run: node scripts/check-wiring.mjs
 
       - name: Dry run
         working-directory: norra

@@ -232,5 +232,9 @@
   "norra": {
     "workflowId": "KHHKDV5CoyiDxuCO",
     "slug": "tool-lookup-order"
-  }
+  },
+  "tags": [
+    "norra",
+    "norra:tool"
+  ]
 }

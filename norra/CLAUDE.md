@@ -119,6 +119,45 @@ Hostinger VPS, self-hosted Community Edition: `https://n8n-fdhh.srv1817599.hstgr
 | Tool: create_refund | `tool-create-refund` | `LwyJZr8WFsjd0L9v` | Sub-Workflow | Erstattung zur **Freigabe** einreichen |
 | Notify Escalation | `notify-escalation` | `zU1x0scrqFmPClmg` | Sub-Workflow | E-Mail an das Support-Team |
 
+### Ordnung auf der Instanz
+
+Die Instanz hostet auch fremde Workflows. Die von Norra tragen deshalb Tags:
+
+| Tag | Workflows |
+|---|---|
+| `norra` | alle sechs |
+| `norra:core` | `agent-turn`, `kb-ingest` |
+| `norra:tool` | `lookup_order`, `escalate_to_human`, `create_refund` |
+| `norra:notify` | `notify-escalation` |
+
+Der Export filtert weiterhin über den Namenspräfix `Norra OS`, nicht über Tags —
+ein vergessener Tag würde einen Workflow sonst still aus dem Backup fallen lassen.
+
+### Verdrahtung prüfen
+
+```bash
+cd norra && node scripts/check-wiring.mjs
+```
+
+Prüft drei Dinge, die still auseinanderlaufen und erst beim Kunden auffallen:
+ein umbenannter Webhook-Pfad, ein Payload-Feld, das der Workflow nicht mehr
+liest, und eine Spalte, in die ein Workflow schreibt, die es nicht mehr gibt.
+Läuft in `norra-n8n-deploy.yml`, ausgelöst auch von Änderungen an Migrationen
+und API-Routen — nicht nur an den Workflow-JSONs.
+
+### Wer füllt die Auswertung
+
+`topic`, `knowledge_gap` und `title` schreibt ein Klassifikations-Schritt am Ende
+von `agent-turn`, nach der gestreamten Antwort — er kostet den Kunden also keine
+Wartezeit. Ohne ihn bleiben Topic Explorer und Gap Detection dauerhaft leer.
+`csat` kommt aus `/api/feedback`, das das Chat-Widget aufruft; Endkunden sind
+keine Auth-User, deshalb läuft die Route über den Service-Role-Key und prüft
+Konversations- und Organisations-ID als Paar.
+
+Der Klassifikator nutzt `claude-opus-5` mit `temperature: 0`. Ein günstigeres
+Modell wäre hier der naheliegende Kostenhebel — das ist eine bewusste
+Entscheidung, keine Vorgabe.
+
 ### Freigaben statt Ausführung
 
 `create_refund` legt zusätzlich zum Ticket eine Zeile in `approvals` an. Das ist

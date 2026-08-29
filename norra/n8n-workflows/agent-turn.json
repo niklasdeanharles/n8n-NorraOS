@@ -545,6 +545,116 @@
           ]
         }
       }
+    },
+    {
+      "name": "Classifier Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.5,
+      "position": [
+        1140,
+        260
+      ],
+      "notes": "Eigenes Modell fuer die Klassifikation, damit die Agenten-Konfiguration davon unabhaengig bleibt. temperature 0, weil Themen ueber Turns hinweg stabil heissen muessen -- sonst zerfaellt der Topic Explorer in Synonyme.",
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "claude-opus-5"
+        },
+        "options": {
+          "maxTokensToSample": 512,
+          "temperature": 0
+        }
+      }
+    },
+    {
+      "name": "Classify Turn",
+      "type": "@n8n/n8n-nodes-langchain.informationExtractor",
+      "typeVersion": 1.2,
+      "position": [
+        1140,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "Laeuft NACH der gestreamten Antwort, kostet den Kunden also keine Wartezeit. Speist Topic Explorer und Gap Detection -- ohne diesen Schritt bleiben beide Auswertungen dauerhaft leer.",
+      "parameters": {
+        "text": "={{ 'Kundenfrage: ' + $('Normalize Request').item.json.message + '\\n\\nAntwort des Agenten: ' + $('Support Agent').item.json.output }}",
+        "schemaType": "fromAttributes",
+        "attributes": {
+          "attributes": [
+            {
+              "name": "topic",
+              "type": "string",
+              "required": true,
+              "description": "Das Hauptthema in zwei bis drei Woertern, konsistent benannt, z.B. Versand, Retouren, Groessenberatung, Zahlung, Reklamation. Kein ganzer Satz."
+            },
+            {
+              "name": "knowledge_gap",
+              "type": "boolean",
+              "required": true,
+              "description": "true, wenn die Antwort die Frage NICHT inhaltlich beantwortet hat, weil die noetige Information fehlte -- etwa wenn der Agent auf einen Menschen verwiesen oder eingeraeumt hat, es nicht zu wissen. false, wenn die Frage beantwortet wurde."
+            },
+            {
+              "name": "title",
+              "type": "string",
+              "required": true,
+              "description": "Kurze Betreffzeile der Konversation aus Kundensicht, maximal 60 Zeichen, ohne Anfuehrungszeichen."
+            }
+          ]
+        },
+        "options": {
+          "systemPromptTemplate": "Du klassifizierst einen abgeschlossenen Support-Turn fuer die Auswertung. Benenne Themen konsistent und knapp, damit sich gleiche Anliegen ueber viele Konversationen hinweg zusammenfassen lassen."
+        }
+      }
+    },
+    {
+      "name": "Update Conversation",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1360,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "Fallbacks sind Absicht: schlaegt die Klassifikation fehl, bleibt der Turn trotzdem gespeichert und die Konversation nur unklassifiziert.",
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "tableId": "conversations",
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Normalize Request').item.json.conversation_id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Normalize Request').item.json.organization_id }}"
+            }
+          ]
+        },
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "topic",
+              "fieldValue": "={{ $json.output?.topic ?? null }}"
+            },
+            {
+              "fieldId": "knowledge_gap",
+              "fieldValue": "={{ $json.output?.knowledge_gap ?? false }}"
+            },
+            {
+              "fieldId": "title",
+              "fieldValue": "={{ $json.output?.title ?? null }}"
+            }
+          ]
+        }
+      }
     }
   ],
   "connections": {
@@ -657,6 +767,39 @@
           }
         ]
       ]
+    },
+    "Persist Assistant Message": {
+      "main": [
+        [
+          {
+            "node": "Classify Turn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classifier Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Classify Turn",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Turn": {
+      "main": [
+        [
+          {
+            "node": "Update Conversation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
@@ -666,5 +809,9 @@
   "norra": {
     "workflowId": "yTH3YQeR5qdNVxSI",
     "slug": "agent-turn"
-  }
+  },
+  "tags": [
+    "norra",
+    "norra:core"
+  ]
 }

@@ -391,5 +391,9 @@
   "norra": {
     "workflowId": "pw6OzhBSG2oxagNt",
     "slug": "tool-escalate-to-human"
-  }
+  },
+  "tags": [
+    "norra",
+    "norra:tool"
+  ]
 }
