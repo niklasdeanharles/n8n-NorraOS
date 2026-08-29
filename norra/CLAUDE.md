@@ -127,3 +127,13 @@ npm run lint
 cd norra && supabase db push    # Migrationen ausrollen (macht sonst die Action)
 supabase gen types typescript --linked > app/src/types/database.ts
 ```
+
+Migrationen und Mandantentrennung gegen ein blankes Postgres pruefen -- genau
+das, was `norra-db-migrate.yml` in CI tut:
+
+```bash
+cd norra/supabase
+psql -v ON_ERROR_STOP=1 -f tests/bootstrap.local.sql
+for f in migrations/*.sql; do psql -v ON_ERROR_STOP=1 -q -f "$f"; done
+psql -v ON_ERROR_STOP=1 -f tests/tenancy.test.sql   # muss "all checks passed" melden
+```
