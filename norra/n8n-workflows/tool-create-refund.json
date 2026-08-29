@@ -295,8 +295,8 @@
     "executionOrder": "v1",
     "availableInMCP": true
   },
-  "meta": {
-    "norraWorkflowId": "LwyJZr8WFsjd0L9v",
-    "norraSlug": "tool-create-refund"
+  "norra": {
+    "workflowId": "LwyJZr8WFsjd0L9v",
+    "slug": "tool-create-refund"
   }
 }

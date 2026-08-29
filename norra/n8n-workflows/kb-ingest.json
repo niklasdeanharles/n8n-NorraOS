@@ -359,8 +359,8 @@
     "executionOrder": "v1",
     "availableInMCP": true
   },
-  "meta": {
-    "norraWorkflowId": "Q3XhlP6eet9eqnm0",
-    "norraSlug": "kb-ingest"
+  "norra": {
+    "workflowId": "Q3XhlP6eet9eqnm0",
+    "slug": "kb-ingest"
   }
 }

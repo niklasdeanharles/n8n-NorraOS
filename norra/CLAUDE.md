@@ -164,6 +164,52 @@ Nachricht einer Konversation liefert die Abfrage null Zeilen, und n8n
 je gelaufen wäre. Nebeneffekt: `messages` bleibt einzige Quelle der Wahrheit,
 es gibt keine zweite History-Tabelle (deshalb auch kein Postgres-Chat-Memory).
 
+## GitHub ↔ n8n Synchronisation
+
+n8n's native Git-Environments sind Enterprise-only und auf der Community-Instanz
+nicht verfügbar. Dieselbe Wirkung erreicht `norra/scripts/n8n-sync.mjs` über die
+öffentliche REST-API:
+
+| Action | Auslöser | Was passiert |
+|---|---|---|
+| `norra-n8n-backup.yml` | täglich 03:17 UTC, manuell | zieht die Workflows, committet Drift auf `master` |
+| `norra-n8n-deploy.yml` | Push auf `master` unter `norra/n8n-workflows/**` | spielt die Dateien per `PUT` zurück |
+
+```bash
+cd norra
+export N8N_BASE_URL=https://n8n-fdhh.srv1817599.hstgr.cloud
+export N8N_API_KEY=...                       # n8n: Settings -> API
+node scripts/n8n-sync.mjs export --dry-run   # was würde sich in git ändern
+node scripts/n8n-sync.mjs deploy --dry-run   # was würde auf die Instanz gehen
+```
+
+Drei Eigenschaften, auf die man sich verlassen kann:
+
+1. **Export fasst nur `Norra OS …` an.** Auf der Instanz liegen fremde Workflows
+   (Sales-Team, Jarvis-Template, …). Der Namenspräfix-Filter ist die Grenze;
+   ohne ihn würde ein Backup sie ins Repo ziehen.
+2. **Deploy legt nichts an und löscht nichts.** Geschrieben wird ausschließlich
+   auf IDs, die eine Repo-Datei in ihrem `norra`-Block beansprucht. Alle IDs
+   werden vorab aufgelöst — schlägt eine fehl, wird **gar nichts** geschrieben,
+   statt einen halb deployten Stand zu hinterlassen.
+3. **Credentials überleben einen Deploy.** Die Repo-Dateien enthalten keine
+   Credential-Verweise. Deploy übernimmt sie deshalb pro Node aus der laufenden
+   Fassung — sonst würde jeder Deploy die Verknüpfungen abreißen.
+
+Volatile Felder (`updatedAt`, `versionId`, `id`, …) werden beim Export
+entfernt, damit ein unveränderter Workflow keinen Diff erzeugt und ein echter
+nicht darin untergeht.
+
+### Benötigte GitHub-Secrets
+
+| Secret | Wofür |
+|---|---|
+| `N8N_BASE_URL` | `https://n8n-fdhh.srv1817599.hstgr.cloud` |
+| `N8N_API_KEY` | n8n → Settings → API |
+| `SUPABASE_ACCESS_TOKEN` | Migrationen ausrollen |
+| `SUPABASE_PROJECT_ID` | Migrationen ausrollen |
+| `SUPABASE_DB_PASSWORD` | Migrationen ausrollen |
+
 ## Befehle
 
 ```bash

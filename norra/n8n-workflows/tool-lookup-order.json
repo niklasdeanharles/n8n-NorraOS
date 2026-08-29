@@ -229,8 +229,8 @@
     "executionOrder": "v1",
     "availableInMCP": true
   },
-  "meta": {
-    "norraWorkflowId": "KHHKDV5CoyiDxuCO",
-    "norraSlug": "tool-lookup-order"
+  "norra": {
+    "workflowId": "KHHKDV5CoyiDxuCO",
+    "slug": "tool-lookup-order"
   }
 }

@@ -1,0 +1,70 @@
+name: 'Norra: n8n Deploy'
+
+# Pushes committed workflow definitions back to the n8n instance. Only fires on
+# changes under norra/n8n-workflows, so n8n's own repository changes never
+# trigger a deploy.
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - norra/n8n-workflows/**
+      - norra/scripts/n8n-sync.mjs
+      - .github/workflows/norra-n8n-deploy.yml
+  pull_request:
+    paths:
+      - norra/n8n-workflows/**
+      - norra/scripts/n8n-sync.mjs
+      - .github/workflows/norra-n8n-deploy.yml
+  workflow_dispatch:
+
+concurrency:
+  # Never let two deploys race the same instance.
+  group: norra-n8n-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Push workflows
+    runs-on: ubuntu-latest
+    # A pull request only ever gets the dry run below, so a fork cannot reach
+    # the live instance.
+    environment: ${{ github.event_name == 'push' && 'production' || '' }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: '22'
+
+      - name: Validate workflow JSON
+        working-directory: norra/n8n-workflows
+        run: |
+          set -euo pipefail
+          for file in *.json; do
+            node -e "
+              const wf = require('./$file');
+              if (!wf.name) throw new Error('$file has no name');
+              if (!Array.isArray(wf.nodes)) throw new Error('$file has no nodes array');
+              if (!wf.norra?.workflowId) throw new Error('$file has no norra.workflowId');
+            "
+            echo "ok  $file"
+          done
+
+      - name: Dry run
+        working-directory: norra
+        env:
+          N8N_BASE_URL: ${{ secrets.N8N_BASE_URL }}
+          N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
+        run: node scripts/n8n-sync.mjs deploy --dry-run
+
+      - name: Deploy
+        if: github.event_name != 'pull_request'
+        working-directory: norra
+        env:
+          N8N_BASE_URL: ${{ secrets.N8N_BASE_URL }}
+          N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
+        run: node scripts/n8n-sync.mjs deploy

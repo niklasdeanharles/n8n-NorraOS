@@ -663,8 +663,8 @@
     "executionOrder": "v1",
     "availableInMCP": true
   },
-  "meta": {
-    "norraWorkflowId": "yTH3YQeR5qdNVxSI",
-    "norraSlug": "agent-turn"
+  "norra": {
+    "workflowId": "yTH3YQeR5qdNVxSI",
+    "slug": "agent-turn"
   }
 }

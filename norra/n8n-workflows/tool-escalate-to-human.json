@@ -285,8 +285,8 @@
     "executionOrder": "v1",
     "availableInMCP": true
   },
-  "meta": {
-    "norraWorkflowId": "pw6OzhBSG2oxagNt",
-    "norraSlug": "tool-escalate-to-human"
+  "norra": {
+    "workflowId": "pw6OzhBSG2oxagNt",
+    "slug": "tool-escalate-to-human"
   }
 }
