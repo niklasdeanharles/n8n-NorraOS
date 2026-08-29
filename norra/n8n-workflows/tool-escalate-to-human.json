@@ -195,7 +195,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        880,
+        1100,
         0
       ],
       "parameters": {
@@ -232,6 +232,98 @@
         "color": 4,
         "width": 740,
         "height": 220
+      }
+    },
+    {
+      "name": "Notify Support Team",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        880,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "onError=continueRegularOutput: eine fehlgeschlagene Mail darf die Eskalation nicht scheitern lassen. Das Ticket ist der Vorgang, die Mail nur der Hinweis darauf.",
+      "parameters": {
+        "source": "database",
+        "mode": "once",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "zU1x0scrqFmPClmg",
+          "cachedResultName": "Norra OS – Notify Escalation"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "value": {
+            "organization_id": "={{ $('Escalation Requested').item.json.organization_id }}",
+            "conversation_id": "={{ $('Escalation Requested').item.json.conversation_id }}",
+            "ticket_number": "={{ $('Create Ticket').item.json.number }}",
+            "subject": "={{ $('Escalation Requested').item.json.subject }}",
+            "summary": "={{ $('Escalation Requested').item.json.summary }}",
+            "priority": "={{ $('Escalation Requested').item.json.priority }}"
+          },
+          "schema": [
+            {
+              "id": "organization_id",
+              "displayName": "organization_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ticket_number",
+              "displayName": "ticket_number",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "subject",
+              "displayName": "subject",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "summary",
+              "displayName": "summary",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
       }
     }
   ],
@@ -270,6 +362,17 @@
       ]
     },
     "Log Tool Call": {
+      "main": [
+        [
+          {
+            "node": "Notify Support Team",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Support Team": {
       "main": [
         [
           {

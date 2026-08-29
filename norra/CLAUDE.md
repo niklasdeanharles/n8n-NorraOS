@@ -117,6 +117,7 @@ Hostinger VPS, self-hosted Community Edition: `https://n8n-fdhh.srv1817599.hstgr
 | Tool: lookup_order | `tool-lookup-order` | `KHHKDV5CoyiDxuCO` | Sub-Workflow | Bestellstatus aus Shopify, read-only |
 | Tool: escalate_to_human | `tool-escalate-to-human` | `pw6OzhBSG2oxagNt` | Sub-Workflow | Ticket anlegen, Konversation eskalieren |
 | Tool: create_refund | `tool-create-refund` | `LwyJZr8WFsjd0L9v` | Sub-Workflow | Erstattung zur **Freigabe** einreichen |
+| Notify Escalation | `notify-escalation` | `zU1x0scrqFmPClmg` | Sub-Workflow | E-Mail an das Support-Team |
 
 Beide Workflows sind **angelegt, aber nicht aktiviert**. Vor der Aktivierung
 fehlen zwei Credentials, die es auf der Instanz noch nicht gibt:
@@ -142,6 +143,17 @@ Zwei Regeln, die für jedes neue Tool gelten:
 2. **`Return To Agent` steht zuletzt.** Ein Sub-Workflow gibt die Ausgabe seines
    letzten Nodes an den Aufrufer zurück. Steht das Logging hinten, bekommt der
    Agent Protokolldaten statt einer Antwort.
+
+### Eskalations-Benachrichtigung
+
+`escalate_to_human` ruft nach dem Ticket `notify-escalation` auf. Der Empfänger
+steht in `organizations.settings.escalation_email` — pro Organisation
+konfigurierbar, ohne den Workflow anzufassen. Ist keine Adresse hinterlegt,
+endet der Lauf sauber über `Return Skipped`.
+
+Der Aufruf trägt `onError: continueRegularOutput`: eine fehlgeschlagene Mail
+darf die Eskalation nicht scheitern lassen. Das Ticket ist der Vorgang, die Mail
+nur der Hinweis darauf.
 
 ### Warum `create_refund` nichts erstattet
 

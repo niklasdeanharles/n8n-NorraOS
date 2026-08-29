@@ -20,6 +20,7 @@ Community-Instanz nicht zur Verfügung — daher der REST-API-Sync.
 | `tool-lookup-order.json` | `KHHKDV5CoyiDxuCO` | angelegt, Shop-URL fehlt |
 | `tool-escalate-to-human.json` | `pw6OzhBSG2oxagNt` | angelegt |
 | `tool-create-refund.json` | `LwyJZr8WFsjd0L9v` | angelegt |
+| `notify-escalation.json` | `zU1x0scrqFmPClmg` | angelegt, braucht `settings.escalation_email` |
 
 Die Workflow-ID steht in jeder Datei unter `meta.norraWorkflowId` — daran hängt
 der Deploy-Job aus Phase 3 seinen `PUT /api/v1/workflows/:id` auf.
