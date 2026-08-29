@@ -1,0 +1,236 @@
+{
+  "name": "Norra OS – Tool: lookup_order",
+  "nodes": [
+    {
+      "name": "Order Lookup Requested",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "organization_id",
+              "type": "string"
+            },
+            {
+              "name": "conversation_id",
+              "type": "string"
+            },
+            {
+              "name": "agent_id",
+              "type": "string"
+            },
+            {
+              "name": "order_number",
+              "type": "string"
+            },
+            {
+              "name": "email",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Find Order",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "shopifyAccessTokenApi",
+        "sendQuery": true,
+        "specifyQuery": "keypair",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "name",
+              "value": "={{ $json.order_number }}"
+            },
+            {
+              "name": "status",
+              "value": "any"
+            },
+            {
+              "name": "limit",
+              "value": "5"
+            },
+            {
+              "name": "fields",
+              "value": "id,name,email,created_at,financial_status,fulfillment_status,total_price,currency"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "notes": "URL eintragen: Shopify Admin API Orders-Endpoint, z.B. https://klettpro.myshopify.com/admin/api/2024-10/orders.json"
+    },
+    {
+      "name": "Log Tool Call",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "tool_calls_log",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "organization_id",
+              "fieldValue": "={{ $(\"Order Lookup Requested\").item.json.organization_id }}"
+            },
+            {
+              "fieldId": "conversation_id",
+              "fieldValue": "={{ $(\"Order Lookup Requested\").item.json.conversation_id }}"
+            },
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "={{ $(\"Order Lookup Requested\").item.json.agent_id }}"
+            },
+            {
+              "fieldId": "tool_name",
+              "fieldValue": "lookup_order"
+            },
+            {
+              "fieldId": "n8n_workflow_id",
+              "fieldValue": "={{ $workflow.id }}"
+            },
+            {
+              "fieldId": "n8n_execution_id",
+              "fieldValue": "={{ $execution.id }}"
+            },
+            {
+              "fieldId": "input",
+              "fieldValue": "={{ JSON.stringify($(\"Order Lookup Requested\").item.json) }}"
+            },
+            {
+              "fieldId": "output",
+              "fieldValue": "={{ JSON.stringify(($(\"Find Order\").item.json.orders ?? [])[0] ?? null) }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "={{ ($(\"Find Order\").item.json.orders ?? []).length > 0 ? \"success\" : \"error\" }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Return To Agent",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "found",
+              "name": "found",
+              "value": "={{ ($(\"Find Order\").item.json.orders ?? []).length > 0 }}",
+              "type": "boolean"
+            },
+            {
+              "id": "order",
+              "name": "order",
+              "value": "={{ ($(\"Find Order\").item.json.orders ?? [])[0] ?? null }}",
+              "type": "object"
+            },
+            {
+              "id": "result",
+              "name": "result",
+              "value": "={{ ($(\"Find Order\").item.json.orders ?? []).length === 0 ? \"Zu dieser Bestellnummer wurde nichts gefunden. Bitte Bestellnummer und E-Mail pruefen.\" : \"Bestellung \" + $(\"Find Order\").item.json.orders[0].name + \": Zahlung \" + $(\"Find Order\").item.json.orders[0].financial_status + \", Versand \" + ($(\"Find Order\").item.json.orders[0].fulfillment_status ?? \"offen\") + \", Summe \" + $(\"Find Order\").item.json.orders[0].total_price + \" \" + $(\"Find Order\").item.json.orders[0].currency + \", bestellt am \" + $(\"Find Order\").item.json.orders[0].created_at }}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Sticky Note lookup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -50,
+        -50
+      ],
+      "parameters": {
+        "content": "## lookup_order\nLiest den Bestellstatus read-only aus Shopify. neverError ist gesetzt, damit eine 404 als Datensatz zurueckkommt statt den Agenten-Turn abzubrechen -- der Agent soll \"nicht gefunden\" sagen koennen, nicht abstuerzen.\n\nReihenfolge ist Absicht: Return To Agent steht zuletzt, weil ein Sub-Workflow die Ausgabe seines letzten Nodes an den Aufrufer zurueckgibt. Stuende das Logging hinten, bekaeme der Agent Protokolldaten statt einer Antwort.\n\nDie Shop-URL im Find-Order-Node muss einmal eingetragen werden.",
+        "color": 4,
+        "width": 740,
+        "height": 260
+      }
+    }
+  ],
+  "connections": {
+    "Order Lookup Requested": {
+      "main": [
+        [
+          {
+            "node": "Find Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Order": {
+      "main": [
+        [
+          {
+            "node": "Log Tool Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Tool Call": {
+      "main": [
+        [
+          {
+            "node": "Return To Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "meta": {
+    "norraWorkflowId": "KHHKDV5CoyiDxuCO",
+    "norraSlug": "tool-lookup-order"
+  }
+}

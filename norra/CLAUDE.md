@@ -114,6 +114,9 @@ Hostinger VPS, self-hosted Community Edition: `https://n8n-fdhh.srv1817599.hstgr
 |---|---|---|---|---|
 | Agent Turn | `agent-turn` | `yTH3YQeR5qdNVxSI` | `POST /webhook/norra/agent-turn` | Zentraler Turn: Config laden, RAG, Streaming |
 | KB Ingest | `kb-ingest` | `Q3XhlP6eet9eqnm0` | `POST /webhook/norra/kb-ingest` | Dokument chunken, einbetten, speichern |
+| Tool: lookup_order | `tool-lookup-order` | `KHHKDV5CoyiDxuCO` | Sub-Workflow | Bestellstatus aus Shopify, read-only |
+| Tool: escalate_to_human | `tool-escalate-to-human` | `pw6OzhBSG2oxagNt` | Sub-Workflow | Ticket anlegen, Konversation eskalieren |
+| Tool: create_refund | `tool-create-refund` | `LwyJZr8WFsjd0L9v` | Sub-Workflow | Erstattung zur **Freigabe** einreichen |
 
 Beide Workflows sind **angelegt, aber nicht aktiviert**. Vor der Aktivierung
 fehlen zwei Credentials, die es auf der Instanz noch nicht gibt:
@@ -127,6 +130,30 @@ Die Header-Auth-Credential muss Header-Name `x-norra-secret` und als Wert
 denselben String tragen wie `N8N_WEBHOOK_SECRET` in Vercel — sonst weist der
 Webhook den Proxy ab. Supabase- und OpenAI-Credentials hat n8n beim Anlegen
 automatisch zugeordnet.
+
+### Tool-Regeln
+
+Zwei Regeln, die für jedes neue Tool gelten:
+
+1. **Der Mandant ist nie ein Modellfeld.** `organization_id` und
+   `conversation_id` werden in den Tool-Nodes fest aus `Normalize Request`
+   verdrahtet, nicht über die vom Modell befüllten Felder. Ein Modell, das den
+   Mandanten wählen darf, ist ein Modell, das ihn verwechseln kann.
+2. **`Return To Agent` steht zuletzt.** Ein Sub-Workflow gibt die Ausgabe seines
+   letzten Nodes an den Aufrufer zurück. Steht das Logging hinten, bekommt der
+   Agent Protokolldaten statt einer Antwort.
+
+### Warum `create_refund` nichts erstattet
+
+Das Tool heißt so, bewegt aber kein Geld: es legt eine Erstattungs-Anfrage als
+Ticket mit hoher Priorität zur menschlichen Freigabe an, und sein Rückgabewert
+sagt dem Agenten ausdrücklich, dass nichts ausgeführt wurde. Grund: ein
+Sprachmodell, das Bestellnummer und Betrag halluziniert, würde sonst echtes Geld
+auszahlen, und eine Fehlauszahlung ist nicht zurückzuholen.
+
+Wenn autonome Erstattungen gewollt sind, gehört an diese Stelle ein
+Shopify-Refund-Node — dann aber mit Betragsobergrenze, Whitelist und
+Idempotenzschlüssel gegen Doppelauszahlung.
 
 ### Warum die History aus dem Proxy kommt
 

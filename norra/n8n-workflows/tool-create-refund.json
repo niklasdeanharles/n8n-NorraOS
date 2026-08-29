@@ -1,0 +1,302 @@
+{
+  "name": "Norra OS – Tool: create_refund",
+  "nodes": [
+    {
+      "name": "Refund Requested",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "organization_id",
+              "type": "string"
+            },
+            {
+              "name": "conversation_id",
+              "type": "string"
+            },
+            {
+              "name": "agent_id",
+              "type": "string"
+            },
+            {
+              "name": "order_reference",
+              "type": "string"
+            },
+            {
+              "name": "amount",
+              "type": "string"
+            },
+            {
+              "name": "currency",
+              "type": "string"
+            },
+            {
+              "name": "reason",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "File Refund Request",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "tickets",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "organization_id",
+              "fieldValue": "={{ $json.organization_id }}"
+            },
+            {
+              "fieldId": "conversation_id",
+              "fieldValue": "={{ $json.conversation_id }}"
+            },
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "={{ $json.agent_id }}"
+            },
+            {
+              "fieldId": "subject",
+              "fieldValue": "=Rueckerstattung angefragt: {{ $json.order_reference }} ueber {{ $json.amount }} {{ $json.currency }}"
+            },
+            {
+              "fieldId": "description",
+              "fieldValue": "={{ $json.reason }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "open"
+            },
+            {
+              "fieldId": "priority",
+              "fieldValue": "high"
+            },
+            {
+              "fieldId": "source",
+              "fieldValue": "agent_escalation"
+            },
+            {
+              "fieldId": "external_ref",
+              "fieldValue": "={{ JSON.stringify({ kind: \"refund_request\", order_reference: $json.order_reference, amount: $json.amount, currency: $json.currency }) }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Mark Conversation Pending",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "tableId": "conversations",
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $(\"Refund Requested\").item.json.conversation_id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $(\"Refund Requested\").item.json.organization_id }}"
+            }
+          ]
+        },
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "pending"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Log Tool Call",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "tool_calls_log",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "organization_id",
+              "fieldValue": "={{ $(\"Refund Requested\").item.json.organization_id }}"
+            },
+            {
+              "fieldId": "conversation_id",
+              "fieldValue": "={{ $(\"Refund Requested\").item.json.conversation_id }}"
+            },
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "={{ $(\"Refund Requested\").item.json.agent_id }}"
+            },
+            {
+              "fieldId": "tool_name",
+              "fieldValue": "create_refund"
+            },
+            {
+              "fieldId": "n8n_workflow_id",
+              "fieldValue": "={{ $workflow.id }}"
+            },
+            {
+              "fieldId": "n8n_execution_id",
+              "fieldValue": "={{ $execution.id }}"
+            },
+            {
+              "fieldId": "input",
+              "fieldValue": "={{ JSON.stringify($(\"Refund Requested\").item.json) }}"
+            },
+            {
+              "fieldId": "output",
+              "fieldValue": "={{ JSON.stringify({ ticket_number: $(\"File Refund Request\").item.json.number, executed: false, awaiting_human_approval: true }) }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "success"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Return To Agent",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "executed",
+              "name": "executed",
+              "value": "={{ false }}",
+              "type": "boolean"
+            },
+            {
+              "id": "ticket-number",
+              "name": "ticket_number",
+              "value": "={{ $(\"File Refund Request\").item.json.number }}",
+              "type": "string"
+            },
+            {
+              "id": "result",
+              "name": "result",
+              "value": "=Die Rueckerstattung wurde NICHT ausgefuehrt, sondern als Ticket #{{ $(\"File Refund Request\").item.json.number }} zur Freigabe eingereicht. Sage dem Kunden zu, dass ein Mitarbeiter die Erstattung prueft und sich meldet. Verspreche keinen Auszahlungstermin.",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Sticky Note refund",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -50,
+        -50
+      ],
+      "parameters": {
+        "content": "## create_refund fuehrt bewusst KEINE Erstattung aus\nDas Tool legt eine Erstattungs-Anfrage zur menschlichen Freigabe an, statt Geld zu bewegen. Ein Sprachmodell, das eine Bestellnummer und einen Betrag halluziniert, wuerde sonst echtes Geld auszahlen -- und der Schaden ist nicht rueckholbar.\n\nDer Rueckgabewert sagt dem Agenten ausdruecklich, dass nichts ausgefuehrt wurde, damit er dem Kunden keine erfolgte Erstattung bestaetigt.\n\nWenn autonome Erstattungen gewollt sind, gehoert hier ein Shopify-Refund-Node hin -- mit Betragsobergrenze, Whitelist und Idempotenzschluessel gegen Doppelauszahlung.",
+        "color": 3,
+        "width": 740,
+        "height": 300
+      }
+    }
+  ],
+  "connections": {
+    "Refund Requested": {
+      "main": [
+        [
+          {
+            "node": "File Refund Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "File Refund Request": {
+      "main": [
+        [
+          {
+            "node": "Mark Conversation Pending",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Conversation Pending": {
+      "main": [
+        [
+          {
+            "node": "Log Tool Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Tool Call": {
+      "main": [
+        [
+          {
+            "node": "Return To Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "meta": {
+    "norraWorkflowId": "LwyJZr8WFsjd0L9v",
+    "norraSlug": "tool-create-refund"
+  }
+}

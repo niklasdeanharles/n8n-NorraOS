@@ -112,7 +112,7 @@
         "promptType": "define",
         "text": "={{ $(\"Normalize Request\").item.json.message }}",
         "options": {
-          "systemMessage": "={{ $json.system_prompt }}\n\n## Guardrails\nVerbotene Themen (freundlich ablehnen und ggf. eskalieren): {{ JSON.stringify($json.guardrails?.forbidden_topics ?? []) }}\nErlaubte Themen (leer = keine Einschraenkung): {{ JSON.stringify($json.guardrails?.allowed_topics ?? []) }}\nEskalationsregeln: {{ JSON.stringify($json.escalation_rules ?? {}) }}\n\n## Wissensbasis\nNutze das Tool \"Knowledge Base\" fuer jede inhaltliche Frage. Erfinde niemals Richtlinien oder Fakten. Wenn die Wissensbasis nichts hergibt, sage das offen und biete die Eskalation an einen Menschen an.\n\n## Bisheriger Gespraechsverlauf\n{{ JSON.stringify($(\"Normalize Request\").item.json.history ?? []) }}",
+          "systemMessage": "={{ $json.system_prompt }}\n\n## Guardrails\nVerbotene Themen (freundlich ablehnen und ggf. eskalieren): {{ JSON.stringify($json.guardrails?.forbidden_topics ?? []) }}\nErlaubte Themen (leer = keine Einschraenkung): {{ JSON.stringify($json.guardrails?.allowed_topics ?? []) }}\nEskalationsregeln: {{ JSON.stringify($json.escalation_rules ?? {}) }}\n\n## Werkzeuge\nKnowledge Base: fuer jede inhaltliche Frage zuerst hier nachschlagen. Erfinde niemals Richtlinien oder Fakten.\nlookup_order: fuer alles zu Versand, Zahlung und Liefertermin. Rate niemals einen Bestellstatus.\nescalate_to_human: wenn der Kunde einen Menschen verlangt, du nicht weiterkommst, oder es eine Beschwerde ist.\ncreate_refund: reicht eine Erstattung nur zur Freigabe ein und zahlt nichts aus. Sage dem Kunden zu, dass ein Mitarbeiter prueft -- bestaetige niemals eine erfolgte Erstattung und nenne keinen Auszahlungstermin.\n\n## Bisheriger Gespraechsverlauf\n{{ JSON.stringify($(\"Normalize Request\").item.json.history ?? []) }}",
           "maxIterations": 10,
           "enableStreaming": true,
           "returnIntermediateSteps": false
@@ -276,10 +276,274 @@
         190
       ],
       "parameters": {
-        "content": "## Mandantentrennung\nn8n verbindet sich mit service_role und umgeht RLS. Der organization_id-Filter unten ist die einzige Grenze: match_kb_chunks wirft ohne ihn.",
+        "content": "## Mandantentrennung\nn8n verbindet sich mit service_role und umgeht RLS. Der organization_id-Filter ist die einzige Grenze: match_kb_chunks wirft ohne ihn.\n\nDie Tool-Nodes reichen organization_id und conversation_id fest verdrahtet weiter, nicht ueber die vom Modell befuellten Felder. Das Modell darf den Mandanten nicht waehlen.",
         "color": 5,
         "width": 300,
-        "height": 200
+        "height": 620
+      }
+    },
+    {
+      "id": "9063179e-f74b-463e-a4e2-0fccc90779e2",
+      "name": "lookup_order",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        980,
+        260
+      ],
+      "parameters": {
+        "description": "Schlage den Status einer Shopify-Bestellung nach. Braucht die Bestellnummer. Nutze dies, bevor du etwas ueber Versand, Zahlung oder Liefertermin sagst.",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "KHHKDV5CoyiDxuCO",
+          "cachedResultName": "Norra OS – Tool: lookup_order"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "value": {
+            "organization_id": "={{ $('Normalize Request').item.json.organization_id }}",
+            "conversation_id": "={{ $('Normalize Request').item.json.conversation_id }}",
+            "agent_id": "={{ $('Normalize Request').item.json.agent_id }}",
+            "order_number": "={{ $fromAI('order_number', 'Die Bestellnummer des Kunden, z.B. 1234 oder #1234', 'string') }}",
+            "email": "={{ $fromAI('email', 'Die E-Mail-Adresse des Kunden, falls genannt', 'string') }}"
+          },
+          "schema": [
+            {
+              "id": "organization_id",
+              "displayName": "organization_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "agent_id",
+              "displayName": "agent_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "order_number",
+              "displayName": "order_number",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "2cbeb8dd-dfaf-4ba4-9cdd-ff24b20d40f5",
+      "name": "escalate_to_human",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        980,
+        420
+      ],
+      "parameters": {
+        "description": "Uebergib den Fall an einen menschlichen Mitarbeiter. Nutze dies, wenn der Kunde ausdruecklich einen Menschen verlangt, wenn du die Frage nicht beantworten kannst, oder wenn es um Beschwerden geht.",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "pw6OzhBSG2oxagNt",
+          "cachedResultName": "Norra OS – Tool: escalate_to_human"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "value": {
+            "organization_id": "={{ $('Normalize Request').item.json.organization_id }}",
+            "conversation_id": "={{ $('Normalize Request').item.json.conversation_id }}",
+            "agent_id": "={{ $('Normalize Request').item.json.agent_id }}",
+            "subject": "={{ $fromAI('subject', 'Kurze Betreffzeile fuer das Ticket, maximal ein Satz', 'string') }}",
+            "summary": "={{ $fromAI('summary', 'Zusammenfassung des Anliegens fuer den Mitarbeiter, inklusive was bereits versucht wurde', 'string') }}",
+            "priority": "={{ $fromAI('priority', 'Eines von: low, normal, high, urgent', 'string') }}"
+          },
+          "schema": [
+            {
+              "id": "organization_id",
+              "displayName": "organization_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "agent_id",
+              "displayName": "agent_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "subject",
+              "displayName": "subject",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "summary",
+              "displayName": "summary",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "0e1d3e0f-9aab-486c-8f87-744c3b5bf320",
+      "name": "create_refund",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        980,
+        580
+      ],
+      "parameters": {
+        "description": "Reiche eine Rueckerstattung zur Freigabe ein. Dieses Tool zahlt NICHT aus, es legt eine Anfrage fuer einen Mitarbeiter an. Bestaetige dem Kunden niemals eine erfolgte Erstattung.",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "LwyJZr8WFsjd0L9v",
+          "cachedResultName": "Norra OS – Tool: create_refund"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "value": {
+            "organization_id": "={{ $('Normalize Request').item.json.organization_id }}",
+            "conversation_id": "={{ $('Normalize Request').item.json.conversation_id }}",
+            "agent_id": "={{ $('Normalize Request').item.json.agent_id }}",
+            "order_reference": "={{ $fromAI('order_reference', 'Bestellnummer, auf die sich die Erstattung bezieht', 'string') }}",
+            "amount": "={{ $fromAI('amount', 'Betrag als Zahl ohne Waehrungszeichen', 'string') }}",
+            "currency": "={{ $fromAI('currency', 'Waehrungscode, z.B. EUR', 'string') }}",
+            "reason": "={{ $fromAI('reason', 'Begruendung des Kunden fuer die Erstattung', 'string') }}"
+          },
+          "schema": [
+            {
+              "id": "organization_id",
+              "displayName": "organization_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "agent_id",
+              "displayName": "agent_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "order_reference",
+              "displayName": "order_reference",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "amount",
+              "displayName": "amount",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "currency",
+              "displayName": "currency",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reason",
+              "displayName": "reason",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
       }
     }
   ],
@@ -356,6 +620,39 @@
           {
             "node": "Knowledge Base",
             "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "lookup_order": {
+      "ai_tool": [
+        [
+          {
+            "node": "Support Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "escalate_to_human": {
+      "ai_tool": [
+        [
+          {
+            "node": "Support Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "create_refund": {
+      "ai_tool": [
+        [
+          {
+            "node": "Support Agent",
+            "type": "ai_tool",
             "index": 0
           }
         ]

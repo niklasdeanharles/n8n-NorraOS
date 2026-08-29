@@ -1,0 +1,292 @@
+{
+  "name": "Norra OS – Tool: escalate_to_human",
+  "nodes": [
+    {
+      "name": "Escalation Requested",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "organization_id",
+              "type": "string"
+            },
+            {
+              "name": "conversation_id",
+              "type": "string"
+            },
+            {
+              "name": "agent_id",
+              "type": "string"
+            },
+            {
+              "name": "subject",
+              "type": "string"
+            },
+            {
+              "name": "summary",
+              "type": "string"
+            },
+            {
+              "name": "priority",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Create Ticket",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "tickets",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "organization_id",
+              "fieldValue": "={{ $json.organization_id }}"
+            },
+            {
+              "fieldId": "conversation_id",
+              "fieldValue": "={{ $json.conversation_id }}"
+            },
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "={{ $json.agent_id }}"
+            },
+            {
+              "fieldId": "subject",
+              "fieldValue": "={{ $json.subject }}"
+            },
+            {
+              "fieldId": "description",
+              "fieldValue": "={{ $json.summary }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "open"
+            },
+            {
+              "fieldId": "priority",
+              "fieldValue": "={{ [\"low\",\"normal\",\"high\",\"urgent\"].includes($json.priority) ? $json.priority : \"normal\" }}"
+            },
+            {
+              "fieldId": "source",
+              "fieldValue": "agent_escalation"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Mark Conversation Escalated",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "tableId": "conversations",
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $(\"Escalation Requested\").item.json.conversation_id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $(\"Escalation Requested\").item.json.organization_id }}"
+            }
+          ]
+        },
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "escalated"
+            },
+            {
+              "fieldId": "escalated_at",
+              "fieldValue": "={{ $now.toISO() }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Log Tool Call",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "tool_calls_log",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "organization_id",
+              "fieldValue": "={{ $(\"Escalation Requested\").item.json.organization_id }}"
+            },
+            {
+              "fieldId": "conversation_id",
+              "fieldValue": "={{ $(\"Escalation Requested\").item.json.conversation_id }}"
+            },
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "={{ $(\"Escalation Requested\").item.json.agent_id }}"
+            },
+            {
+              "fieldId": "tool_name",
+              "fieldValue": "escalate_to_human"
+            },
+            {
+              "fieldId": "n8n_workflow_id",
+              "fieldValue": "={{ $workflow.id }}"
+            },
+            {
+              "fieldId": "n8n_execution_id",
+              "fieldValue": "={{ $execution.id }}"
+            },
+            {
+              "fieldId": "input",
+              "fieldValue": "={{ JSON.stringify($(\"Escalation Requested\").item.json) }}"
+            },
+            {
+              "fieldId": "output",
+              "fieldValue": "={{ JSON.stringify({ ticket_id: $(\"Create Ticket\").item.json.id, ticket_number: $(\"Create Ticket\").item.json.number }) }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "success"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Return To Agent",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ticket-number",
+              "name": "ticket_number",
+              "value": "={{ $(\"Create Ticket\").item.json.number }}",
+              "type": "string"
+            },
+            {
+              "id": "result",
+              "name": "result",
+              "value": "=Die Anfrage wurde als Ticket #{{ $(\"Create Ticket\").item.json.number }} an das menschliche Support-Team uebergeben.",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Sticky Note escalate",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -50,
+        -50
+      ],
+      "parameters": {
+        "content": "## escalate_to_human\nDer Agent ruft dieses Tool, wenn er nicht weiterkommt oder der Kunde einen Menschen verlangt. Es legt ein Ticket an, setzt die Konversation auf escalated und protokolliert den Aufruf. Das Handoff-Dashboard sieht die Aenderung ueber Supabase Realtime.\n\nDie Benachrichtigung per E-Mail/Slack haengt bewusst nicht hier, sondern kommt als eigener Workflow in Phase 3.",
+        "color": 4,
+        "width": 740,
+        "height": 220
+      }
+    }
+  ],
+  "connections": {
+    "Escalation Requested": {
+      "main": [
+        [
+          {
+            "node": "Create Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Ticket": {
+      "main": [
+        [
+          {
+            "node": "Mark Conversation Escalated",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Conversation Escalated": {
+      "main": [
+        [
+          {
+            "node": "Log Tool Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Tool Call": {
+      "main": [
+        [
+          {
+            "node": "Return To Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "meta": {
+    "norraWorkflowId": "pw6OzhBSG2oxagNt",
+    "norraSlug": "tool-escalate-to-human"
+  }
+}
