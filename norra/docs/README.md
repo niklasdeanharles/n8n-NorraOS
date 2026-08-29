@@ -1,0 +1,3 @@
+# Norra OS — Dokumentation
+
+Architektur- und Betriebsnotizen. Der Einstieg steht in `norra/CLAUDE.md`.

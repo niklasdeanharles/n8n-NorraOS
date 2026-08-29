@@ -1,0 +1,35 @@
+# Local Supabase config. The linked remote project is configured via
+# SUPABASE_PROJECT_ID in CI; nothing here points at production.
+project_id = "norra-os"
+
+[db]
+port = 54322
+major_version = 17
+
+[db.pooler]
+enabled = false
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["http://localhost:3000/auth/callback"]
+jwt_expiry = 3600
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false
+
+[studio]
+enabled = true
+port = 54323
+
+[storage]
+enabled = true
