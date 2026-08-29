@@ -7,3 +7,9 @@ node_modules/
 supabase/.branches/
 supabase/.temp/
 *.tsbuildinfo
+
+# n8n's root .gitignore excludes **/package-lock.json because the monorepo is
+# pnpm-only. norra/app is a standalone npm project outside that workspace, so
+# its lockfile has to be tracked -- otherwise Vercel resolves different versions
+# than the ones verified here.
+!package-lock.json
