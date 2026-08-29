@@ -10,9 +10,15 @@ export default function SignupPage() {
   const [state, formAction, pending] = useActionState(signup, initialState);
 
   return (
-    <main className="container" style={{ maxWidth: 400 }}>
-      <h1>Organisation anlegen</h1>
-      <form action={formAction} className="card stack">
+    <main className="auth-page">
+      <div className="auth-card stack">
+        <div className="auth-brand">
+          <span className="brand-mark" aria-hidden="true">N</span>
+          <span className="brand-name">Norra</span>
+        </div>
+        <div className="card">
+          <div className="card-head"><h1 style={{ fontSize: 19 }}>Organisation anlegen</h1></div>
+          <form action={formAction} className="card-body stack">
         <label>
           Name
           <input type="text" name="fullName" autoComplete="name" required />
@@ -33,10 +39,12 @@ export default function SignupPage() {
         <button type="submit" disabled={pending}>
           {pending ? 'Wird angelegt…' : 'Konto anlegen'}
         </button>
-      </form>
-      <p className="muted">
-        Schon registriert? <Link href="/login">Anmelden</Link>
-      </p>
+          </form>
+        </div>
+        <p className="muted small" style={{ textAlign: 'center', margin: 0 }}>
+          Schon registriert? <Link href="/login">Anmelden</Link>
+        </p>
+      </div>
     </main>
   );
 }

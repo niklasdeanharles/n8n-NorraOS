@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
+import { currentActor, recordAudit } from '@/lib/audit';
 
 export type AgentFormState = { error: string | null; ok?: string };
 
@@ -49,6 +50,16 @@ export async function saveAgent(_prev: AgentFormState, formData: FormData): Prom
   const enabledTools = formData.getAll('tools').filter((t): t is string => typeof t === 'string');
 
   const supabase = await createClient();
+  const actor = await currentActor(supabase);
+  if (!actor) return { error: 'Nicht angemeldet.' };
+
+  // Read the current values first: the trail records what changed, not the row.
+  const { data: before } = await supabase
+    .from('agents')
+    .select('name, status, model, temperature, max_tokens, system_prompt')
+    .eq('id', parsed.data.id)
+    .single();
+
   const { error } = await supabase
     .from('agents')
     .update({
@@ -72,6 +83,30 @@ export async function saveAgent(_prev: AgentFormState, formData: FormData): Prom
     .eq('id', parsed.data.id);
 
   if (error) return { error: error.message };
+
+  const changes: Record<string, { from: unknown; to: unknown }> = {};
+  if (before) {
+    const next: Record<string, unknown> = {
+      name: parsed.data.name, status: parsed.data.status, model: parsed.data.model,
+      temperature: parsed.data.temperature, max_tokens: parsed.data.maxTokens,
+      system_prompt: parsed.data.systemPrompt,
+    };
+    for (const [key, value] of Object.entries(next)) {
+      const previous = (before as Record<string, unknown>)[key];
+      if (previous !== value) changes[key] = { from: previous, to: value };
+    }
+  }
+
+  await recordAudit(supabase, {
+    organizationId: actor.organizationId,
+    actorId: actor.id,
+    actorLabel: actor.label,
+    action: 'update',
+    entityType: 'agent',
+    entityId: parsed.data.id,
+    entityLabel: parsed.data.name,
+    changes: { ...changes, tools: enabledTools },
+  });
 
   revalidatePath('/agents');
   revalidatePath(`/agents/${parsed.data.id}`);
@@ -99,14 +134,30 @@ export async function createAgent(_prev: AgentFormState, formData: FormData): Pr
   const { data: profile } = await supabase.from('users').select('organization_id').eq('id', user.id).single();
   if (!profile) return { error: 'Kein Profil gefunden.' };
 
-  const { error } = await supabase.from('agents').insert({
-    organization_id: profile.organization_id,
-    name: parsed.data.name,
-    slug: parsed.data.slug,
-    created_by: user.id,
-  });
+  const { data: created, error } = await supabase
+    .from('agents')
+    .insert({
+      organization_id: profile.organization_id,
+      name: parsed.data.name,
+      slug: parsed.data.slug,
+      created_by: user.id,
+    })
+    .select('id')
+    .single();
 
   if (error) return { error: error.message };
+
+  await recordAudit(supabase, {
+    organizationId: profile.organization_id,
+    actorId: user.id,
+    actorLabel: user.email ?? user.id,
+    action: 'create',
+    entityType: 'agent',
+    entityId: created?.id ?? null,
+    entityLabel: parsed.data.name,
+    changes: { slug: parsed.data.slug },
+  });
+
   revalidatePath('/agents');
   return { error: null, ok: 'Agent angelegt.' };
 }

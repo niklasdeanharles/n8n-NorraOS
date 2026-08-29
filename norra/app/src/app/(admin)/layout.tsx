@@ -10,13 +10,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
-  // RLS restricts this to the caller's own row.
-  const { data: profile } = await supabase
-    .from('users')
-    .select('full_name, email, role, organizations(name)')
-    .eq('id', user.id)
-    .single();
+  const [profileResult, approvalsResult] = await Promise.all([
+    supabase.from('users').select('full_name, email, role, organizations(name)').eq('id', user.id).single(),
+    supabase.from('approvals').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+  ]);
 
+  const profile = profileResult.data;
   const displayName = profile?.full_name ?? profile?.email ?? 'Unbekannt';
 
   return (
@@ -24,15 +23,15 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark" aria-hidden="true">N</span>
-          <span className="brand-name">Norra OS</span>
+          <span className="brand-name">Norra</span>
         </div>
-        <Nav />
+        <Nav pendingApprovals={approvalsResult.count ?? 0} />
         <div className="sidebar-foot">
           <div className="small" style={{ fontWeight: 550 }}>{displayName}</div>
           <div className="tiny muted">
             {profile?.organizations?.name ?? 'Organisation'} · {profile?.role ?? '—'}
           </div>
-          <form action="/auth/signout" method="post" style={{ marginTop: 10 }}>
+          <form action="/auth/signout" method="post" style={{ marginTop: 12 }}>
             <button type="submit" className="btn-secondary btn-sm" style={{ width: '100%' }}>
               Abmelden
             </button>

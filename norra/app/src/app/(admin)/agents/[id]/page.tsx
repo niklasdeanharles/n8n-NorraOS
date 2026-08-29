@@ -3,6 +3,8 @@ import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { statusTone } from '@/lib/format';
 import { AgentForm } from './agent-form';
+import { Simulation } from './simulation';
+import type { AgentTestRunRow } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,6 +14,17 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
 
   const { data: agent } = await supabase.from('agents').select('*').eq('id', id).single();
   if (!agent) notFound();
+
+  const [casesResult, runsResult] = await Promise.all([
+    supabase.from('agent_test_cases').select('*').eq('agent_id', id).order('created_at'),
+    supabase.from('agent_test_runs').select('*').eq('agent_id', id).order('created_at', { ascending: false }).limit(100),
+  ]);
+
+  // Only the newest run per case: the table shows current state, not history.
+  const lastRuns: Record<string, AgentTestRunRow> = {};
+  for (const run of runsResult.data ?? []) {
+    if (!lastRuns[run.test_case_id]) lastRuns[run.test_case_id] = run;
+  }
 
   return (
     <>
@@ -26,8 +39,9 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
         </div>
         <span className={statusTone(agent.status)}>{agent.status}</span>
       </header>
-      <div className="content" style={{ maxWidth: 820 }}>
+      <div className="content stack" style={{ maxWidth: 840 }}>
         <AgentForm agent={agent} />
+        <Simulation agentId={agent.id} cases={casesResult.data ?? []} lastRuns={lastRuns} />
       </div>
     </>
   );

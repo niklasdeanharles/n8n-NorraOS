@@ -7,21 +7,29 @@ const SECTIONS: Array<{ label: string; items: Array<{ href: string; icon: string
   {
     label: 'Betrieb',
     items: [
-      { href: '/dashboard', icon: '◱', text: 'Übersicht' },
-      { href: '/conversations', icon: '◐', text: 'Posteingang' },
+      { href: '/dashboard', icon: '◱', text: 'Dashboard' },
+      { href: '/conversations', icon: '◐', text: 'Chat' },
       { href: '/analytics', icon: '◔', text: 'Analytics' },
     ],
   },
   {
-    label: 'Konfiguration',
+    label: 'Aufbau',
     items: [
       { href: '/agents', icon: '◇', text: 'Agenten' },
-      { href: '/knowledge', icon: '▤', text: 'Wissensbasis' },
+      { href: '/knowledge', icon: '▤', text: 'Wissen' },
+    ],
+  },
+  {
+    label: 'Kontrolle',
+    items: [
+      { href: '/governance', icon: '◈', text: 'Governance' },
+      { href: '/team', icon: '◎', text: 'Team' },
     ],
   },
 ];
 
-export function Nav() {
+/** `pendingApprovals` surfaces the queue in the nav; an approval nobody sees is an approval nobody gives. */
+export function Nav({ pendingApprovals = 0 }: { pendingApprovals?: number }) {
   const pathname = usePathname();
 
   return (
@@ -35,6 +43,11 @@ export function Nav() {
               <Link key={item.href} href={item.href} aria-current={active ? 'page' : undefined}>
                 <span className="nav-icon" aria-hidden="true">{item.icon}</span>
                 {item.text}
+                {item.href === '/governance' && pendingApprovals > 0 ? (
+                  <span className="nav-count" aria-label={`${pendingApprovals} offene Freigaben`}>
+                    {pendingApprovals}
+                  </span>
+                ) : null}
               </Link>
             );
           })}

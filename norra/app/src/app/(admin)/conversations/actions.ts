@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
+import { currentActor, recordAudit } from '@/lib/audit';
 
 const idSchema = z.string().uuid();
 
@@ -29,6 +30,19 @@ export async function takeOver(_prev: HandoffState, formData: FormData): Promise
     .eq('id', parsed.data);
 
   if (error) return { error: error.message };
+
+  const actor = await currentActor(supabase);
+  if (actor) {
+    await recordAudit(supabase, {
+      organizationId: actor.organizationId,
+      actorId: actor.id,
+      actorLabel: actor.label,
+      action: 'takeover',
+      entityType: 'conversation',
+      entityId: parsed.data,
+    });
+  }
+
   revalidatePath(`/conversations/${parsed.data}`);
   return { error: null, ok: 'Du bearbeitest diese Konversation jetzt.' };
 }
@@ -45,6 +59,19 @@ export async function releaseToAgent(_prev: HandoffState, formData: FormData): P
     .eq('id', parsed.data);
 
   if (error) return { error: error.message };
+
+  const actor = await currentActor(supabase);
+  if (actor) {
+    await recordAudit(supabase, {
+      organizationId: actor.organizationId,
+      actorId: actor.id,
+      actorLabel: actor.label,
+      action: 'release',
+      entityType: 'conversation',
+      entityId: parsed.data,
+    });
+  }
+
   revalidatePath(`/conversations/${parsed.data}`);
   return { error: null, ok: 'Zurück an den Agenten übergeben.' };
 }

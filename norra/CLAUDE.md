@@ -119,6 +119,17 @@ Hostinger VPS, self-hosted Community Edition: `https://n8n-fdhh.srv1817599.hstgr
 | Tool: create_refund | `tool-create-refund` | `LwyJZr8WFsjd0L9v` | Sub-Workflow | Erstattung zur **Freigabe** einreichen |
 | Notify Escalation | `notify-escalation` | `zU1x0scrqFmPClmg` | Sub-Workflow | E-Mail an das Support-Team |
 
+### Freigaben statt Ausführung
+
+`create_refund` legt zusätzlich zum Ticket eine Zeile in `approvals` an. Das ist
+die eigentliche Sperre: ein Ticket ist eine Notiz, die jemand übersehen kann,
+eine Freigabe bleibt offen, bis ein Admin im Governance-Screen entscheidet. Ein
+Check-Constraint verweigert jede Entscheidung ohne Entscheider.
+
+Jedes weitere Tool mit realer Konsequenz gehört denselben Weg: Zeile in
+`approvals`, Rückgabewert sagt dem Agenten ausdrücklich, dass nichts ausgeführt
+wurde.
+
 Beide Workflows sind **angelegt, aber nicht aktiviert**. Vor der Aktivierung
 fehlen zwei Credentials, die es auf der Instanz noch nicht gibt:
 

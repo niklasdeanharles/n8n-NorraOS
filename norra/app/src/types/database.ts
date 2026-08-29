@@ -20,6 +20,9 @@ export type TicketStatus = 'open' | 'pending' | 'solved' | 'closed';
 export type TicketPriority = 'low' | 'normal' | 'high' | 'urgent';
 export type TicketSource = 'agent_escalation' | 'manual' | 'email' | 'api';
 export type ToolCallStatus = 'pending' | 'success' | 'error';
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'expired';
+export type AuditAction = 'create' | 'update' | 'delete' | 'approve' | 'reject' | 'takeover' | 'release';
+export type TestRunStatus = 'queued' | 'running' | 'passed' | 'failed' | 'error';
 
 /** Keys whose column accepts NULL. Postgres lets those be omitted on insert. */
 type NullableKeys<Row> = { [K in keyof Row]-?: null extends Row[K] ? K : never }[keyof Row];
@@ -83,6 +86,9 @@ export type ConversationRow = {
   status: ConversationStatus;
   assigned_user_id: string | null;
   title: string | null;
+  topic: string | null;
+  csat: number | null;
+  knowledge_gap: boolean;
   metadata: Json;
   last_message_at: string | null;
   escalated_at: string | null;
@@ -159,6 +165,67 @@ export type TicketRow = {
   resolved_at: string | null;
 }
 
+export type ApprovalRow = {
+  id: string;
+  organization_id: string;
+  conversation_id: string | null;
+  agent_id: string | null;
+  ticket_id: string | null;
+  tool_name: string;
+  summary: string;
+  payload: Json;
+  amount: number | null;
+  currency: string | null;
+  status: ApprovalStatus;
+  decided_by: string | null;
+  decided_at: string | null;
+  decision_note: string | null;
+  expires_at: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AuditLogRow = {
+  id: string;
+  organization_id: string;
+  actor_id: string | null;
+  actor_label: string;
+  action: AuditAction;
+  entity_type: string;
+  entity_id: string | null;
+  entity_label: string | null;
+  changes: Json;
+  created_at: string;
+};
+
+export type AgentTestCaseRow = {
+  id: string;
+  organization_id: string;
+  agent_id: string;
+  name: string;
+  input: string;
+  expect_contains: string[];
+  expect_absent: string[];
+  expect_tool: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AgentTestRunRow = {
+  id: string;
+  organization_id: string;
+  agent_id: string;
+  test_case_id: string;
+  status: TestRunStatus;
+  output: string | null;
+  failures: string[];
+  tools_used: string[];
+  duration_ms: number | null;
+  n8n_execution_id: string | null;
+  created_at: string;
+};
+
 export type ToolCallLogRow = {
   id: string;
   organization_id: string;
@@ -220,7 +287,7 @@ export type Database = {
 
       conversations: Table<
         ConversationRow,
-        Timestamps | 'channel' | 'status' | 'metadata',
+        Timestamps | 'channel' | 'status' | 'metadata' | 'knowledge_gap',
         [
           OrgRel<'conversations'>,
           Rel<'conversations_agent_id_fkey', 'agent_id', 'agents'>,
@@ -264,6 +331,44 @@ export type Database = {
         ]
       >;
 
+      approvals: Table<
+        ApprovalRow,
+        Timestamps | 'status' | 'payload' | 'expires_at',
+        [
+          OrgRel<'approvals'>,
+          Rel<'approvals_conversation_id_fkey', 'conversation_id', 'conversations'>,
+          Rel<'approvals_agent_id_fkey', 'agent_id', 'agents'>,
+          Rel<'approvals_ticket_id_fkey', 'ticket_id', 'tickets'>,
+          Rel<'approvals_decided_by_fkey', 'decided_by', 'users'>,
+        ]
+      >;
+
+      audit_log: Table<
+        AuditLogRow,
+        'id' | 'created_at' | 'changes',
+        [OrgRel<'audit_log'>, Rel<'audit_log_actor_id_fkey', 'actor_id', 'users'>]
+      >;
+
+      agent_test_cases: Table<
+        AgentTestCaseRow,
+        Timestamps | 'expect_contains' | 'expect_absent',
+        [
+          OrgRel<'agent_test_cases'>,
+          Rel<'agent_test_cases_agent_id_fkey', 'agent_id', 'agents'>,
+          Rel<'agent_test_cases_created_by_fkey', 'created_by', 'users'>,
+        ]
+      >;
+
+      agent_test_runs: Table<
+        AgentTestRunRow,
+        'id' | 'created_at' | 'status' | 'failures' | 'tools_used',
+        [
+          OrgRel<'agent_test_runs'>,
+          Rel<'agent_test_runs_agent_id_fkey', 'agent_id', 'agents'>,
+          Rel<'agent_test_runs_test_case_id_fkey', 'test_case_id', 'agent_test_cases'>,
+        ]
+      >;
+
       tool_calls_log: Table<
         ToolCallLogRow,
         'id' | 'created_at' | 'input' | 'status',
@@ -304,6 +409,9 @@ export type Database = {
       ticket_priority: TicketPriority;
       ticket_source: TicketSource;
       tool_call_status: ToolCallStatus;
+      approval_status: ApprovalStatus;
+      audit_action: AuditAction;
+      test_run_status: TestRunStatus;
     };
     CompositeTypes: Record<never, never>;
   };

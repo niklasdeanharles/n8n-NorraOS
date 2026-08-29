@@ -144,7 +144,7 @@
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        660,
+        880,
         0
       ],
       "parameters": {
@@ -199,7 +199,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        880,
+        1100,
         0
       ],
       "parameters": {
@@ -214,15 +214,21 @@
               "type": "boolean"
             },
             {
+              "id": "approval-id",
+              "name": "approval_id",
+              "value": "={{ $('File Approval Request').item.json.id }}",
+              "type": "string"
+            },
+            {
               "id": "ticket-number",
               "name": "ticket_number",
-              "value": "={{ $(\"File Refund Request\").item.json.number }}",
+              "value": "={{ $('File Refund Request').item.json.number }}",
               "type": "string"
             },
             {
               "id": "result",
               "name": "result",
-              "value": "=Die Rueckerstattung wurde NICHT ausgefuehrt, sondern als Ticket #{{ $(\"File Refund Request\").item.json.number }} zur Freigabe eingereicht. Sage dem Kunden zu, dass ein Mitarbeiter die Erstattung prueft und sich meldet. Verspreche keinen Auszahlungstermin.",
+              "value": "=Die Rueckerstattung wurde NICHT ausgefuehrt. Sie liegt als Ticket #{{ $('File Refund Request').item.json.number }} zur Freigabe bei einem Mitarbeiter. Sage dem Kunden zu, dass die Erstattung geprueft wird und er Bescheid bekommt. Bestaetige keine erfolgte Erstattung und nenne keinen Auszahlungstermin.",
               "type": "string"
             }
           ]
@@ -238,10 +244,70 @@
         -50
       ],
       "parameters": {
-        "content": "## create_refund fuehrt bewusst KEINE Erstattung aus\nDas Tool legt eine Erstattungs-Anfrage zur menschlichen Freigabe an, statt Geld zu bewegen. Ein Sprachmodell, das eine Bestellnummer und einen Betrag halluziniert, wuerde sonst echtes Geld auszahlen -- und der Schaden ist nicht rueckholbar.\n\nDer Rueckgabewert sagt dem Agenten ausdruecklich, dass nichts ausgefuehrt wurde, damit er dem Kunden keine erfolgte Erstattung bestaetigt.\n\nWenn autonome Erstattungen gewollt sind, gehoert hier ein Shopify-Refund-Node hin -- mit Betragsobergrenze, Whitelist und Idempotenzschluessel gegen Doppelauszahlung.",
+        "content": "## create_refund fuehrt bewusst KEINE Erstattung aus\nDas Tool legt eine Erstattungs-Anfrage zur menschlichen Freigabe an, statt Geld zu bewegen. Ein Sprachmodell, das eine Bestellnummer und einen Betrag halluziniert, wuerde sonst echtes Geld auszahlen -- und der Schaden ist nicht rueckholbar.\n\nDie Sperre ist die Zeile in approvals, nicht das Ticket: ein Ticket ist eine Notiz, die jemand uebersehen kann, eine Freigabe bleibt offen, bis ein Admin entscheidet. Sie erscheint im Governance-Screen.\n\nDer Rueckgabewert sagt dem Agenten ausdruecklich, dass nichts ausgefuehrt wurde.",
         "color": 3,
         "width": 740,
-        "height": 300
+        "height": 340
+      }
+    },
+    {
+      "name": "File Approval Request",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        660,
+        0
+      ],
+      "notes": "Die eigentliche Sperre: der Vorgang wartet als Zeile in approvals auf eine menschliche Entscheidung. Das Ticket allein waere nur eine Notiz, die jemand uebersehen kann.",
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "approvals",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "organization_id",
+              "fieldValue": "={{ $('Refund Requested').item.json.organization_id }}"
+            },
+            {
+              "fieldId": "conversation_id",
+              "fieldValue": "={{ $('Refund Requested').item.json.conversation_id }}"
+            },
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "={{ $('Refund Requested').item.json.agent_id }}"
+            },
+            {
+              "fieldId": "ticket_id",
+              "fieldValue": "={{ $('File Refund Request').item.json.id }}"
+            },
+            {
+              "fieldId": "tool_name",
+              "fieldValue": "create_refund"
+            },
+            {
+              "fieldId": "summary",
+              "fieldValue": "=Rueckerstattung {{ $('Refund Requested').item.json.amount }} {{ $('Refund Requested').item.json.currency }} fuer {{ $('Refund Requested').item.json.order_reference }}"
+            },
+            {
+              "fieldId": "amount",
+              "fieldValue": "={{ $('Refund Requested').item.json.amount }}"
+            },
+            {
+              "fieldId": "currency",
+              "fieldValue": "={{ $('Refund Requested').item.json.currency }}"
+            },
+            {
+              "fieldId": "payload",
+              "fieldValue": "={{ JSON.stringify({ order_reference: $('Refund Requested').item.json.order_reference, reason: $('Refund Requested').item.json.reason, ticket_number: $('File Refund Request').item.json.number }) }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "pending"
+            }
+          ]
+        }
       }
     }
   ],
@@ -272,7 +338,7 @@
       "main": [
         [
           {
-            "node": "Log Tool Call",
+            "node": "File Approval Request",
             "type": "main",
             "index": 0
           }
@@ -284,6 +350,17 @@
         [
           {
             "node": "Return To Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "File Approval Request": {
+      "main": [
+        [
+          {
+            "node": "Log Tool Call",
             "type": "main",
             "index": 0
           }
