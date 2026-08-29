@@ -72,6 +72,10 @@ jobs:
         working-directory: norra/supabase
         run: psql -v ON_ERROR_STOP=1 -f tests/tenancy.test.sql
 
+      - name: Run governance tests
+        working-directory: norra/supabase
+        run: psql -v ON_ERROR_STOP=1 -f tests/governance.test.sql
+
       - name: Re-apply from scratch
         # A migration that only works against an already-migrated database is a
         # migration that will fail on a fresh environment.
