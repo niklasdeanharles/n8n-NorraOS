@@ -108,13 +108,34 @@ Secrets stehen niemals im Repo. `.env.local` ist gitignored;
 
 ## n8n-Instanz
 
-- URL: _noch einzutragen_ (Hostinger VPS, self-hosted Community Edition)
-- Workflow-IDs: werden hier eingetragen, sobald die Workflows angelegt sind.
+Hostinger VPS, self-hosted Community Edition: `https://n8n-fdhh.srv1817599.hstgr.cloud`
 
-| Workflow | Slug | ID | Zweck |
-|---|---|---|---|
-| Agent Turn | `agent-turn` | _tbd_ | Zentraler Turn: RAG, Tools, Streaming |
-| KB Ingest | `kb-ingest` | _tbd_ | Dokumente chunken, einbetten, speichern |
+| Workflow | Slug | ID | Webhook-Pfad | Zweck |
+|---|---|---|---|---|
+| Agent Turn | `agent-turn` | `yTH3YQeR5qdNVxSI` | `POST /webhook/norra/agent-turn` | Zentraler Turn: Config laden, RAG, Streaming |
+| KB Ingest | `kb-ingest` | `Q3XhlP6eet9eqnm0` | `POST /webhook/norra/kb-ingest` | Dokument chunken, einbetten, speichern |
+
+Beide Workflows sind **angelegt, aber nicht aktiviert**. Vor der Aktivierung
+fehlen zwei Credentials, die es auf der Instanz noch nicht gibt:
+
+| Credential | Typ | Gebraucht von |
+|---|---|---|
+| Anthropic | `anthropicApi` | Claude Model (agent-turn) |
+| Norra Webhook Secret | `httpHeaderAuth` | beide Webhook-Nodes |
+
+Die Header-Auth-Credential muss Header-Name `x-norra-secret` und als Wert
+denselben String tragen wie `N8N_WEBHOOK_SECRET` in Vercel — sonst weist der
+Webhook den Proxy ab. Supabase- und OpenAI-Credentials hat n8n beim Anlegen
+automatisch zugeordnet.
+
+### Warum die History aus dem Proxy kommt
+
+Der Proxy liest die letzten 20 Nachrichten aus `messages` und schickt sie im
+Request-Body mit, statt dass n8n sie selbst abfragt. Grund: bei der ersten
+Nachricht einer Konversation liefert die Abfrage null Zeilen, und n8n
+überspringt Nodes ohne Input-Items — die Kette wäre gestorben, bevor der Agent
+je gelaufen wäre. Nebeneffekt: `messages` bleibt einzige Quelle der Wahrheit,
+es gibt keine zweite History-Tabelle (deshalb auch kein Postgres-Chat-Memory).
 
 ## Befehle
 

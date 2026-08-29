@@ -21,8 +21,15 @@ export type TicketPriority = 'low' | 'normal' | 'high' | 'urgent';
 export type TicketSource = 'agent_escalation' | 'manual' | 'email' | 'api';
 export type ToolCallStatus = 'pending' | 'success' | 'error';
 
-/** Columns the database fills in, so callers may omit them on insert. */
-type WithDefaults<Row, K extends keyof Row> = Omit<Row, K> & Partial<Pick<Row, K>>;
+/** Keys whose column accepts NULL. Postgres lets those be omitted on insert. */
+type NullableKeys<Row> = { [K in keyof Row]-?: null extends Row[K] ? K : never }[keyof Row];
+
+/**
+ * Insert shape: columns the database fills in itself (`Defaulted`) and columns
+ * that accept NULL are both optional. Everything else stays required.
+ */
+type WithDefaults<Row, Defaulted extends keyof Row> = Omit<Row, Defaulted | NullableKeys<Row>> &
+  Partial<Pick<Row, Defaulted | NullableKeys<Row>>>;
 
 export type OrganizationRow = {
   id: string;

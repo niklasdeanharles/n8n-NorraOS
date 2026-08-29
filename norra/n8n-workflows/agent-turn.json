@@ -1,0 +1,373 @@
+{
+  "name": "Norra OS – Agent Turn",
+  "nodes": [
+    {
+      "id": "d1c8dfca-94c9-44b5-bb33-7f8087711ddd",
+      "name": "Agent Turn Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "norra/agent-turn",
+        "authentication": "headerAuth",
+        "responseMode": "streaming"
+      },
+      "webhookId": "19ca4b01-2546-40c4-b73f-fa3a652ee046"
+    },
+    {
+      "id": "4a820efa-14e6-43df-a47c-89693de2ac1e",
+      "name": "Normalize Request",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "organization-id",
+              "name": "organization_id",
+              "value": "={{ $json.body?.organization_id ?? $json.organization_id }}",
+              "type": "string"
+            },
+            {
+              "id": "agent-id",
+              "name": "agent_id",
+              "value": "={{ $json.body?.agent_id ?? $json.agent_id }}",
+              "type": "string"
+            },
+            {
+              "id": "conversation-id",
+              "name": "conversation_id",
+              "value": "={{ $json.body?.conversation_id ?? $json.conversation_id }}",
+              "type": "string"
+            },
+            {
+              "id": "message",
+              "name": "message",
+              "value": "={{ $json.body?.message ?? $json.message ?? \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "history",
+              "name": "history",
+              "value": "={{ $json.body?.history ?? $json.history ?? [] }}",
+              "type": "array"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "c257c1b8-431e-4d46-a25b-8aac673c6fed",
+      "name": "Load Agent Config",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "agents",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $json.agent_id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.organization_id }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "bacd8c7a-924c-4b5a-a64f-ba1c2c2a99b2",
+      "name": "Support Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $(\"Normalize Request\").item.json.message }}",
+        "options": {
+          "systemMessage": "={{ $json.system_prompt }}\n\n## Guardrails\nVerbotene Themen (freundlich ablehnen und ggf. eskalieren): {{ JSON.stringify($json.guardrails?.forbidden_topics ?? []) }}\nErlaubte Themen (leer = keine Einschraenkung): {{ JSON.stringify($json.guardrails?.allowed_topics ?? []) }}\nEskalationsregeln: {{ JSON.stringify($json.escalation_rules ?? {}) }}\n\n## Wissensbasis\nNutze das Tool \"Knowledge Base\" fuer jede inhaltliche Frage. Erfinde niemals Richtlinien oder Fakten. Wenn die Wissensbasis nichts hergibt, sage das offen und biete die Eskalation an einen Menschen an.\n\n## Bisheriger Gespraechsverlauf\n{{ JSON.stringify($(\"Normalize Request\").item.json.history ?? []) }}",
+          "maxIterations": 10,
+          "enableStreaming": true,
+          "returnIntermediateSteps": false
+        }
+      }
+    },
+    {
+      "id": "79622269-dd9f-4660-ae09-49ebd7c235f3",
+      "name": "Claude Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.5,
+      "position": [
+        660,
+        240
+      ],
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Load Agent Config').item.json.model }}"
+        },
+        "options": {
+          "maxTokensToSample": 4096,
+          "temperature": 0.2,
+          "streaming": true
+        }
+      }
+    },
+    {
+      "id": "0945d20f-9d27-407e-a133-198dc3a76152",
+      "name": "Knowledge Base",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.3,
+      "position": [
+        820,
+        240
+      ],
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolDescription": "Durchsuche die Wissensbasis dieser Organisation nach Richtlinien, Produktinfos und Hilfeartikeln. Nutze dieses Tool, bevor du eine inhaltliche Frage beantwortest.",
+        "tableName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "knowledge_base_chunks",
+          "cachedResultName": "knowledge_base_chunks"
+        },
+        "topK": 5,
+        "includeDocumentMetadata": true,
+        "options": {
+          "queryName": "match_kb_chunks",
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "organization_id",
+                "value": "={{ $('Normalize Request').item.json.organization_id }}"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "19ff19b5-e52d-4b21-bd15-5eebe4382cae",
+      "name": "Knowledge Base Embeddings",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        900,
+        400
+      ],
+      "parameters": {
+        "model": "text-embedding-3-small",
+        "options": {
+          "dimensions": 1536
+        }
+      }
+    },
+    {
+      "id": "0165401e-466c-44a6-93fe-bd54ec324c1d",
+      "name": "Persist Assistant Message",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        900,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "messages",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "organization_id",
+              "fieldValue": "={{ $(\"Normalize Request\").item.json.organization_id }}"
+            },
+            {
+              "fieldId": "conversation_id",
+              "fieldValue": "={{ $(\"Normalize Request\").item.json.conversation_id }}"
+            },
+            {
+              "fieldId": "role",
+              "fieldValue": "assistant"
+            },
+            {
+              "fieldId": "content",
+              "fieldValue": "={{ $json.output }}"
+            },
+            {
+              "fieldId": "model",
+              "fieldValue": "={{ $(\"Load Agent Config\").item.json.model }}"
+            },
+            {
+              "fieldId": "n8n_execution_id",
+              "fieldValue": "={{ $execution.id }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "7a937346-a5c7-48f7-9820-7fc0247e7a67",
+      "name": "Sticky Note 9ee8933b",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -50,
+        -50
+      ],
+      "parameters": {
+        "content": "## Eingang\nHeader-Auth teilt das Secret mit N8N_WEBHOOK_SECRET in Vercel. responseMode=streaming reicht die Agent-Tokens direkt an den Next.js-Proxy durch.",
+        "color": 4,
+        "width": 520,
+        "height": 200
+      }
+    },
+    {
+      "id": "c1ae441a-9834-4b00-9001-e01d4081ba74",
+      "name": "Sticky Note 19be91cd",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        390,
+        -50
+      ],
+      "parameters": {
+        "content": "## Konfiguration ist Daten\nSystem-Prompt, Guardrails und Modell kommen pro Turn aus der agents-Tabelle. Einen Bot aendern heisst: Zeile aendern, nicht Workflow anfassen.",
+        "color": 3,
+        "width": 300,
+        "height": 200
+      }
+    },
+    {
+      "id": "83a40b6f-6b05-4ed9-8ae1-c18ec3115612",
+      "name": "Sticky Note 9963d40d",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        770,
+        190
+      ],
+      "parameters": {
+        "content": "## Mandantentrennung\nn8n verbindet sich mit service_role und umgeht RLS. Der organization_id-Filter unten ist die einzige Grenze: match_kb_chunks wirft ohne ihn.",
+        "color": 5,
+        "width": 300,
+        "height": 200
+      }
+    }
+  ],
+  "connections": {
+    "Agent Turn Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Request": {
+      "main": [
+        [
+          {
+            "node": "Load Agent Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Agent Config": {
+      "main": [
+        [
+          {
+            "node": "Support Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Support Agent": {
+      "main": [
+        [
+          {
+            "node": "Persist Assistant Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Support Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Knowledge Base": {
+      "ai_tool": [
+        [
+          {
+            "node": "Support Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Knowledge Base Embeddings": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Knowledge Base",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "meta": {
+    "norraWorkflowId": "yTH3YQeR5qdNVxSI",
+    "norraSlug": "agent-turn"
+  }
+}
