@@ -71,7 +71,7 @@ function TrendChart({ days }: { days: Array<{ date: string; total: number; escal
         <polyline
           className="chart-line chart-line-alt"
           points={escalationLine}
-          fill="none" stroke="hsl(var(--chart-3))" strokeWidth="2" strokeDasharray="4 4"
+          fill="none" stroke="hsl(var(--chart-3))" strokeWidth="2"
           strokeLinejoin="round" vectorEffect="non-scaling-stroke"
         />
       </svg>
