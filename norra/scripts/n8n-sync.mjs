@@ -25,7 +25,10 @@ import path from 'node:path';
 import process from 'node:process';
 
 const WORKFLOW_DIR = path.resolve(import.meta.dirname, '../n8n-workflows');
-const NAME_PREFIX = 'Norra OS';
+// The en dash matters: the instance also hosts "Norra OS 1", "Norra AI Phone
+// Agent" and "Norra Sales-Team", none of which belong in this repository. A
+// looser prefix would sweep them into the backup.
+const NAME_PREFIX = 'Norra \u2013 ';
 
 /** The only fields the n8n public API accepts on PUT. Anything else is a 400. */
 const WRITABLE_FIELDS = ['name', 'nodes', 'connections', 'settings'];

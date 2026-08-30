@@ -8,7 +8,7 @@ create type public.approval_status as enum ('pending', 'approved', 'rejected', '
 create type public.audit_action as enum ('create', 'update', 'delete', 'approve', 'reject', 'takeover', 'release');
 create type public.test_run_status as enum ('queued', 'running', 'passed', 'failed', 'error');
 
--- Critical actions wait here instead of executing. create_refund files one of
+-- Critical actions wait here instead of executing. request_action files one of
 -- these rather than moving money; anything else with real-world consequences
 -- should do the same.
 create table public.approvals (

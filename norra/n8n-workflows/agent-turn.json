@@ -1,5 +1,5 @@
 {
-  "name": "Norra OS – Agent Turn",
+  "name": "Norra – Agent Turn",
   "nodes": [
     {
       "id": "d1c8dfca-94c9-44b5-bb33-7f8087711ddd",
@@ -112,7 +112,7 @@
         "promptType": "define",
         "text": "={{ $(\"Normalize Request\").item.json.message }}",
         "options": {
-          "systemMessage": "={{ $json.system_prompt }}\n\n## Guardrails\nVerbotene Themen (freundlich ablehnen und ggf. eskalieren): {{ JSON.stringify($json.guardrails?.forbidden_topics ?? []) }}\nErlaubte Themen (leer = keine Einschraenkung): {{ JSON.stringify($json.guardrails?.allowed_topics ?? []) }}\nEskalationsregeln: {{ JSON.stringify($json.escalation_rules ?? {}) }}\n\n## Werkzeuge\nKnowledge Base: fuer jede inhaltliche Frage zuerst hier nachschlagen. Erfinde niemals Richtlinien oder Fakten.\nlookup_order: fuer alles zu Versand, Zahlung und Liefertermin. Rate niemals einen Bestellstatus.\nescalate_to_human: wenn der Kunde einen Menschen verlangt, du nicht weiterkommst, oder es eine Beschwerde ist.\ncreate_refund: reicht eine Erstattung nur zur Freigabe ein und zahlt nichts aus. Sage dem Kunden zu, dass ein Mitarbeiter prueft -- bestaetige niemals eine erfolgte Erstattung und nenne keinen Auszahlungstermin.\n\n## Bisheriger Gespraechsverlauf\n{{ JSON.stringify($(\"Normalize Request\").item.json.history ?? []) }}",
+          "systemMessage": "={{ $json.system_prompt }}\n\n## Guardrails\nVerbotene Themen (freundlich ablehnen und ggf. eskalieren): {{ JSON.stringify($json.guardrails?.forbidden_topics ?? []) }}\nErlaubte Themen (leer = keine Einschraenkung): {{ JSON.stringify($json.guardrails?.allowed_topics ?? []) }}\nEskalationsregeln: {{ JSON.stringify($json.escalation_rules ?? {}) }}\n\n## Werkzeuge\nKnowledge Base: fuer jede inhaltliche Frage zuerst hier nachschlagen. Erfinde niemals Richtlinien oder Fakten.\nlookup_record: fuer jede Aussage ueber konkrete Kundendaten. Rate niemals einen Status, einen Betrag oder ein Datum.\nescalate_to_human: wenn der Kunde einen Menschen verlangt, du nicht weiterkommst, oder es eine Beschwerde ist.\nrequest_action: fuer jede folgenreiche Aktion. Das Tool fuehrt nichts aus, es reicht die Aktion zur Freigabe ein. Sage dem Kunden zu, dass ein Mitarbeiter prueft -- bestaetige niemals, dass die Aktion bereits erfolgt ist, und nenne keinen Termin.\n\n## Bisheriger Gespraechsverlauf\n{{ JSON.stringify($(\"Normalize Request\").item.json.history ?? []) }}",
           "maxIterations": 10,
           "enableStreaming": true,
           "returnIntermediateSteps": false
@@ -284,7 +284,7 @@
     },
     {
       "id": "9063179e-f74b-463e-a4e2-0fccc90779e2",
-      "name": "lookup_order",
+      "name": "lookup_record",
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2.2,
       "position": [
@@ -292,13 +292,13 @@
         260
       ],
       "parameters": {
-        "description": "Schlage den Status einer Shopify-Bestellung nach. Braucht die Bestellnummer. Nutze dies, bevor du etwas ueber Versand, Zahlung oder Liefertermin sagst.",
+        "description": "Schlage einen Datensatz im angebundenen System des Kunden nach — etwa einen Vorgang, ein Konto oder einen Auftrag. Nutze dies, bevor du eine Aussage über konkrete Kundendaten machst. Rate niemals.",
         "source": "database",
         "workflowId": {
           "__rl": true,
           "mode": "list",
           "value": "KHHKDV5CoyiDxuCO",
-          "cachedResultName": "Norra OS – Tool: lookup_order"
+          "cachedResultName": "Norra – Tool: lookup_record"
         },
         "workflowInputs": {
           "mappingMode": "defineBelow",
@@ -307,8 +307,9 @@
             "organization_id": "={{ $('Normalize Request').item.json.organization_id }}",
             "conversation_id": "={{ $('Normalize Request').item.json.conversation_id }}",
             "agent_id": "={{ $('Normalize Request').item.json.agent_id }}",
-            "order_number": "={{ $fromAI('order_number', 'Die Bestellnummer des Kunden, z.B. 1234 oder #1234', 'string') }}",
-            "email": "={{ $fromAI('email', 'Die E-Mail-Adresse des Kunden, falls genannt', 'string') }}"
+            "endpoint": "={{ ($('Load Agent Config').item.json.tools ?? []).find(t => t.slug === 'lookup_record')?.config?.url ?? '' }}",
+            "query": "={{ $fromAI('query', 'Wonach gesucht wird, z.B. eine Vorgangsnummer oder E-Mail-Adresse', 'string') }}",
+            "record_type": "={{ $fromAI('record_type', 'Art des gesuchten Datensatzes, falls der Kunde sie nennt', 'string') }}"
           },
           "schema": [
             {
@@ -339,8 +340,8 @@
               "canBeUsedToMatch": true
             },
             {
-              "id": "order_number",
-              "displayName": "order_number",
+              "id": "endpoint",
+              "displayName": "endpoint",
               "type": "string",
               "required": true,
               "display": true,
@@ -348,8 +349,17 @@
               "canBeUsedToMatch": true
             },
             {
-              "id": "email",
-              "displayName": "email",
+              "id": "query",
+              "displayName": "query",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "record_type",
+              "displayName": "record_type",
               "type": "string",
               "required": false,
               "display": true,
@@ -376,7 +386,7 @@
           "__rl": true,
           "mode": "list",
           "value": "pw6OzhBSG2oxagNt",
-          "cachedResultName": "Norra OS – Tool: escalate_to_human"
+          "cachedResultName": "Norra – Tool: escalate_to_human"
         },
         "workflowInputs": {
           "mappingMode": "defineBelow",
@@ -450,7 +460,7 @@
     },
     {
       "id": "0e1d3e0f-9aab-486c-8f87-744c3b5bf320",
-      "name": "create_refund",
+      "name": "request_action",
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2.2,
       "position": [
@@ -458,13 +468,13 @@
         580
       ],
       "parameters": {
-        "description": "Reiche eine Rueckerstattung zur Freigabe ein. Dieses Tool zahlt NICHT aus, es legt eine Anfrage fuer einen Mitarbeiter an. Bestaetige dem Kunden niemals eine erfolgte Erstattung.",
+        "description": "Reiche eine folgenreiche Aktion zur Freigabe ein — Erstattung, Stornierung, Datenänderung. Dieses Tool führt NICHTS aus, es legt eine Anfrage für einen Mitarbeiter an. Bestätige dem Kunden niemals, dass die Aktion erfolgt ist.",
         "source": "database",
         "workflowId": {
           "__rl": true,
           "mode": "list",
           "value": "LwyJZr8WFsjd0L9v",
-          "cachedResultName": "Norra OS – Tool: create_refund"
+          "cachedResultName": "Norra – Tool: request_action"
         },
         "workflowInputs": {
           "mappingMode": "defineBelow",
@@ -473,10 +483,12 @@
             "organization_id": "={{ $('Normalize Request').item.json.organization_id }}",
             "conversation_id": "={{ $('Normalize Request').item.json.conversation_id }}",
             "agent_id": "={{ $('Normalize Request').item.json.agent_id }}",
-            "order_reference": "={{ $fromAI('order_reference', 'Bestellnummer, auf die sich die Erstattung bezieht', 'string') }}",
-            "amount": "={{ $fromAI('amount', 'Betrag als Zahl ohne Waehrungszeichen', 'string') }}",
-            "currency": "={{ $fromAI('currency', 'Waehrungscode, z.B. EUR', 'string') }}",
-            "reason": "={{ $fromAI('reason', 'Begruendung des Kunden fuer die Erstattung', 'string') }}"
+            "action": "={{ $fromAI('action', 'Kurzer Bezeichner der Aktion, z.B. refund, cancellation, address_change', 'string') }}",
+            "subject": "={{ $fromAI('subject', 'Eine Zeile, die dem Mitarbeiter sagt, worum es geht', 'string') }}",
+            "reason": "={{ $fromAI('reason', 'Begruendung des Kunden', 'string') }}",
+            "record_reference": "={{ $fromAI('record_reference', 'Auf welchen Vorgang oder Datensatz sich die Aktion bezieht', 'string') }}",
+            "amount": "={{ $fromAI('amount', 'Betrag als Zahl ohne Waehrungszeichen, falls Geld im Spiel ist', 'string') }}",
+            "currency": "={{ $fromAI('currency', 'Waehrungscode, falls Geld im Spiel ist', 'string') }}"
           },
           "schema": [
             {
@@ -507,8 +519,8 @@
               "canBeUsedToMatch": true
             },
             {
-              "id": "order_reference",
-              "displayName": "order_reference",
+              "id": "action",
+              "displayName": "action",
               "type": "string",
               "required": true,
               "display": true,
@@ -516,19 +528,10 @@
               "canBeUsedToMatch": true
             },
             {
-              "id": "amount",
-              "displayName": "amount",
+              "id": "subject",
+              "displayName": "subject",
               "type": "string",
               "required": true,
-              "display": true,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "currency",
-              "displayName": "currency",
-              "type": "string",
-              "required": false,
               "display": true,
               "defaultMatch": false,
               "canBeUsedToMatch": true
@@ -538,6 +541,33 @@
               "displayName": "reason",
               "type": "string",
               "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "record_reference",
+              "displayName": "record_reference",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "amount",
+              "displayName": "amount",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "currency",
+              "displayName": "currency",
+              "type": "string",
+              "required": false,
               "display": true,
               "defaultMatch": false,
               "canBeUsedToMatch": true
@@ -735,29 +765,7 @@
         ]
       ]
     },
-    "lookup_order": {
-      "ai_tool": [
-        [
-          {
-            "node": "Support Agent",
-            "type": "ai_tool",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "escalate_to_human": {
-      "ai_tool": [
-        [
-          {
-            "node": "Support Agent",
-            "type": "ai_tool",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "create_refund": {
       "ai_tool": [
         [
           {
@@ -796,6 +804,28 @@
           {
             "node": "Update Conversation",
             "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "lookup_record": {
+      "ai_tool": [
+        [
+          {
+            "node": "Support Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "request_action": {
+      "ai_tool": [
+        [
+          {
+            "node": "Support Agent",
+            "type": "ai_tool",
             "index": 0
           }
         ]

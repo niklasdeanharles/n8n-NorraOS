@@ -1,7 +1,7 @@
-# Norra OS
+# Norra
 
 AI-gestützte Customer-Support-Plattform. Dieses Verzeichnis ist die Wurzel des
-Norra-OS-Projekts und **unabhängig vom umgebenden n8n-Monorepo**.
+Norra-Projekts und **unabhängig vom umgebenden n8n-Monorepo**.
 
 > Das umgebende Repository ist ein Fork des n8n-Monorepos. `norra/` ist bewusst
 > **nicht** in der Wurzel-`pnpm-workspace.yaml` eingetragen: n8n's Turbo-Build
@@ -114,9 +114,9 @@ Hostinger VPS, self-hosted Community Edition: `https://n8n-fdhh.srv1817599.hstgr
 |---|---|---|---|---|
 | Agent Turn | `agent-turn` | `yTH3YQeR5qdNVxSI` | `POST /webhook/norra/agent-turn` | Zentraler Turn: Config laden, RAG, Streaming |
 | KB Ingest | `kb-ingest` | `Q3XhlP6eet9eqnm0` | `POST /webhook/norra/kb-ingest` | Dokument chunken, einbetten, speichern |
-| Tool: lookup_order | `tool-lookup-order` | `KHHKDV5CoyiDxuCO` | Sub-Workflow | Bestellstatus aus Shopify, read-only |
+| Tool: lookup_record | `tool-lookup-record` | `KHHKDV5CoyiDxuCO` | Sub-Workflow | Datensatz beim Kunden nachschlagen, read-only |
 | Tool: escalate_to_human | `tool-escalate-to-human` | `pw6OzhBSG2oxagNt` | Sub-Workflow | Ticket anlegen, Konversation eskalieren |
-| Tool: create_refund | `tool-create-refund` | `LwyJZr8WFsjd0L9v` | Sub-Workflow | Erstattung zur **Freigabe** einreichen |
+| Tool: request_action | `tool-request-action` | `LwyJZr8WFsjd0L9v` | Sub-Workflow | Folgenreiche Aktion zur **Freigabe** einreichen |
 | Notify Escalation | `notify-escalation` | `zU1x0scrqFmPClmg` | Sub-Workflow | E-Mail an das Support-Team |
 
 ### Ordnung auf der Instanz
@@ -127,10 +127,10 @@ Die Instanz hostet auch fremde Workflows. Die von Norra tragen deshalb Tags:
 |---|---|
 | `norra` | alle sechs |
 | `norra:core` | `agent-turn`, `kb-ingest` |
-| `norra:tool` | `lookup_order`, `escalate_to_human`, `create_refund` |
+| `norra:tool` | `lookup_record`, `escalate_to_human`, `request_action` |
 | `norra:notify` | `notify-escalation` |
 
-Der Export filtert weiterhin über den Namenspräfix `Norra OS`, nicht über Tags —
+Der Export filtert weiterhin über den Namenspräfix `Norra – `, nicht über Tags —
 ein vergessener Tag würde einen Workflow sonst still aus dem Backup fallen lassen.
 
 ### Verdrahtung prüfen
@@ -160,7 +160,7 @@ Entscheidung, keine Vorgabe.
 
 ### Freigaben statt Ausführung
 
-`create_refund` legt zusätzlich zum Ticket eine Zeile in `approvals` an. Das ist
+`request_action` legt zusätzlich zum Ticket eine Zeile in `approvals` an. Das ist
 die eigentliche Sperre: ein Ticket ist eine Notiz, die jemand übersehen kann,
 eine Freigabe bleibt offen, bis ein Admin im Governance-Screen entscheidet. Ein
 Check-Constraint verweigert jede Entscheidung ohne Entscheider.
@@ -205,17 +205,28 @@ Der Aufruf trägt `onError: continueRegularOutput`: eine fehlgeschlagene Mail
 darf die Eskalation nicht scheitern lassen. Das Ticket ist der Vorgang, die Mail
 nur der Hinweis darauf.
 
-### Warum `create_refund` nichts erstattet
+### Warum `request_action` nichts ausführt
 
-Das Tool heißt so, bewegt aber kein Geld: es legt eine Erstattungs-Anfrage als
-Ticket mit hoher Priorität zur menschlichen Freigabe an, und sein Rückgabewert
-sagt dem Agenten ausdrücklich, dass nichts ausgeführt wurde. Grund: ein
-Sprachmodell, das Bestellnummer und Betrag halluziniert, würde sonst echtes Geld
-auszahlen, und eine Fehlauszahlung ist nicht zurückzuholen.
+Das Tool nimmt jede folgenreiche Aktion entgegen — Erstattung, Stornierung,
+Datenänderung — und führt keine davon aus: es legt ein Ticket mit hoher
+Priorität plus eine Zeile in `approvals` an, und sein Rückgabewert sagt dem
+Agenten ausdrücklich, dass nichts ausgeführt wurde. Grund: ein Sprachmodell, das
+eine Vorgangsnummer oder einen Betrag halluziniert, würde sonst realen Schaden
+anrichten, der nicht zurückzuholen ist.
 
-Wenn autonome Erstattungen gewollt sind, gehört an diese Stelle ein
-Shopify-Refund-Node — dann aber mit Betragsobergrenze, Whitelist und
-Idempotenzschlüssel gegen Doppelauszahlung.
+Wenn eine Aktion später autonom laufen soll, gehört sie als eigener Zweig hinter
+die Freigabe — mit Obergrenze, Whitelist und Idempotenzschlüssel gegen
+Doppelausführung, nicht als weiteres Modellfeld.
+
+### Tool-Endpunkte gehören dem Kunden
+
+`lookup_record` ruft keinen fest verdrahteten Dienst auf. Die URL steht pro
+Agent in `agents.tools` als `[{"slug": "lookup_record", "enabled": true,
+"config": {"url": "https://..."}}]` und wird im Agenten-Editor gepflegt; der
+Workflow liest sie zur Laufzeit aus `Load Agent Config`. Die Authentifizierung
+läuft über die n8n-Credential `httpHeaderAuth` — der Endpunkt selbst steht
+damit in der Datenbank, das Geheimnis nicht. Das Formular verlangt `https://`,
+weil der Aufruf Kundenkennungen trägt.
 
 ### Warum die History aus dem Proxy kommt
 
@@ -247,7 +258,7 @@ node scripts/n8n-sync.mjs deploy --dry-run   # was würde auf die Instanz gehen
 
 Drei Eigenschaften, auf die man sich verlassen kann:
 
-1. **Export fasst nur `Norra OS …` an.** Auf der Instanz liegen fremde Workflows
+1. **Export fasst nur `Norra – …` an.** Auf der Instanz liegen fremde Workflows
    (Sales-Team, Jarvis-Template, …). Der Namenspräfix-Filter ist die Grenze;
    ohne ihn würde ein Backup sie ins Repo ziehen.
 2. **Deploy legt nichts an und löscht nichts.** Geschrieben wird ausschließlich

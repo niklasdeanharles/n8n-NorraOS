@@ -22,7 +22,8 @@ create table public.agents (
 
   -- {"allowed_topics": [], "forbidden_topics": [], "refusal_message": null}
   guardrails jsonb not null default '{}'::jsonb check (jsonb_typeof(guardrails) = 'object'),
-  -- [{"slug": "lookup_order", "n8n_workflow_id": "...", "enabled": true}]
+  -- [{"slug": "lookup_record", "enabled": true, "config": {"url": "https://..."}}]
+  -- config is what makes a generic tool concrete for one customer.
   tools jsonb not null default '[]'::jsonb check (jsonb_typeof(tools) = 'array'),
   -- {"on_low_confidence": true, "on_keywords": [...], "target": "email|slack"}
   escalation_rules jsonb not null default '{}'::jsonb check (jsonb_typeof(escalation_rules) = 'object'),

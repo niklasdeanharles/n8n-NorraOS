@@ -1,5 +1,5 @@
 /**
- * Types for the Norra OS schema.
+ * Types for the Norra schema.
  *
  * Hand-written to mirror `norra/supabase/migrations`. Once the project is
  * linked, regenerate instead of editing by hand:
@@ -14,7 +14,7 @@ export type AgentStatus = 'draft' | 'live' | 'archived';
 export type ConversationChannel = 'web' | 'email' | 'whatsapp' | 'voice' | 'slack' | 'api';
 export type ConversationStatus = 'open' | 'pending' | 'escalated' | 'resolved' | 'closed';
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
-export type KbSourceType = 'upload' | 'url' | 'text' | 'shopify';
+export type KbSourceType = 'upload' | 'url' | 'text' | 'api';
 export type KbDocumentStatus = 'pending' | 'processing' | 'ready' | 'failed';
 export type TicketStatus = 'open' | 'pending' | 'solved' | 'closed';
 export type TicketPriority = 'low' | 'normal' | 'high' | 'urgent';

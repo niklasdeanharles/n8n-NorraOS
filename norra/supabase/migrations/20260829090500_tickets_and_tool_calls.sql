@@ -21,7 +21,7 @@ create table public.tickets (
 
   assignee_id uuid references public.users (id) on delete set null,
   tags text[] not null default array[]::text[],
-  -- Ids in external systems, e.g. {"shopify_order_id": "..."}.
+  -- Ids in the customer's own systems, e.g. {"record_id": "...", "system": "crm"}.
   external_ref jsonb not null default '{}'::jsonb check (jsonb_typeof(external_ref) = 'object'),
 
   created_at timestamptz not null default now(),

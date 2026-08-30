@@ -8,10 +8,22 @@ const initial: AgentFormState = { error: null };
 
 /** Tool slugs that exist as n8n sub-workflows. Keep in step with norra/n8n-workflows. */
 const AVAILABLE_TOOLS = [
-  { slug: 'lookup_order', label: 'lookup_order', hint: 'Bestellstatus aus Shopify, read-only' },
-  { slug: 'escalate_to_human', label: 'escalate_to_human', hint: 'Ticket anlegen und an einen Menschen übergeben' },
-  { slug: 'create_refund', label: 'create_refund', hint: 'Erstattung zur Freigabe einreichen — zahlt nichts aus' },
-];
+  {
+    slug: 'lookup_record',
+    hint: 'Datensatz im System des Kunden nachschlagen, read-only',
+    endpoint: 'Read-only-Endpunkt, den das Tool mit ?query=… aufruft',
+  },
+  {
+    slug: 'escalate_to_human',
+    hint: 'Ticket anlegen und an einen Menschen übergeben',
+    endpoint: null,
+  },
+  {
+    slug: 'request_action',
+    hint: 'Folgenreiche Aktion zur Freigabe einreichen — führt nichts aus',
+    endpoint: null,
+  },
+] as const;
 
 type Guardrails = { allowed_topics?: string[]; forbidden_topics?: string[]; refusal_message?: string | null };
 type EscalationRules = { on_keywords?: string[]; on_low_confidence?: boolean };
@@ -25,13 +37,14 @@ export function AgentForm({ agent }: { agent: AgentRow }) {
 
   const guardrails = asObject<Guardrails>(agent.guardrails);
   const escalation = asObject<EscalationRules>(agent.escalation_rules);
-  const enabled = new Set(
-    Array.isArray(agent.tools)
-      ? agent.tools
-          .map((t) => (typeof t === 'object' && t !== null && !Array.isArray(t) ? (t as Record<string, unknown>).slug : null))
-          .filter((slug): slug is string => typeof slug === 'string')
-      : [],
-  );
+  // The stored shape is [{ slug, enabled, config }] — the same rows agent-turn
+  // reads per turn. Keep slug -> config here so the form can round-trip it.
+  const configured = new Map<string, { url?: string }>();
+  for (const entry of Array.isArray(agent.tools) ? agent.tools : []) {
+    const tool = asObject<{ slug?: unknown; enabled?: unknown; config?: unknown }>(entry);
+    if (typeof tool.slug !== 'string' || tool.enabled === false) continue;
+    configured.set(tool.slug, asObject<{ url?: string }>(tool.config));
+  }
 
   return (
     <form action={action} className="stack">
@@ -103,19 +116,32 @@ export function AgentForm({ agent }: { agent: AgentRow }) {
         <div className="card-head"><h3>Tools</h3></div>
         <div className="card-body stack" style={{ gap: 10 }}>
           {AVAILABLE_TOOLS.map((tool) => (
-            <label key={tool.slug} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 9, fontWeight: 400 }}>
-              <input
-                type="checkbox"
-                name="tools"
-                value={tool.slug}
-                defaultChecked={enabled.has(tool.slug)}
-                style={{ width: 'auto', marginTop: 3 }}
-              />
-              <span>
-                <code style={{ fontWeight: 550 }}>{tool.label}</code>
-                <span className="field-hint" style={{ display: 'block' }}>{tool.hint}</span>
-              </span>
-            </label>
+            <div key={tool.slug} className="tool-row">
+              <label style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 9, fontWeight: 400 }}>
+                <input
+                  type="checkbox"
+                  name="tools"
+                  value={tool.slug}
+                  defaultChecked={configured.has(tool.slug)}
+                  style={{ width: 'auto', marginTop: 3 }}
+                />
+                <span>
+                  <code style={{ fontWeight: 550 }}>{tool.slug}</code>
+                  <span className="field-hint" style={{ display: 'block' }}>{tool.hint}</span>
+                </span>
+              </label>
+              {tool.endpoint ? (
+                <label style={{ marginLeft: 26 }}>
+                  <input
+                    name={`toolUrl:${tool.slug}`}
+                    type="url"
+                    placeholder="https://api.example.com/records"
+                    defaultValue={configured.get(tool.slug)?.url ?? ''}
+                  />
+                  <span className="field-hint">{tool.endpoint}</span>
+                </label>
+              ) : null}
+            </div>
           ))}
         </div>
       </div>
@@ -144,7 +170,10 @@ export function AgentForm({ agent }: { agent: AgentRow }) {
       {state.ok ? <p className="notice notice-ok">{state.ok}</p> : null}
 
       <div className="row">
-        <button type="submit" disabled={pending}>{pending ? 'Speichert…' : 'Speichern'}</button>
+        <button type="submit" disabled={pending}>
+          {pending ? <span className="spinner" aria-hidden="true" /> : null}
+          {pending ? 'Speichert…' : 'Speichern'}
+        </button>
       </div>
     </form>
   );

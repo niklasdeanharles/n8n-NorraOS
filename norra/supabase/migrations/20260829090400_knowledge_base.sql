@@ -8,7 +8,8 @@
 -- them. That keeps the stock node usable while we still get referential
 -- integrity, cascade deletes and an indexable RLS predicate.
 
-create type public.kb_source_type as enum ('upload', 'url', 'text', 'shopify');
+-- 'api' covers any connected system a customer pulls documents from.
+create type public.kb_source_type as enum ('upload', 'url', 'text', 'api');
 create type public.kb_document_status as enum ('pending', 'processing', 'ready', 'failed');
 
 create table public.knowledge_base_documents (

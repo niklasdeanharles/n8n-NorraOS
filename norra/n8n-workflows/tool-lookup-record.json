@@ -1,8 +1,8 @@
 {
-  "name": "Norra OS – Tool: lookup_order",
+  "name": "Norra – Tool: lookup_record",
   "nodes": [
     {
-      "name": "Order Lookup Requested",
+      "name": "Lookup Requested",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.2,
       "position": [
@@ -26,11 +26,15 @@
               "type": "string"
             },
             {
-              "name": "order_number",
+              "name": "endpoint",
               "type": "string"
             },
             {
-              "name": "email",
+              "name": "query",
+              "type": "string"
+            },
+            {
+              "name": "record_type",
               "type": "string"
             }
           ]
@@ -38,7 +42,7 @@
       }
     },
     {
-      "name": "Find Order",
+      "name": "Call Configured Endpoint",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
@@ -47,28 +51,16 @@
       ],
       "parameters": {
         "method": "GET",
-        "url": "",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "shopifyAccessTokenApi",
+        "url": "={{ $json.endpoint }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "sendQuery": true,
         "specifyQuery": "keypair",
         "queryParameters": {
           "parameters": [
             {
-              "name": "name",
-              "value": "={{ $json.order_number }}"
-            },
-            {
-              "name": "status",
-              "value": "any"
-            },
-            {
-              "name": "limit",
-              "value": "5"
-            },
-            {
-              "name": "fields",
-              "value": "id,name,email,created_at,financial_status,fulfillment_status,total_price,currency"
+              "name": "q",
+              "value": "={{ $json.query }}"
             }
           ]
         },
@@ -82,7 +74,7 @@
           "timeout": 15000
         }
       },
-      "notes": "URL eintragen: Shopify Admin API Orders-Endpoint, z.B. https://klettpro.myshopify.com/admin/api/2024-10/orders.json"
+      "onError": "continueRegularOutput"
     },
     {
       "name": "Log Tool Call",
@@ -101,19 +93,19 @@
           "fieldValues": [
             {
               "fieldId": "organization_id",
-              "fieldValue": "={{ $(\"Order Lookup Requested\").item.json.organization_id }}"
+              "fieldValue": "={{ $('Lookup Requested').item.json.organization_id }}"
             },
             {
               "fieldId": "conversation_id",
-              "fieldValue": "={{ $(\"Order Lookup Requested\").item.json.conversation_id }}"
+              "fieldValue": "={{ $('Lookup Requested').item.json.conversation_id }}"
             },
             {
               "fieldId": "agent_id",
-              "fieldValue": "={{ $(\"Order Lookup Requested\").item.json.agent_id }}"
+              "fieldValue": "={{ $('Lookup Requested').item.json.agent_id }}"
             },
             {
               "fieldId": "tool_name",
-              "fieldValue": "lookup_order"
+              "fieldValue": "lookup_record"
             },
             {
               "fieldId": "n8n_workflow_id",
@@ -125,15 +117,15 @@
             },
             {
               "fieldId": "input",
-              "fieldValue": "={{ JSON.stringify($(\"Order Lookup Requested\").item.json) }}"
+              "fieldValue": "={{ JSON.stringify($('Lookup Requested').item.json) }}"
             },
             {
               "fieldId": "output",
-              "fieldValue": "={{ JSON.stringify(($(\"Find Order\").item.json.orders ?? [])[0] ?? null) }}"
+              "fieldValue": "={{ JSON.stringify($('Call Configured Endpoint').item.json).slice(0, 4000) }}"
             },
             {
               "fieldId": "status",
-              "fieldValue": "={{ ($(\"Find Order\").item.json.orders ?? []).length > 0 ? \"success\" : \"error\" }}"
+              "fieldValue": "={{ $('Call Configured Endpoint').item.json.error ? 'error' : 'success' }}"
             }
           ]
         }
@@ -155,19 +147,19 @@
             {
               "id": "found",
               "name": "found",
-              "value": "={{ ($(\"Find Order\").item.json.orders ?? []).length > 0 }}",
+              "value": "={{ !$('Call Configured Endpoint').item.json.error && Object.keys($('Call Configured Endpoint').item.json ?? {}).length > 0 }}",
               "type": "boolean"
             },
             {
-              "id": "order",
-              "name": "order",
-              "value": "={{ ($(\"Find Order\").item.json.orders ?? [])[0] ?? null }}",
+              "id": "record",
+              "name": "record",
+              "value": "={{ $('Call Configured Endpoint').item.json }}",
               "type": "object"
             },
             {
               "id": "result",
               "name": "result",
-              "value": "={{ ($(\"Find Order\").item.json.orders ?? []).length === 0 ? \"Zu dieser Bestellnummer wurde nichts gefunden. Bitte Bestellnummer und E-Mail pruefen.\" : \"Bestellung \" + $(\"Find Order\").item.json.orders[0].name + \": Zahlung \" + $(\"Find Order\").item.json.orders[0].financial_status + \", Versand \" + ($(\"Find Order\").item.json.orders[0].fulfillment_status ?? \"offen\") + \", Summe \" + $(\"Find Order\").item.json.orders[0].total_price + \" \" + $(\"Find Order\").item.json.orders[0].currency + \", bestellt am \" + $(\"Find Order\").item.json.orders[0].created_at }}",
+              "value": "={{ $('Call Configured Endpoint').item.json.error ? 'Der Datensatz konnte nicht abgerufen werden. Sage das offen und biete die Uebergabe an einen Menschen an.' : JSON.stringify($('Call Configured Endpoint').item.json).slice(0, 2000) }}",
               "type": "string"
             }
           ]
@@ -183,7 +175,7 @@
         -50
       ],
       "parameters": {
-        "content": "## lookup_order\nLiest den Bestellstatus read-only aus Shopify. neverError ist gesetzt, damit eine 404 als Datensatz zurueckkommt statt den Agenten-Turn abzubrechen -- der Agent soll \"nicht gefunden\" sagen koennen, nicht abstuerzen.\n\nReihenfolge ist Absicht: Return To Agent steht zuletzt, weil ein Sub-Workflow die Ausgabe seines letzten Nodes an den Aufrufer zurueckgibt. Stuende das Logging hinten, bekaeme der Agent Protokolldaten statt einer Antwort.\n\nDie Shop-URL im Find-Order-Node muss einmal eingetragen werden.",
+        "content": "## lookup_record – ein Tool, kein Konnektor\nDer Endpunkt kommt pro Turn aus der tools-Konfiguration des Agenten, nicht aus diesem Workflow. Damit dient derselbe Workflow jedem Kunden und jedem System: CRM, Auftragsverwaltung, Ticketsystem.\n\nneverError ist gesetzt, damit eine 404 als Datensatz zurueckkommt statt den Agenten-Turn abzubrechen -- der Agent soll \"nicht gefunden\" sagen koennen, nicht abstuerzen.\n\nReihenfolge ist Absicht: Return To Agent steht zuletzt, weil ein Sub-Workflow die Ausgabe seines letzten Nodes zurueckgibt.",
         "color": 4,
         "width": 740,
         "height": 260
@@ -191,18 +183,18 @@
     }
   ],
   "connections": {
-    "Order Lookup Requested": {
+    "Lookup Requested": {
       "main": [
         [
           {
-            "node": "Find Order",
+            "node": "Call Configured Endpoint",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Find Order": {
+    "Call Configured Endpoint": {
       "main": [
         [
           {
@@ -231,7 +223,7 @@
   },
   "norra": {
     "workflowId": "KHHKDV5CoyiDxuCO",
-    "slug": "tool-lookup-order"
+    "slug": "tool-lookup-record"
   },
   "tags": [
     "norra",

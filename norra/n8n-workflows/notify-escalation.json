@@ -1,5 +1,5 @@
 {
-  "name": "Norra OS – Notify Escalation",
+  "name": "Norra – Notify Escalation",
   "nodes": [
     {
       "name": "Escalation To Notify",

@@ -22,7 +22,7 @@ create table public.conversations (
 
   end_user_name text,
   end_user_email extensions.citext,
-  -- Identity in an external system, e.g. a Shopify customer id.
+  -- Identity in the customer's own system, e.g. a CRM contact id.
   end_user_external_id text,
 
   status public.conversation_status not null default 'open',

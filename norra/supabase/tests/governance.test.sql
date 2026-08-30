@@ -30,7 +30,7 @@ begin
 
   -- A critical action parks here instead of executing.
   insert into public.approvals (organization_id, conversation_id, agent_id, tool_name, summary, amount, currency)
-  values (v_org, v_conv, v_agent, 'create_refund', 'Rueckerstattung 89,90 EUR fuer #1233', 89.90, 'EUR')
+  values (v_org, v_conv, v_agent, 'refund', 'Rueckerstattung 89,90 EUR fuer Vorgang A-1233', 89.90, 'EUR')
   returning id into v_approval;
 
   -- A decision must name its decider. Approving without one is a broken trail.

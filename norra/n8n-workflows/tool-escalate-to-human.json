@@ -1,5 +1,5 @@
 {
-  "name": "Norra OS – Tool: escalate_to_human",
+  "name": "Norra – Tool: escalate_to_human",
   "nodes": [
     {
       "name": "Escalation Requested",
@@ -251,7 +251,7 @@
           "__rl": true,
           "mode": "list",
           "value": "zU1x0scrqFmPClmg",
-          "cachedResultName": "Norra OS – Notify Escalation"
+          "cachedResultName": "Norra – Notify Escalation"
         },
         "workflowInputs": {
           "mappingMode": "defineBelow",

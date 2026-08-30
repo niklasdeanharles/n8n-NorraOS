@@ -1,8 +1,8 @@
 {
-  "name": "Norra OS – Tool: create_refund",
+  "name": "Norra – Tool: request_action",
   "nodes": [
     {
-      "name": "Refund Requested",
+      "name": "Action Requested",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.2,
       "position": [
@@ -26,7 +26,19 @@
               "type": "string"
             },
             {
-              "name": "order_reference",
+              "name": "action",
+              "type": "string"
+            },
+            {
+              "name": "subject",
+              "type": "string"
+            },
+            {
+              "name": "reason",
+              "type": "string"
+            },
+            {
+              "name": "record_reference",
               "type": "string"
             },
             {
@@ -36,17 +48,13 @@
             {
               "name": "currency",
               "type": "string"
-            },
-            {
-              "name": "reason",
-              "type": "string"
             }
           ]
         }
       }
     },
     {
-      "name": "File Refund Request",
+      "name": "File Ticket",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
@@ -74,7 +82,7 @@
             },
             {
               "fieldId": "subject",
-              "fieldValue": "=Rueckerstattung angefragt: {{ $json.order_reference }} ueber {{ $json.amount }} {{ $json.currency }}"
+              "fieldValue": "={{ $json.subject }}"
             },
             {
               "fieldId": "description",
@@ -94,7 +102,7 @@
             },
             {
               "fieldId": "external_ref",
-              "fieldValue": "={{ JSON.stringify({ kind: \"refund_request\", order_reference: $json.order_reference, amount: $json.amount, currency: $json.currency }) }}"
+              "fieldValue": "={{ JSON.stringify({ kind: $json.action, record_reference: $json.record_reference, amount: $json.amount, currency: $json.currency }) }}"
             }
           ]
         }
@@ -119,12 +127,12 @@
             {
               "keyName": "id",
               "condition": "eq",
-              "keyValue": "={{ $(\"Refund Requested\").item.json.conversation_id }}"
+              "keyValue": "={{ $('Action Requested').item.json.conversation_id }}"
             },
             {
               "keyName": "organization_id",
               "condition": "eq",
-              "keyValue": "={{ $(\"Refund Requested\").item.json.organization_id }}"
+              "keyValue": "={{ $('Action Requested').item.json.organization_id }}"
             }
           ]
         },
@@ -156,19 +164,19 @@
           "fieldValues": [
             {
               "fieldId": "organization_id",
-              "fieldValue": "={{ $(\"Refund Requested\").item.json.organization_id }}"
+              "fieldValue": "={{ $('Action Requested').item.json.organization_id }}"
             },
             {
               "fieldId": "conversation_id",
-              "fieldValue": "={{ $(\"Refund Requested\").item.json.conversation_id }}"
+              "fieldValue": "={{ $('Action Requested').item.json.conversation_id }}"
             },
             {
               "fieldId": "agent_id",
-              "fieldValue": "={{ $(\"Refund Requested\").item.json.agent_id }}"
+              "fieldValue": "={{ $('Action Requested').item.json.agent_id }}"
             },
             {
               "fieldId": "tool_name",
-              "fieldValue": "create_refund"
+              "fieldValue": "request_action"
             },
             {
               "fieldId": "n8n_workflow_id",
@@ -180,11 +188,11 @@
             },
             {
               "fieldId": "input",
-              "fieldValue": "={{ JSON.stringify($(\"Refund Requested\").item.json) }}"
+              "fieldValue": "={{ JSON.stringify($('Action Requested').item.json) }}"
             },
             {
               "fieldId": "output",
-              "fieldValue": "={{ JSON.stringify({ ticket_number: $(\"File Refund Request\").item.json.number, executed: false, awaiting_human_approval: true }) }}"
+              "fieldValue": "={{ JSON.stringify({ ticket_number: $('File Ticket').item.json.number, approval_id: $('File Approval Request').item.json.id, executed: false }) }}"
             },
             {
               "fieldId": "status",
@@ -222,13 +230,13 @@
             {
               "id": "ticket-number",
               "name": "ticket_number",
-              "value": "={{ $('File Refund Request').item.json.number }}",
+              "value": "={{ $('File Ticket').item.json.number }}",
               "type": "string"
             },
             {
               "id": "result",
               "name": "result",
-              "value": "=Die Rueckerstattung wurde NICHT ausgefuehrt. Sie liegt als Ticket #{{ $('File Refund Request').item.json.number }} zur Freigabe bei einem Mitarbeiter. Sage dem Kunden zu, dass die Erstattung geprueft wird und er Bescheid bekommt. Bestaetige keine erfolgte Erstattung und nenne keinen Auszahlungstermin.",
+              "value": "=Die Aktion wurde NICHT ausgefuehrt. Sie liegt als Ticket #{{ $('File Ticket').item.json.number }} zur Freigabe bei einem Mitarbeiter. Sage dem Kunden zu, dass ein Mitarbeiter prueft und sich meldet. Bestaetige niemals, dass die Aktion bereits erfolgt ist, und nenne keinen Termin.",
               "type": "string"
             }
           ]
@@ -244,7 +252,7 @@
         -50
       ],
       "parameters": {
-        "content": "## create_refund fuehrt bewusst KEINE Erstattung aus\nDas Tool legt eine Erstattungs-Anfrage zur menschlichen Freigabe an, statt Geld zu bewegen. Ein Sprachmodell, das eine Bestellnummer und einen Betrag halluziniert, wuerde sonst echtes Geld auszahlen -- und der Schaden ist nicht rueckholbar.\n\nDie Sperre ist die Zeile in approvals, nicht das Ticket: ein Ticket ist eine Notiz, die jemand uebersehen kann, eine Freigabe bleibt offen, bis ein Admin entscheidet. Sie erscheint im Governance-Screen.\n\nDer Rueckgabewert sagt dem Agenten ausdruecklich, dass nichts ausgefuehrt wurde.",
+        "content": "## request_action fuehrt bewusst NICHTS aus\nJede folgenreiche Aktion -- Erstattung, Stornierung, Datenaenderung -- wird hier zur menschlichen Freigabe eingereicht, statt ausgefuehrt. Ein Sprachmodell, das eine Referenz und einen Betrag halluziniert, wuerde sonst echten Schaden anrichten, der nicht rueckholbar ist.\n\nDie Sperre ist die Zeile in approvals, nicht das Ticket: ein Ticket ist eine Notiz, die jemand uebersehen kann, eine Freigabe bleibt offen, bis ein Admin entscheidet.\n\nDer Rueckgabewert sagt dem Agenten ausdruecklich, dass nichts ausgefuehrt wurde.",
         "color": 3,
         "width": 740,
         "height": 340
@@ -268,39 +276,39 @@
           "fieldValues": [
             {
               "fieldId": "organization_id",
-              "fieldValue": "={{ $('Refund Requested').item.json.organization_id }}"
+              "fieldValue": "={{ $('Action Requested').item.json.organization_id }}"
             },
             {
               "fieldId": "conversation_id",
-              "fieldValue": "={{ $('Refund Requested').item.json.conversation_id }}"
+              "fieldValue": "={{ $('Action Requested').item.json.conversation_id }}"
             },
             {
               "fieldId": "agent_id",
-              "fieldValue": "={{ $('Refund Requested').item.json.agent_id }}"
+              "fieldValue": "={{ $('Action Requested').item.json.agent_id }}"
             },
             {
               "fieldId": "ticket_id",
-              "fieldValue": "={{ $('File Refund Request').item.json.id }}"
+              "fieldValue": "={{ $('File Ticket').item.json.id }}"
             },
             {
               "fieldId": "tool_name",
-              "fieldValue": "create_refund"
+              "fieldValue": "={{ $('Action Requested').item.json.action }}"
             },
             {
               "fieldId": "summary",
-              "fieldValue": "=Rueckerstattung {{ $('Refund Requested').item.json.amount }} {{ $('Refund Requested').item.json.currency }} fuer {{ $('Refund Requested').item.json.order_reference }}"
+              "fieldValue": "={{ $('Action Requested').item.json.subject }}"
             },
             {
               "fieldId": "amount",
-              "fieldValue": "={{ $('Refund Requested').item.json.amount }}"
+              "fieldValue": "={{ $('Action Requested').item.json.amount || null }}"
             },
             {
               "fieldId": "currency",
-              "fieldValue": "={{ $('Refund Requested').item.json.currency }}"
+              "fieldValue": "={{ $('Action Requested').item.json.currency || null }}"
             },
             {
               "fieldId": "payload",
-              "fieldValue": "={{ JSON.stringify({ order_reference: $('Refund Requested').item.json.order_reference, reason: $('Refund Requested').item.json.reason, ticket_number: $('File Refund Request').item.json.number }) }}"
+              "fieldValue": "={{ JSON.stringify({ action: $('Action Requested').item.json.action, record_reference: $('Action Requested').item.json.record_reference, reason: $('Action Requested').item.json.reason, ticket_number: $('File Ticket').item.json.number }) }}"
             },
             {
               "fieldId": "status",
@@ -312,18 +320,18 @@
     }
   ],
   "connections": {
-    "Refund Requested": {
+    "Action Requested": {
       "main": [
         [
           {
-            "node": "File Refund Request",
+            "node": "File Ticket",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "File Refund Request": {
+    "File Ticket": {
       "main": [
         [
           {
@@ -345,22 +353,22 @@
         ]
       ]
     },
-    "Log Tool Call": {
+    "File Approval Request": {
       "main": [
         [
           {
-            "node": "Return To Agent",
+            "node": "Log Tool Call",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "File Approval Request": {
+    "Log Tool Call": {
       "main": [
         [
           {
-            "node": "Log Tool Call",
+            "node": "Return To Agent",
             "type": "main",
             "index": 0
           }
@@ -374,7 +382,7 @@
   },
   "norra": {
     "workflowId": "LwyJZr8WFsjd0L9v",
-    "slug": "tool-create-refund"
+    "slug": "tool-request-action"
   },
   "tags": [
     "norra",

@@ -16,6 +16,9 @@ function toList(value: FormDataEntryValue | null): string[] {
     .filter(Boolean);
 }
 
+/** Tools that need a per-organization endpoint before they do anything. */
+const TOOLS_WITH_ENDPOINT = new Set(['lookup_record']);
+
 const agentSchema = z.object({
   id: z.string().uuid(),
   name: z.string().trim().min(1, 'Name fehlt.').max(200),
@@ -49,6 +52,22 @@ export async function saveAgent(_prev: AgentFormState, formData: FormData): Prom
 
   const enabledTools = formData.getAll('tools').filter((t): t is string => typeof t === 'string');
 
+  // `lookup_record` calls a customer endpoint; without one the sub-workflow has
+  // nothing to hit, so refuse to store a tool that cannot work. https only —
+  // the request carries customer identifiers.
+  const toolRows: Array<{ slug: string; enabled: true; config: Record<string, string> }> = [];
+  for (const slug of enabledTools) {
+    const config: Record<string, string> = {};
+    if (TOOLS_WITH_ENDPOINT.has(slug)) {
+      const raw = formData.get(`toolUrl:${slug}`);
+      const url = typeof raw === 'string' ? raw.trim() : '';
+      if (!url) return { error: `${slug}: Endpunkt fehlt.` };
+      if (!/^https:\/\//.test(url)) return { error: `${slug}: Endpunkt muss mit https:// beginnen.` };
+      config.url = url;
+    }
+    toolRows.push({ slug, enabled: true, config });
+  }
+
   const supabase = await createClient();
   const actor = await currentActor(supabase);
   if (!actor) return { error: 'Nicht angemeldet.' };
@@ -74,7 +93,7 @@ export async function saveAgent(_prev: AgentFormState, formData: FormData): Prom
         forbidden_topics: toList(formData.get('forbiddenTopics')),
         refusal_message: parsed.data.refusalMessage || null,
       },
-      tools: enabledTools.map((slug) => ({ slug, enabled: true })),
+      tools: toolRows,
       escalation_rules: {
         on_keywords: toList(formData.get('escalationKeywords')),
         on_low_confidence: formData.get('escalateOnLowConfidence') === 'on',
