@@ -3,8 +3,16 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { clientEnv } from '@/lib/env';
 import type { Database } from '@/types/database';
 
-/** Routes reachable without a session. Everything else requires one. */
-const PUBLIC_PATHS = ['/login', '/signup', '/auth', '/api/agent-turn', '/api/feedback'];
+/**
+ * Routes reachable without a session. Everything else requires one.
+ *
+ * The voice webhooks belong here and it is not a relaxation: a caller is not a
+ * Supabase user and a telephony provider carries no cookie. Redirecting them to
+ * the login page would answer every incoming call with HTML. They authenticate
+ * by signature instead, which every one of those routes checks before it does
+ * anything -- see lib/voice/session.ts.
+ */
+const PUBLIC_PATHS = ['/login', '/signup', '/auth', '/api/agent-turn', '/api/feedback', '/api/voice'];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));

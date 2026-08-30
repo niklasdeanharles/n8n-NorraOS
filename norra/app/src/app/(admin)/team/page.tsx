@@ -30,15 +30,12 @@ export default async function TeamPage() {
 
   const [membersResult, orgResult] = await Promise.all([
     supabase.from('users').select('id, full_name, email, role, created_at').order('created_at'),
-    supabase.from('organizations').select('id, name, slug, settings').single(),
+    supabase.from('organizations').select('id, name, slug, escalation_email').single(),
   ]);
 
   const members = membersResult.data ?? [];
   const isAdmin = actor?.role === 'admin';
   const org = orgResult.data;
-  const settings = (typeof org?.settings === 'object' && org.settings !== null && !Array.isArray(org.settings)
-    ? org.settings
-    : {}) as { escalation_email?: string };
 
   return (
     <>
@@ -127,8 +124,13 @@ export default async function TeamPage() {
             <div className="spread"><span className="muted">Slug</span><code>{org?.slug ?? '—'}</code></div>
             <div className="spread">
               <span className="muted">Eskalations-E-Mail</span>
-              <span>{settings.escalation_email ?? <span className="muted">nicht gesetzt</span>}</span>
+              <span>
+                {org?.escalation_email ?? <span className="muted">nicht gesetzt</span>}
+              </span>
             </div>
+            <p className="tiny muted" style={{ margin: '4px 0 0' }}>
+              Ändern unter <a href="/settings">Einstellungen</a>.
+            </p>
           </div>
         </div>
       </div>

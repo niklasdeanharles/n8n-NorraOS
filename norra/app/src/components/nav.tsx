@@ -16,6 +16,7 @@ const SECTIONS: Array<{ label: string; items: Array<{ href: string; icon: string
     label: 'Aufbau',
     items: [
       { href: '/agents', icon: '◇', text: 'Agenten' },
+      { href: '/phone', icon: '☏', text: 'Telefon' },
       { href: '/knowledge', icon: '▤', text: 'Wissen' },
     ],
   },
@@ -24,6 +25,7 @@ const SECTIONS: Array<{ label: string; items: Array<{ href: string; icon: string
     items: [
       { href: '/governance', icon: '◈', text: 'Governance' },
       { href: '/team', icon: '◎', text: 'Team' },
+      { href: '/settings', icon: '⚙', text: 'Einstellungen' },
     ],
   },
 ];

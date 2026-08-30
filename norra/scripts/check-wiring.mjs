@@ -103,6 +103,7 @@ async function checkPayloadFields(workflows) {
   const routes = [
     { file: 'app/src/app/api/agent-turn/route.ts', webhook: 'norra/agent-turn' },
     { file: 'app/src/app/api/kb-ingest/route.ts', webhook: 'norra/kb-ingest' },
+    { file: 'app/src/app/api/voice/turn/route.ts', webhook: 'norra/voice-turn' },
   ];
 
   for (const route of routes) {
@@ -197,6 +198,75 @@ function checkColumns(workflows, schema) {
   notes.push(`${checked} column references checked`);
 }
 
+/**
+ * 4. Every column the app itself names must exist.
+ *
+ * The workflows were checked from the start; the app was not, and it names just
+ * as many columns in `select` lists and `eq` filters. A renamed column there
+ * fails at runtime with an empty result rather than an error, which is worse:
+ * a phone number that silently stops resolving answers no calls and reports
+ * nothing.
+ */
+async function checkAppColumns(schema) {
+  const files = [
+    'app/src/app/api/voice/incoming/route.ts',
+    'app/src/app/api/voice/turn/route.ts',
+    'app/src/app/api/voice/status/route.ts',
+    'app/src/app/api/voice/recording/route.ts',
+  ];
+  let checked = 0;
+
+  for (const file of files) {
+    let source;
+    try {
+      source = await readFile(path.join(ROOT, file), 'utf8');
+    } catch {
+      problems.push(`${file} is missing`);
+      continue;
+    }
+
+    // Walk the chained calls in order, so each select and filter is attributed
+    // to the `.from(...)` that precedes it.
+    let table = null;
+    const step = /\.from\('(\w+)'\)|\.select\((`[^`]*`|'[^']*')\)|\.eq\('(\w+)'/g;
+
+    for (const match of source.matchAll(step)) {
+      if (match[1]) {
+        table = match[1];
+        if (!schema.has(table)) problems.push(`${file}: table '${table}' is not in the schema`);
+        continue;
+      }
+      const columns = table ? schema.get(table) : null;
+      if (!columns) continue;
+
+      // The quote characters are part of the capture, so strip them before
+      // splitting. Filtering out whatever fails to parse is what made an
+      // earlier version of this check pass on a column that did not exist:
+      // the last name in a list always carried the closing quote and was
+      // silently dropped. Anything unparseable is now a problem, not a skip.
+      const named = match[2]
+        ? match[2]
+            .slice(1, -1)
+            .split(',')
+            .map((entry) => entry.trim())
+            .filter(Boolean)
+        : [match[3]];
+
+      for (const column of named) {
+        checked += 1;
+        if (!/^\w+$/.test(column)) {
+          problems.push(`${file}: could not read the column name '${column}' on ${table}`);
+          continue;
+        }
+        if (!columns.has(column)) {
+          problems.push(`${file}: ${table}.${column} is not in the schema`);
+        }
+      }
+    }
+  }
+  notes.push(`${checked} app column references checked`);
+}
+
 const [schema, workflows, clientSource] = await Promise.all([
   readSchema(),
   readWorkflows(),
@@ -206,6 +276,7 @@ const [schema, workflows, clientSource] = await Promise.all([
 checkWebhookPaths(workflows, clientSource);
 await checkPayloadFields(workflows);
 checkColumns(workflows, schema);
+await checkAppColumns(schema);
 
 console.log(`Schema: ${schema.size} tables, ${[...schema.values()].reduce((n, c) => n + c.size, 0)} columns`);
 console.log(`Workflows: ${workflows.length}`);

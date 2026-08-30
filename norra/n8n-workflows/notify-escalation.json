@@ -86,7 +86,7 @@
           },
           "conditions": [
             {
-              "leftValue": "={{ $json.settings?.escalation_email }}",
+              "leftValue": "={{ $json.escalation_email }}",
               "rightValue": "",
               "operator": {
                 "type": "string",
@@ -110,7 +110,7 @@
       "parameters": {
         "resource": "message",
         "operation": "send",
-        "sendTo": "={{ $(\"Load Org Settings\").item.json.settings.escalation_email }}",
+        "sendTo": "={{ $(\"Load Org Settings\").item.json.escalation_email }}",
         "subject": "=[Norra {{ $(\"Escalation To Notify\").item.json.priority }}] Ticket #{{ $(\"Escalation To Notify\").item.json.ticket_number }}: {{ $(\"Escalation To Notify\").item.json.subject }}",
         "emailType": "html",
         "message": "=<p>Der Agent hat eine Konversation an das Support-Team uebergeben.</p><p><strong>Ticket:</strong> #{{ $(\"Escalation To Notify\").item.json.ticket_number }}<br><strong>Prioritaet:</strong> {{ $(\"Escalation To Notify\").item.json.priority }}<br><strong>Betreff:</strong> {{ $(\"Escalation To Notify\").item.json.subject }}</p><p><strong>Zusammenfassung des Agenten:</strong><br>{{ $(\"Escalation To Notify\").item.json.summary }}</p><p>Konversation: <code>{{ $(\"Escalation To Notify\").item.json.conversation_id }}</code></p>",
@@ -141,7 +141,7 @@
             {
               "id": "recipient",
               "name": "recipient",
-              "value": "={{ $(\"Load Org Settings\").item.json.settings.escalation_email }}",
+              "value": "={{ $(\"Load Org Settings\").item.json.escalation_email }}",
               "type": "string"
             }
           ]
@@ -170,7 +170,7 @@
             {
               "id": "reason",
               "name": "reason",
-              "value": "Die Organisation hat keine escalation_email in settings hinterlegt.",
+              "value": "Die Organisation hat keine escalation_email hinterlegt.",
               "type": "string"
             }
           ]
@@ -186,7 +186,7 @@
         -50
       ],
       "parameters": {
-        "content": "## Empfaenger ist Konfiguration, kein Code\nDie Adresse kommt aus organizations.settings.escalation_email, nicht aus diesem Workflow. Jede Organisation benachrichtigt damit ihr eigenes Team, ohne dass jemand den Workflow anfasst.\n\nIst keine Adresse hinterlegt, endet der Lauf sauber ueber Return Skipped statt zu scheitern -- das Ticket ist da, nur die Mail nicht.",
+        "content": "## Empfaenger ist Konfiguration, kein Code\nDie Adresse kommt aus der Spalte organizations.escalation_email, nicht aus diesem Workflow. Jede Organisation benachrichtigt damit ihr eigenes Team, ohne dass jemand den Workflow anfasst.\n\nIst keine Adresse hinterlegt, endet der Lauf sauber ueber Return Skipped statt zu scheitern -- das Ticket ist da, nur die Mail nicht.",
         "color": 4,
         "width": 740,
         "height": 240

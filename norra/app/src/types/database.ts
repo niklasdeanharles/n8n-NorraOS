@@ -23,6 +23,12 @@ export type ToolCallStatus = 'pending' | 'success' | 'error';
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'expired';
 export type AuditAction = 'create' | 'update' | 'delete' | 'approve' | 'reject' | 'takeover' | 'release';
 export type TestRunStatus = 'queued' | 'running' | 'passed' | 'failed' | 'error';
+export type TelephonyProvider = 'twilio';
+export type PhoneNumberStatus = 'unconfigured' | 'active' | 'paused';
+export type AfterHoursBehavior = 'agent' | 'voicemail' | 'transfer' | 'reject';
+export type CallStatus =
+  | 'ringing' | 'in_progress' | 'completed' | 'failed' | 'no_answer' | 'busy' | 'transferred' | 'voicemail';
+export type CallDirection = 'inbound' | 'outbound';
 
 /** Keys whose column accepts NULL. Postgres lets those be omitted on insert. */
 type NullableKeys<Row> = { [K in keyof Row]-?: null extends Row[K] ? K : never }[keyof Row];
@@ -39,6 +45,64 @@ export type OrganizationRow = {
   name: string;
   slug: string;
   settings: Json;
+  escalation_email: string | null;
+  timezone: string;
+  locale: string;
+  retention_days: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Opening hours per weekday, local to the number's timezone. A day with no
+ * entry is closed; `[["08:00", "12:00"], ["13:00", "17:00"]]` is a lunch break.
+ */
+export type BusinessHours = Partial<Record<'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun', Array<[string, string]>>>;
+
+export type PhoneNumberRow = {
+  id: string;
+  organization_id: string;
+  e164: string;
+  label: string | null;
+  provider: TelephonyProvider;
+  provider_sid: string | null;
+  agent_id: string | null;
+  greeting: string;
+  voice: string;
+  language: string;
+  transfer_number: string | null;
+  voicemail_message: string | null;
+  max_call_seconds: number;
+  recording_enabled: boolean;
+  business_hours: Json;
+  timezone: string;
+  after_hours: AfterHoursBehavior;
+  status: PhoneNumberStatus;
+  last_call_at: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type CallRow = {
+  id: string;
+  organization_id: string;
+  phone_number_id: string | null;
+  conversation_id: string | null;
+  agent_id: string | null;
+  direction: CallDirection;
+  provider_call_id: string;
+  from_e164: string | null;
+  to_e164: string | null;
+  status: CallStatus;
+  started_at: string;
+  answered_at: string | null;
+  ended_at: string | null;
+  duration_seconds: number | null;
+  turn_count: number;
+  recording_url: string | null;
+  transferred_to: string | null;
+  ended_reason: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -379,6 +443,29 @@ export type Database = {
           Rel<'tool_calls_log_agent_id_fkey', 'agent_id', 'agents'>,
         ]
       >;
+
+      phone_numbers: Table<
+        PhoneNumberRow,
+        | 'id' | 'created_at' | 'updated_at' | 'provider' | 'greeting' | 'voice' | 'language'
+        | 'max_call_seconds' | 'recording_enabled' | 'business_hours' | 'timezone'
+        | 'after_hours' | 'status',
+        [
+          OrgRel<'phone_numbers'>,
+          Rel<'phone_numbers_agent_id_fkey', 'agent_id', 'agents'>,
+          Rel<'phone_numbers_created_by_fkey', 'created_by', 'users'>,
+        ]
+      >;
+
+      calls: Table<
+        CallRow,
+        'id' | 'created_at' | 'updated_at' | 'direction' | 'status' | 'started_at' | 'turn_count',
+        [
+          OrgRel<'calls'>,
+          Rel<'calls_phone_number_id_fkey', 'phone_number_id', 'phone_numbers'>,
+          Rel<'calls_conversation_id_fkey', 'conversation_id', 'conversations'>,
+          Rel<'calls_agent_id_fkey', 'agent_id', 'agents'>,
+        ]
+      >;
     };
     Views: Record<never, never>;
     Functions: {
@@ -412,6 +499,10 @@ export type Database = {
       approval_status: ApprovalStatus;
       audit_action: AuditAction;
       test_run_status: TestRunStatus;
+      telephony_provider: TelephonyProvider;
+      phone_number_status: PhoneNumberStatus;
+      after_hours_behavior: AfterHoursBehavior;
+      call_status: CallStatus;
     };
     CompositeTypes: Record<never, never>;
   };

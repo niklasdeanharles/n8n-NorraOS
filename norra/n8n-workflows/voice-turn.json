@@ -1,0 +1,732 @@
+{
+  "name": "Norra – Voice Turn",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "norra/voice-turn",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode"
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -620,
+        0
+      ],
+      "id": "voice-webhook",
+      "name": "Voice Turn Webhook",
+      "webhookId": "norra-voice-turn"
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "organization-id",
+              "name": "organization_id",
+              "value": "={{ $json.body?.organization_id ?? $json.organization_id }}",
+              "type": "string"
+            },
+            {
+              "id": "agent-id",
+              "name": "agent_id",
+              "value": "={{ $json.body?.agent_id ?? $json.agent_id }}",
+              "type": "string"
+            },
+            {
+              "id": "conversation-id",
+              "name": "conversation_id",
+              "value": "={{ $json.body?.conversation_id ?? $json.conversation_id }}",
+              "type": "string"
+            },
+            {
+              "id": "call-id",
+              "name": "call_id",
+              "value": "={{ $json.body?.call_id ?? $json.call_id }}",
+              "type": "string"
+            },
+            {
+              "id": "caller",
+              "name": "caller",
+              "value": "={{ $json.body?.caller ?? $json.caller ?? \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "message",
+              "name": "message",
+              "value": "={{ $json.body?.message ?? $json.message ?? \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "history",
+              "name": "history",
+              "value": "={{ $json.body?.history ?? $json.history ?? [] }}",
+              "type": "array"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -400,
+        0
+      ],
+      "id": "voice-normalize",
+      "name": "Normalize Request"
+    },
+    {
+      "id": "voice-load-agent",
+      "name": "Load Agent Config",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -180,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "agents",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $json.agent_id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.organization_id }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "voice-agent",
+      "name": "Voice Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        60,
+        0
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $(\"Normalize Request\").item.json.message }}",
+        "options": {
+          "systemMessage": "={{ $json.system_prompt }}\n\n## Guardrails\nVerbotene Themen (freundlich ablehnen und ggf. eskalieren): {{ JSON.stringify($json.guardrails?.forbidden_topics ?? []) }}\nErlaubte Themen (leer = keine Einschraenkung): {{ JSON.stringify($json.guardrails?.allowed_topics ?? []) }}\nEskalationsregeln: {{ JSON.stringify($json.escalation_rules ?? {}) }}\n\n## Werkzeuge\nKnowledge Base: fuer jede inhaltliche Frage zuerst hier nachschlagen. Erfinde niemals Richtlinien oder Fakten.\nlookup_record: fuer jede Aussage ueber konkrete Kundendaten. Rate niemals einen Status, einen Betrag oder ein Datum.\nescalate_to_human: wenn der Kunde einen Menschen verlangt, du nicht weiterkommst, oder es eine Beschwerde ist.\nrequest_action: fuer jede folgenreiche Aktion. Das Tool fuehrt nichts aus, es reicht die Aktion zur Freigabe ein. Sage dem Kunden zu, dass ein Mitarbeiter prueft -- bestaetige niemals, dass die Aktion bereits erfolgt ist, und nenne keinen Termin.\n\n## Du sprichst, du schreibst nicht\nDiese Antwort wird vorgelesen. Deshalb:\n- Zwei bis drei Saetze. Wer am Telefon einen Absatz hoert, hat den Anfang vergessen.\n- Keine Aufzaehlungen, keine Formatierung, keine URLs, keine Klammern. Nichts, was man nicht sprechen kann.\n- Zahlen, Betraege und Daten so, wie man sie sagt: \"zweiundneunzig Euro\", \"am ersten Oktober\".\n- Eine Rueckfrage pro Antwort, nicht drei.\n- Bei einer laengeren Auskunft: das Wichtigste zuerst, dann anbieten, den Rest per E-Mail zu schicken.\n- Wenn du etwas nicht verstanden hast, frag nach, statt zu raten. Der Anrufer wurde transkribiert, und Transkription irrt.\n\n## Bisheriger Gespraechsverlauf\n{{ JSON.stringify($(\"Normalize Request\").item.json.history ?? []) }}",
+          "maxIterations": 5,
+          "enableStreaming": false,
+          "returnIntermediateSteps": false
+        }
+      }
+    },
+    {
+      "id": "voice-model",
+      "name": "Claude Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.5,
+      "position": [
+        0,
+        220
+      ],
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Load Agent Config').item.json.model }}"
+        },
+        "options": {
+          "maxTokensToSample": 400,
+          "temperature": 0.2,
+          "streaming": false
+        }
+      }
+    },
+    {
+      "id": "voice-kb",
+      "name": "Knowledge Base",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.3,
+      "position": [
+        140,
+        220
+      ],
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolDescription": "Durchsuche die Wissensbasis dieser Organisation nach Richtlinien, Produktinfos und Hilfeartikeln. Nutze dieses Tool, bevor du eine inhaltliche Frage beantwortest.",
+        "tableName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "knowledge_base_chunks",
+          "cachedResultName": "knowledge_base_chunks"
+        },
+        "topK": 3,
+        "includeDocumentMetadata": true,
+        "options": {
+          "queryName": "match_kb_chunks",
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "organization_id",
+                "value": "={{ $('Normalize Request').item.json.organization_id }}"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "voice-kb-emb",
+      "name": "Knowledge Base Embeddings",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        140,
+        400
+      ],
+      "parameters": {
+        "model": "text-embedding-3-small",
+        "options": {
+          "dimensions": 1536
+        }
+      }
+    },
+    {
+      "id": "voice-tool-0",
+      "name": "lookup_record",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        300,
+        220
+      ],
+      "parameters": {
+        "description": "Schlage einen Datensatz im angebundenen System des Kunden nach — etwa einen Vorgang, ein Konto oder einen Auftrag. Nutze dies, bevor du eine Aussage über konkrete Kundendaten machst. Rate niemals.",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "KHHKDV5CoyiDxuCO",
+          "cachedResultName": "Norra – Tool: lookup_record"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "value": {
+            "organization_id": "={{ $('Normalize Request').item.json.organization_id }}",
+            "conversation_id": "={{ $('Normalize Request').item.json.conversation_id }}",
+            "agent_id": "={{ $('Normalize Request').item.json.agent_id }}",
+            "endpoint": "={{ ($('Load Agent Config').item.json.tools ?? []).find(t => t.slug === 'lookup_record')?.config?.url ?? '' }}",
+            "query": "={{ $fromAI('query', 'Wonach gesucht wird, z.B. eine Vorgangsnummer oder E-Mail-Adresse', 'string') }}",
+            "record_type": "={{ $fromAI('record_type', 'Art des gesuchten Datensatzes, falls der Kunde sie nennt', 'string') }}"
+          },
+          "schema": [
+            {
+              "id": "organization_id",
+              "displayName": "organization_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "agent_id",
+              "displayName": "agent_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "endpoint",
+              "displayName": "endpoint",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "query",
+              "displayName": "query",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "record_type",
+              "displayName": "record_type",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "voice-tool-1",
+      "name": "escalate_to_human",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        220
+      ],
+      "parameters": {
+        "description": "Uebergib den Fall an einen menschlichen Mitarbeiter. Nutze dies, wenn der Kunde ausdruecklich einen Menschen verlangt, wenn du die Frage nicht beantworten kannst, oder wenn es um Beschwerden geht.",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "pw6OzhBSG2oxagNt",
+          "cachedResultName": "Norra – Tool: escalate_to_human"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "value": {
+            "organization_id": "={{ $('Normalize Request').item.json.organization_id }}",
+            "conversation_id": "={{ $('Normalize Request').item.json.conversation_id }}",
+            "agent_id": "={{ $('Normalize Request').item.json.agent_id }}",
+            "subject": "={{ $fromAI('subject', 'Kurze Betreffzeile fuer das Ticket, maximal ein Satz', 'string') }}",
+            "summary": "={{ $fromAI('summary', 'Zusammenfassung des Anliegens fuer den Mitarbeiter, inklusive was bereits versucht wurde', 'string') }}",
+            "priority": "={{ $fromAI('priority', 'Eines von: low, normal, high, urgent', 'string') }}"
+          },
+          "schema": [
+            {
+              "id": "organization_id",
+              "displayName": "organization_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "agent_id",
+              "displayName": "agent_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "subject",
+              "displayName": "subject",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "summary",
+              "displayName": "summary",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "voice-tool-2",
+      "name": "request_action",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        580,
+        220
+      ],
+      "parameters": {
+        "description": "Reiche eine folgenreiche Aktion zur Freigabe ein — Erstattung, Stornierung, Datenänderung. Dieses Tool führt NICHTS aus, es legt eine Anfrage für einen Mitarbeiter an. Bestätige dem Kunden niemals, dass die Aktion erfolgt ist.",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "LwyJZr8WFsjd0L9v",
+          "cachedResultName": "Norra – Tool: request_action"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "value": {
+            "organization_id": "={{ $('Normalize Request').item.json.organization_id }}",
+            "conversation_id": "={{ $('Normalize Request').item.json.conversation_id }}",
+            "agent_id": "={{ $('Normalize Request').item.json.agent_id }}",
+            "action": "={{ $fromAI('action', 'Kurzer Bezeichner der Aktion, z.B. refund, cancellation, address_change', 'string') }}",
+            "subject": "={{ $fromAI('subject', 'Eine Zeile, die dem Mitarbeiter sagt, worum es geht', 'string') }}",
+            "reason": "={{ $fromAI('reason', 'Begruendung des Kunden', 'string') }}",
+            "record_reference": "={{ $fromAI('record_reference', 'Auf welchen Vorgang oder Datensatz sich die Aktion bezieht', 'string') }}",
+            "amount": "={{ $fromAI('amount', 'Betrag als Zahl ohne Waehrungszeichen, falls Geld im Spiel ist', 'string') }}",
+            "currency": "={{ $fromAI('currency', 'Waehrungscode, falls Geld im Spiel ist', 'string') }}"
+          },
+          "schema": [
+            {
+              "id": "organization_id",
+              "displayName": "organization_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "agent_id",
+              "displayName": "agent_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "action",
+              "displayName": "action",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "subject",
+              "displayName": "subject",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reason",
+              "displayName": "reason",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "record_reference",
+              "displayName": "record_reference",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "amount",
+              "displayName": "amount",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "currency",
+              "displayName": "currency",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "conversations",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Normalize Request').item.json.conversation_id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Normalize Request').item.json.organization_id }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        300,
+        0
+      ],
+      "id": "voice-read-state",
+      "name": "Read Conversation State"
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "reply",
+              "name": "reply",
+              "value": "={{ $('Voice Agent').item.json.output }}",
+              "type": "string"
+            },
+            {
+              "id": "action",
+              "name": "action",
+              "value": "={{ $json.status === \"escalated\" ? \"transfer\" : \"continue\" }}",
+              "type": "string"
+            },
+            {
+              "id": "conversation-status",
+              "name": "conversation_status",
+              "value": "={{ $json.status }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        520,
+        0
+      ],
+      "id": "voice-return",
+      "name": "Return To Caller"
+    },
+    {
+      "parameters": {
+        "content": "## Warum dieser Workflow nicht streamt\nagent-turn streamt, weil im Chat jedes Token sofort sichtbar wird. Am Telefon ist das sinnlos: der Anrufer hoert erst etwas, wenn ein Satz fertig gesprochen ist. Deshalb responseMode \"lastNode\" und ein Modell ohne Streaming.\n\nDafuer zaehlt hier die Gesamtdauer hart -- der Telefonie-Anbieter bricht den Webhook nach wenigen Sekunden ab. maxIterations steht auf 5 statt 10, topK auf 3 statt 5, das Token-Limit ist knapp. Alle drei kosten Genauigkeit und kaufen Zeit. Das ist die Abwaegung, kein Versehen.",
+        "height": 320,
+        "width": 520,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -620,
+        -400
+      ],
+      "id": "voice-note-1",
+      "name": "Sticky Note voice"
+    },
+    {
+      "parameters": {
+        "content": "## action kommt aus der Datenbank, nicht aus dem Text\nOb der Anruf an einen Menschen geht, entscheidet der Status der Konversation -- gesetzt vom Tool escalate_to_human. Naheliegend waere, stattdessen die Antwort nach Formulierungen wie \"ich verbinde Sie\" zu durchsuchen. Das waere raten: das Modell koennte es sagen, ohne das Tool zu rufen, und der Anrufer landete im Nichts.",
+        "height": 260,
+        "width": 460,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        300,
+        -320
+      ],
+      "id": "voice-note-2",
+      "name": "Sticky Note action"
+    }
+  ],
+  "connections": {
+    "Voice Turn Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Request": {
+      "main": [
+        [
+          {
+            "node": "Load Agent Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Agent Config": {
+      "main": [
+        [
+          {
+            "node": "Voice Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Voice Agent": {
+      "main": [
+        [
+          {
+            "node": "Read Conversation State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Conversation State": {
+      "main": [
+        [
+          {
+            "node": "Return To Caller",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Voice Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Knowledge Base": {
+      "ai_tool": [
+        [
+          {
+            "node": "Voice Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Knowledge Base Embeddings": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Knowledge Base",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "lookup_record": {
+      "ai_tool": [
+        [
+          {
+            "node": "Voice Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "escalate_to_human": {
+      "ai_tool": [
+        [
+          {
+            "node": "Voice Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "request_action": {
+      "ai_tool": [
+        [
+          {
+            "node": "Voice Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "norra": {
+    "workflowId": "wc4s77ROyul5LR5X",
+    "slug": "voice-turn"
+  }
+}

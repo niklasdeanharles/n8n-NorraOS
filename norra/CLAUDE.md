@@ -49,6 +49,7 @@ Next.js und n8n sprechen nie direkt miteinander außer über den einen Webhook.
 | `norra/supabase/migrations/` | SQL-Migrationen, per GitHub Action ausgerollt |
 | `norra/n8n-workflows/` | Exportierte Workflow-JSONs (Sync via REST-API) |
 | `norra/scripts/` | Sync-/Wartungsskripte |
+| `norra/tests/voice/` | Anrufpfad end-to-end gegen die gebaute App |
 | `norra/docs/` | Architektur- und Betriebsnotizen |
 
 ## Namenskonventionen
@@ -102,6 +103,8 @@ Diese vier Regeln sind nicht verhandelbar:
 | `SUPABASE_SERVICE_ROLE_KEY` | nur Server | umgeht RLS — niemals an den Client |
 | `N8N_WEBHOOK_URL` | Vercel | Basis-URL der n8n-Instanz |
 | `N8N_WEBHOOK_SECRET` | Vercel + n8n | Header-Auth zwischen Proxy und Webhook |
+| `TWILIO_AUTH_TOKEN` | nur Server, optional | Signaturprüfung der Telefonie-Webhooks |
+| `NORRA_PUBLIC_URL` | Vercel, optional | öffentliche Basis-URL — Grundlage der Signatur |
 
 Secrets stehen niemals im Repo. `.env.local` ist gitignored;
 `norra/app/.env.example` dokumentiert nur die Namen.
@@ -113,6 +116,7 @@ Hostinger VPS, self-hosted Community Edition: `https://n8n-fdhh.srv1817599.hstgr
 | Workflow | Slug | ID | Webhook-Pfad | Zweck |
 |---|---|---|---|---|
 | Agent Turn | `agent-turn` | `yTH3YQeR5qdNVxSI` | `POST /webhook/norra/agent-turn` | Zentraler Turn: Config laden, RAG, Streaming |
+| Voice Turn | `voice-turn` | `wc4s77ROyul5LR5X` | `POST /webhook/norra/voice-turn` | Ein gesprochener Turn, ohne Streaming |
 | KB Ingest | `kb-ingest` | `Q3XhlP6eet9eqnm0` | `POST /webhook/norra/kb-ingest` | Dokument chunken, einbetten, speichern |
 | Tool: lookup_record | `tool-lookup-record` | `KHHKDV5CoyiDxuCO` | Sub-Workflow | Datensatz beim Kunden nachschlagen, read-only |
 | Tool: escalate_to_human | `tool-escalate-to-human` | `pw6OzhBSG2oxagNt` | Sub-Workflow | Ticket anlegen, Konversation eskalieren |
@@ -125,8 +129,8 @@ Die Instanz hostet auch fremde Workflows. Die von Norra tragen deshalb Tags:
 
 | Tag | Workflows |
 |---|---|
-| `norra` | alle sechs |
-| `norra:core` | `agent-turn`, `kb-ingest` |
+| `norra` | alle sieben |
+| `norra:core` | `agent-turn`, `voice-turn`, `kb-ingest` |
 | `norra:tool` | `lookup_record`, `escalate_to_human`, `request_action` |
 | `norra:notify` | `notify-escalation` |
 
@@ -169,13 +173,13 @@ Jedes weitere Tool mit realer Konsequenz gehört denselben Weg: Zeile in
 `approvals`, Rückgabewert sagt dem Agenten ausdrücklich, dass nichts ausgeführt
 wurde.
 
-Beide Workflows sind **angelegt, aber nicht aktiviert**. Vor der Aktivierung
-fehlen zwei Credentials, die es auf der Instanz noch nicht gibt:
+Alle sieben Workflows sind **angelegt, aber nicht aktiviert**. Vor der
+Aktivierung fehlen zwei Credentials, die es auf der Instanz noch nicht gibt:
 
 | Credential | Typ | Gebraucht von |
 |---|---|---|
-| Anthropic | `anthropicApi` | Claude Model (agent-turn) |
-| Norra Webhook Secret | `httpHeaderAuth` | beide Webhook-Nodes |
+| Anthropic | `anthropicApi` | Claude Model in `agent-turn` und `voice-turn` |
+| Norra Webhook Secret | `httpHeaderAuth` | alle drei Webhook-Nodes |
 
 Die Header-Auth-Credential muss Header-Name `x-norra-secret` und als Wert
 denselben String tragen wie `N8N_WEBHOOK_SECRET` in Vercel — sonst weist der
@@ -197,9 +201,9 @@ Zwei Regeln, die für jedes neue Tool gelten:
 ### Eskalations-Benachrichtigung
 
 `escalate_to_human` ruft nach dem Ticket `notify-escalation` auf. Der Empfänger
-steht in `organizations.settings.escalation_email` — pro Organisation
-konfigurierbar, ohne den Workflow anzufassen. Ist keine Adresse hinterlegt,
-endet der Lauf sauber über `Return Skipped`.
+steht in der Spalte `organizations.escalation_email` — pro Organisation im
+Screen *Einstellungen* konfigurierbar, ohne den Workflow anzufassen. Ist keine
+Adresse hinterlegt, endet der Lauf sauber über `Return Skipped`.
 
 Der Aufruf trägt `onError: continueRegularOutput`: eine fehlgeschlagene Mail
 darf die Eskalation nicht scheitern lassen. Das Ticket ist der Vorgang, die Mail
@@ -236,6 +240,80 @@ Nachricht einer Konversation liefert die Abfrage null Zeilen, und n8n
 überspringt Nodes ohne Input-Items — die Kette wäre gestorben, bevor der Agent
 je gelaufen wäre. Nebeneffekt: `messages` bleibt einzige Quelle der Wahrheit,
 es gibt keine zweite History-Tabelle (deshalb auch kein Postgres-Chat-Memory).
+
+### Der Telefon-Assistent
+
+Ein Anruf ist eine Konversation mit `channel = 'voice'`. Was ein Anruf mehr hat
+als ein Chat — eine Nummer, eine Dauer, ein Ergebnis — steht in `calls`; die
+Konfiguration der Leitung in `phone_numbers`.
+
+```mermaid
+sequenceDiagram
+  participant A as Anrufer
+  participant T as Twilio
+  participant N as Next.js
+  participant W as n8n voice-turn
+  A->>T: waehlt die Nummer
+  T->>N: POST /api/voice/incoming (signiert)
+  N->>T: TwiML: Begruessung + Gather
+  A->>T: spricht
+  T->>N: POST /api/voice/turn (SpeechResult)
+  N->>W: agent-turn ohne Streaming
+  W-->>N: {reply, action}
+  N->>T: TwiML: Say + naechstes Gather
+  T->>N: POST /api/voice/status (Ende)
+```
+
+**Einrichtung ist ein Formular, kein Ticket.** Der Kunde trägt beim Anbieter
+zwei URLs ein — `/api/voice/incoming` und `/api/voice/status` — und weist im
+Screen *Telefon* einen Agenten zu. Alles Weitere (Begrüßung, Stimme,
+Öffnungszeiten, Weiterleitung, Zeitlimit) ist eine Zeile in `phone_numbers`.
+Der Screen zeigt die fertigen URLs zum Kopieren; sie zu beschreiben statt sie
+auszufüllen ist der Unterschied zwischen fünf Minuten und einem Support-Ticket.
+
+Vier Entscheidungen, die nicht offensichtlich sind:
+
+1. **Die gewählte Nummer *ist* der Mandant.** Ein eingehender Anruf trägt keine
+   Organisations-ID, nur `To`. Deshalb ist der Index auf `phone_numbers.e164`
+   global eindeutig, nicht pro Organisation — zwei Mandanten mit derselben
+   Nummer wären keine Unannehmlichkeit, sondern ein Datenleck.
+2. **Authentifiziert wird per Signatur, nicht per Session.** Ein Anrufer ist
+   kein Supabase-User und ein Telefonanbieter schickt kein Cookie. Die Routen
+   liegen deshalb in `PUBLIC_PATHS` der Middleware und prüfen stattdessen die
+   Twilio-Signatur über die vollständige URL — weshalb `NORRA_PUBLIC_URL`
+   Konfiguration ist und nicht aus `X-Forwarded-Host` erraten wird.
+3. **`voice-turn` streamt nicht.** Im Chat wird jedes Token sofort sichtbar; am
+   Telefon hört der Anrufer erst etwas, wenn ein Satz fertig ist. Dafür zählt
+   die Gesamtdauer hart: der Anbieter bricht den Webhook nach wenigen Sekunden
+   ab. Norra bricht bei 12 Sekunden selbst ab und leitet weiter, statt die
+   Leitung verstummen zu lassen.
+4. **`action` kommt aus der Datenbank, nicht aus dem Antworttext.** Ob
+   weitergeleitet wird, entscheidet der Status der Konversation, den
+   `escalate_to_human` setzt. Die Antwort nach „ich verbinde Sie" zu
+   durchsuchen wäre raten — das Modell kann das sagen, ohne das Tool zu rufen.
+
+Die bekannte Grenze: dieser Aufbau nutzt Sprache-zu-Text des Anbieters und
+antwortet satzweise. Das ist spürbar langsamer als eine Media-Stream-Pipeline
+mit Echtzeit-Transkription. Dafür braucht es keine zusätzliche Infrastruktur
+und keine offene WebSocket-Verbindung — die Abwägung ist bewusst und der
+richtige Ort für eine spätere Änderung ist `voice-turn`, nicht die App.
+
+### Einstellungen
+
+Die Regel, nach der entschieden wird, wo eine Einstellung lebt:
+
+> Alles, was ein Workflow oder eine Policy liest, bekommt eine echte Spalte mit
+> einem echten Constraint. `organizations.settings` (jsonb) trägt nur
+> Darstellungsvorlieben.
+
+Deshalb ist `escalation_email` aus dem jsonb-Blob in eine Spalte gewandert: ein
+Blob nimmt `escalaton_email` widerspruchslos an, und die Mail hört still auf zu
+kommen. Ebenso `timezone`, `locale` und `retention_days`.
+
+Secrets stehen nie in der Datenbank. Der Screen *Einstellungen* zeigt zu jeder
+Integration nur, **ob** sie konfiguriert ist — nie den Wert, auch nicht
+maskiert: eine maskierte Zeichenkette verrät immer noch ihre Länge, und die
+Seite sieht jedes Mitglied.
 
 ### Ladezustände und Bewegung
 
@@ -320,6 +398,17 @@ cd norra && supabase db push    # Migrationen ausrollen (macht sonst die Action)
 supabase gen types typescript --linked > app/src/types/database.ts
 ```
 
+Den Anrufpfad gegen die gebaute App testen -- 16 Szenarien vom eingehenden
+Anruf bis zum Status-Callback, mit echten Twilio-Signaturen:
+
+```bash
+cd norra && node tests/voice/run.mjs
+```
+
+Der Test baut die App selbst, weil `NEXT_PUBLIC_*` beim Bauen eingesetzt wird:
+eine gegen die echte Supabase-URL gebaute App redet auch dann mit ihr, wenn die
+Umgebungsvariable beim Start eine andere ist.
+
 Migrationen und Mandantentrennung gegen ein blankes Postgres pruefen -- genau
 das, was `norra-db-migrate.yml` in CI tut:
 
@@ -327,5 +416,7 @@ das, was `norra-db-migrate.yml` in CI tut:
 cd norra/supabase
 psql -v ON_ERROR_STOP=1 -f tests/bootstrap.local.sql
 for f in migrations/*.sql; do psql -v ON_ERROR_STOP=1 -q -f "$f"; done
-psql -v ON_ERROR_STOP=1 -f tests/tenancy.test.sql   # muss "all checks passed" melden
+for t in tenancy governance phone; do
+  psql -v ON_ERROR_STOP=1 -f "tests/$t.test.sql"   # jeder muss "all checks passed" melden
+done
 ```

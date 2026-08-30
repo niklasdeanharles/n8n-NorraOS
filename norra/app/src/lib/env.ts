@@ -19,8 +19,21 @@ const serverSchema = z.object({
   N8N_WEBHOOK_SECRET: z.string().min(16),
 });
 
+/**
+ * Telephony. Separate from `serverSchema` on purpose: an instance without a
+ * phone line must still boot, so these are only demanded when a voice webhook
+ * is actually hit.
+ */
+const voiceSchema = z.object({
+  TWILIO_AUTH_TOKEN: z.string().min(16),
+  // The base URL Twilio was configured with. Signature validation hashes the
+  // full URL, and behind a proxy the request's own URL is the internal one.
+  NORRA_PUBLIC_URL: z.string().url(),
+});
+
 export type ClientEnv = z.infer<typeof clientSchema>;
 export type ServerEnv = z.infer<typeof serverSchema>;
+export type VoiceEnv = z.infer<typeof voiceSchema>;
 
 function parse<T extends z.ZodTypeAny>(schema: T, source: Record<string, string | undefined>): z.infer<T> {
   const result = schema.safeParse(source);
@@ -50,4 +63,25 @@ export function serverEnv(): ServerEnv {
     N8N_WEBHOOK_SECRET: process.env.N8N_WEBHOOK_SECRET,
   });
   return cachedServerEnv;
+}
+
+let cachedVoiceEnv: VoiceEnv | undefined;
+
+export function voiceEnv(): VoiceEnv {
+  if (typeof window !== 'undefined') {
+    throw new Error('voiceEnv() was called in the browser. Server-only secrets must never reach the client.');
+  }
+  cachedVoiceEnv ??= parse(voiceSchema, {
+    TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN,
+    NORRA_PUBLIC_URL: process.env.NORRA_PUBLIC_URL,
+  });
+  return cachedVoiceEnv;
+}
+
+/** Whether telephony is configured at all, without throwing. The console shows this. */
+export function voiceConfigured(): boolean {
+  return voiceSchema.safeParse({
+    TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN,
+    NORRA_PUBLIC_URL: process.env.NORRA_PUBLIC_URL,
+  }).success;
 }

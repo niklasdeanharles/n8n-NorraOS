@@ -1,0 +1,67 @@
+name: 'Norra: App Checks'
+
+# Type check, lint, build, wiring and the phone path. Scoped by paths so it
+# never fires on n8n's own changes.
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - norra/app/**
+      - norra/scripts/**
+      - norra/tests/**
+      - norra/n8n-workflows/**
+      - norra/supabase/migrations/**
+      - .github/workflows/norra-app-checks.yml
+  pull_request:
+    paths:
+      - norra/app/**
+      - norra/scripts/**
+      - norra/tests/**
+      - norra/n8n-workflows/**
+      - norra/supabase/migrations/**
+      - .github/workflows/norra-app-checks.yml
+  workflow_dispatch:
+
+concurrency:
+  group: norra-app-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Type check, lint, wiring, phone path
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: norra/app/package-lock.json
+
+      - name: Install
+        working-directory: norra/app
+        run: npm ci
+
+      - name: Type check
+        working-directory: norra/app
+        run: npm run typecheck
+
+      - name: Lint
+        working-directory: norra/app
+        run: npm run lint
+
+      - name: Check wiring
+        working-directory: norra
+        run: node scripts/check-wiring.mjs
+
+      # Builds the app against in-memory stand-ins and drives real signed
+      # webhooks through it. This is the check that catches a call path broken
+      # by something outside the routes -- middleware, a header, a status code.
+      - name: Phone path end to end
+        working-directory: norra
+        run: node tests/voice/run.mjs
