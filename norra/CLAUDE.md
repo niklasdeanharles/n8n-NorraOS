@@ -237,6 +237,24 @@ Nachricht einer Konversation liefert die Abfrage null Zeilen, und n8n
 je gelaufen wäre. Nebeneffekt: `messages` bleibt einzige Quelle der Wahrheit,
 es gibt keine zweite History-Tabelle (deshalb auch kein Postgres-Chat-Memory).
 
+### Ladezustände und Bewegung
+
+Jede Route hat eine `loading.tsx`, gebaut aus `src/components/skeleton.tsx`.
+Die Platzhalter kopieren das echte Layout — gleiche Paddings, gleiche
+Card-Rahmen, gleiche Spaltenzahl. Ein Skeleton mit anderer Form als das
+Ergebnis erzeugt beim Eintreffen der Daten einen sichtbaren Sprung.
+
+Der Verlaufsgraph in Analytics ist reines SVG, keine Chart-Bibliothek: eine
+Polyline über eine feste `viewBox`, die sich per `stroke-dasharray` selbst
+zeichnet.
+
+`prefers-reduced-motion: reduce` entfernt **alle** Animationen, statt sie zu
+verkürzen — ein Shimmer mit 0.01s flackert weiterhin. Wer dort eine Animation
+ergänzt, prüft eine Sache: hängt die Sichtbarkeit an einer echten Eigenschaft,
+die die Animation verändert (`stroke-dashoffset`, `opacity: 0` im
+Ausgangszustand), muss sie im Reduced-Motion-Block zurückgesetzt werden. Sonst
+sieht diese Nutzergruppe das Element nie.
+
 ## GitHub ↔ n8n Synchronisation
 
 n8n's native Git-Environments sind Enterprise-only und auf der Community-Instanz
@@ -272,6 +290,13 @@ Drei Eigenschaften, auf die man sich verlassen kann:
 Volatile Felder (`updatedAt`, `versionId`, `id`, …) werden beim Export
 entfernt, damit ein unveränderter Workflow keinen Diff erzeugt und ein echter
 nicht darin untergeht.
+
+**Eine Ausnahme vom Leitprinzip, bewusst:** die Workflow-`description` im
+n8n-Editor. Die öffentliche API nimmt sie auf `PUT` nicht an (`400`), also
+kann sie nicht zurückgespielt werden und wird deshalb auch nicht exportiert.
+Die versionierte Erklärung eines Workflows sind die Sticky Notes auf dem
+Canvas — die liegen als Nodes in der Repo-Datei. Die `description` ist nur
+die Zeile in der Workflow-Liste; nichts Fachliches gehört dort hinein.
 
 ### Benötigte GitHub-Secrets
 
