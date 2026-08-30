@@ -62,6 +62,7 @@ export function Simulation({
           </div>
         </div>
         <button type="button" onClick={run} disabled={running || cases.length === 0} className="btn-sm">
+          {running ? <span className="spinner" aria-hidden="true" /> : null}
           {running ? 'Läuft…' : 'Testlauf starten'}
         </button>
       </div>
@@ -87,7 +88,7 @@ export function Simulation({
                     const status = live?.status ?? previous?.status;
                     const failures = live?.failures ?? previous?.failures ?? [];
                     return (
-                      <tr key={testCase.id}>
+                      <tr key={testCase.id} className={running && !live ? 'is-refreshing' : undefined}>
                         <td>
                           <div style={{ fontWeight: 550 }}>{testCase.name}</div>
                           <div className="tiny muted">{testCase.input}</div>

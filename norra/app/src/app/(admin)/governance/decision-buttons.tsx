@@ -22,12 +22,14 @@ export function DecisionButtons({ approvalId, canDecide }: { approvalId: string;
         <form action={reject}>
           <input type="hidden" name="approvalId" value={approvalId} />
           <button type="submit" className="btn-secondary btn-sm" disabled={rejectPending || approvePending}>
+          {rejectPending ? <span className="spinner" aria-hidden="true" /> : null}
             Ablehnen
           </button>
         </form>
         <form action={approve}>
           <input type="hidden" name="approvalId" value={approvalId} />
           <button type="submit" className="btn-sm" disabled={approvePending || rejectPending}>
+          {approvePending ? <span className="spinner" aria-hidden="true" /> : null}
             {approvePending ? 'Gibt frei…' : 'Freigeben'}
           </button>
         </form>

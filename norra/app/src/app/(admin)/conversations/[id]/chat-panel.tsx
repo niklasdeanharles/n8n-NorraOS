@@ -110,7 +110,7 @@ export function ChatPanel({
         {optimistic.map((message) => (
           <div
             key={message.id}
-            className={`msg ${message.role === 'user' ? 'msg-user' : ''} ${message.role === 'tool' ? 'msg-tool' : ''}`}
+            className={`msg rise ${message.role === 'user' ? 'msg-user' : ''} ${message.role === 'tool' ? 'msg-tool' : ''}`}
           >
             <div className="msg-avatar" aria-hidden="true">{avatarFor(message)}</div>
             <div>
@@ -123,11 +123,16 @@ export function ChatPanel({
         ))}
 
         {streaming || streamed ? (
-          <div className="msg">
+          <div className="msg rise">
             <div className="msg-avatar" aria-hidden="true">AI</div>
             <div>
               <div className="msg-bubble">
-                {streamed || (
+                {streamed ? (
+                  <>
+                    {streamed}
+                    {streaming ? <span className="caret" aria-hidden="true" /> : null}
+                  </>
+                ) : (
                   <span className="typing" aria-label="Agent schreibt">
                     <i /><i /><i />
                   </span>
@@ -150,6 +155,7 @@ export function ChatPanel({
             maxLength={10000}
           />
           <button type="submit" disabled={replyPending}>
+            {replyPending ? <span className="spinner" aria-hidden="true" /> : null}
             {replyPending ? 'Sendet…' : 'Senden'}
           </button>
         </form>
@@ -163,6 +169,7 @@ export function ChatPanel({
             maxLength={10000}
           />
           <button type="submit" disabled={streaming || draft.trim().length === 0}>
+            {streaming ? <span className="spinner" aria-hidden="true" /> : null}
             {streaming ? 'Läuft…' : 'An Agent'}
           </button>
         </form>

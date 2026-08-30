@@ -26,7 +26,10 @@ export function RoleSelect({ userId, role, editable }: { userId: string; role: U
         <select name="role" defaultValue={role} disabled={pending} style={{ width: 'auto' }}>
           {ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
         </select>
-        <button type="submit" className="btn-secondary btn-sm" disabled={pending}>Setzen</button>
+        <button type="submit" className="btn-secondary btn-sm" disabled={pending}>
+          {pending ? <span className="spinner" aria-hidden="true" /> : null}
+          Setzen
+        </button>
       </div>
       {state.error ? <span className="tiny error">{state.error}</span> : null}
       {state.ok ? <span className="tiny" style={{ color: 'hsl(var(--success))' }}>{state.ok}</span> : null}

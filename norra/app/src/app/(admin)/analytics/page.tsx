@@ -9,8 +9,10 @@ function BarList({ rows, warn = false }: { rows: Array<{ label: string; count: n
   const max = Math.max(1, ...rows.map((r) => r.count));
   return (
     <div>
-      {rows.map((row) => (
-        <div key={row.label} className="bar-row">
+      {rows.map((row, index) => (
+        // `--i` staggers the grow-in so the list reads top to bottom rather
+        // than snapping into place all at once.
+        <div key={row.label} className="bar-row" style={{ '--i': index } as React.CSSProperties}>
           <div>
             <div className="spread" style={{ marginBottom: 4 }}>
               <code className="small">{row.label}</code>
@@ -22,6 +24,62 @@ function BarList({ rows, warn = false }: { rows: Array<{ label: string; count: n
           <span className="num small muted" style={{ textAlign: 'right' }}>{row.count}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+/**
+ * Volume over the window as an SVG area chart. No charting library: the shape
+ * is a polyline over a fixed viewBox, and the browser scales it. The line draws
+ * itself in via stroke-dasharray, which is the only way to animate a path
+ * without JavaScript.
+ */
+function TrendChart({ days }: { days: Array<{ date: string; total: number; escalated: number }> }) {
+  const width = 720;
+  const height = 150;
+  const max = Math.max(1, ...days.map((d) => d.total));
+  const step = days.length > 1 ? width / (days.length - 1) : width;
+
+  const pointsFor = (pick: (d: (typeof days)[number]) => number) =>
+    days.map((day, i) => `${(i * step).toFixed(1)},${(height - (pick(day) / max) * (height - 12)).toFixed(1)}`);
+
+  const line = pointsFor((d) => d.total).join(' ');
+  const escalationLine = pointsFor((d) => d.escalated).join(' ');
+  const area = `0,${height} ${line} ${width},${height}`;
+  const first = days[0]?.date;
+  const last = days[days.length - 1]?.date;
+
+  return (
+    <div className="chart">
+      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`Konversationen pro Tag, Maximum ${max}`}>
+        <defs>
+          <linearGradient id="trend-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="hsl(var(--chart-1))" stopOpacity="0.28" />
+            <stop offset="100%" stopColor="hsl(var(--chart-1))" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        {[0.25, 0.5, 0.75].map((fraction) => (
+          <line
+            key={fraction}
+            x1="0" x2={width}
+            y1={height * fraction} y2={height * fraction}
+            stroke="hsl(var(--border))" strokeWidth="1" vectorEffect="non-scaling-stroke"
+          />
+        ))}
+        <polygon className="chart-area" points={area} fill="url(#trend-fill)" />
+        <polyline className="chart-line" points={line} fill="none" stroke="hsl(var(--chart-1))" strokeWidth="2" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+        <polyline
+          className="chart-line chart-line-alt"
+          points={escalationLine}
+          fill="none" stroke="hsl(var(--chart-3))" strokeWidth="2" strokeDasharray="4 4"
+          strokeLinejoin="round" vectorEffect="non-scaling-stroke"
+        />
+      </svg>
+      <div className="chart-legend">
+        <span className="tiny muted">{first}</span>
+        <span className="tiny"><i className="legend-swatch" /> Konversationen <i className="legend-swatch legend-swatch-alt" /> Eskalationen</span>
+        <span className="tiny muted">{last}</span>
+      </div>
     </div>
   );
 }
@@ -100,6 +158,20 @@ export default async function AnalyticsPage() {
   const csatAverage = rated.length === 0
     ? null
     : Math.round((rated.reduce((sum, c) => sum + (c.csat ?? 0), 0) / rated.length) * 10) / 10;
+  // Bucket the window by day, zero-filled: a day without traffic is a real
+  // reading, and dropping it would compress the x axis silently.
+  const dayKeys = Array.from({ length: WINDOW_DAYS }, (_, i) =>
+    new Date(Date.now() - (WINDOW_DAYS - 1 - i) * 86_400_000).toISOString().slice(0, 10),
+  );
+  const perDay = new Map(dayKeys.map((date) => [date, { date, total: 0, escalated: 0 }]));
+  for (const c of conversations) {
+    const bucket = perDay.get(c.created_at.slice(0, 10));
+    if (!bucket) continue;
+    bucket.total += 1;
+    if (c.status === 'escalated') bucket.escalated += 1;
+  }
+  const days = [...perDay.values()];
+
   const assistantMessages = messages.filter((m) => m.role === 'assistant').length;
   const turnsPerConversation = total === 0 ? 0 : Math.round((assistantMessages / total) * 10) / 10;
 
@@ -148,6 +220,16 @@ export default async function AnalyticsPage() {
             <div className="metric-label">Wissenslücken</div>
             <div className="metric-value num">{gapTotal}</div>
             <div className="metric-note">Fragen ohne Fundstelle</div>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="card-head spread">
+            <h3>Verlauf</h3>
+            <span className="small muted">Konversationen und Eskalationen pro Tag</span>
+          </div>
+          <div className="card-body">
+            {total > 0 ? <TrendChart days={days} /> : <p className="muted small" style={{ margin: 0 }}>Keine Daten im Zeitraum.</p>}
           </div>
         </div>
 

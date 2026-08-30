@@ -70,7 +70,10 @@ export function UploadForm({ agents }: { agents: Array<{ id: string; name: strin
         </label>
         {error ? <p className="error">{error}</p> : null}
         {ok ? <p className="notice notice-ok">{ok}</p> : null}
-        <div><button type="submit" disabled={pending}>{pending ? 'Übergibt…' : 'Hinzufügen'}</button></div>
+        <div><button type="submit" disabled={pending}>
+          {pending ? <span className="spinner" aria-hidden="true" /> : null}
+          {pending ? 'Übergibt…' : 'Hinzufügen'}
+        </button></div>
       </form>
     </div>
   );

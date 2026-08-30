@@ -28,6 +28,7 @@ export function HandoffBar({
           <form action={releaseAction}>
             <input type="hidden" name="conversationId" value={conversationId} />
             <button type="submit" className="btn-secondary btn-sm" disabled={releasePending}>
+              {releasePending ? <span className="spinner" aria-hidden="true" /> : null}
               An Agent zurückgeben
             </button>
           </form>
@@ -35,6 +36,7 @@ export function HandoffBar({
           <form action={takeAction}>
             <input type="hidden" name="conversationId" value={conversationId} />
             <button type="submit" className="btn-sm" disabled={takePending}>
+              {takePending ? <span className="spinner" aria-hidden="true" /> : null}
               {takePending ? 'Übernimmt…' : 'Übernehmen'}
             </button>
           </form>
@@ -44,6 +46,7 @@ export function HandoffBar({
           <form action={resolveAction}>
             <input type="hidden" name="conversationId" value={conversationId} />
             <button type="submit" className="btn-secondary btn-sm" disabled={resolvePending}>
+              {resolvePending ? <span className="spinner" aria-hidden="true" /> : null}
               Als gelöst markieren
             </button>
           </form>

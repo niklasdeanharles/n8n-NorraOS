@@ -25,7 +25,10 @@ export function NewAgentForm() {
         </div>
         {state.error ? <p className="error">{state.error}</p> : null}
         {state.ok ? <p className="notice notice-ok">{state.ok}</p> : null}
-        <div><button type="submit" disabled={pending}>{pending ? 'Legt an…' : 'Anlegen'}</button></div>
+        <div><button type="submit" disabled={pending}>
+          {pending ? <span className="spinner" aria-hidden="true" /> : null}
+          {pending ? 'Legt an…' : 'Anlegen'}
+        </button></div>
       </form>
     </div>
   );
