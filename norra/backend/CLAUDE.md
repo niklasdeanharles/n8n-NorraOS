@@ -147,7 +147,23 @@ node scripts/check-wiring.mjs
 
 Prüft, was still auseinanderläuft und erst beim Kunden auffällt: ein
 umbenannter Webhook-Pfad, ein Payload-Feld, das der Workflow nicht mehr liest,
-und eine Spalte, in die ein Workflow schreibt, die es nicht mehr gibt.
+eine Spalte, in die ein Workflow schreibt, die es nicht mehr gibt — und
+umgekehrt eine Spalte, die **niemand schreibt**.
+
+Die letzte ist die unangenehmste, weil sie nicht scheitert: eine Spalte ohne
+Schreiber antwortet dauerhaft mit ihrem Default, und der Screen daneben zeigt
+die Null als wäre sie gemessen. Genau so stand `agent_test_runs.tools_used`
+bei jedem Lauf leer, während die Seite ihn brav gerendert hat. Ein Default
+zählt dabei nur dann als Schreiber, wenn er einen Wert *erzeugt* (`now()`,
+`gen_random_uuid()`, ein Ausdruck); `default '{}'` ist ein Platzhalter, den
+jemand verlassen soll.
+
+Spalten, die bewusst noch keinen Schreiber haben, stehen in `RESERVED` im
+Skript, jede mit ihrem Grund. Die Liste soll kurz bleiben und schrumpfen —
+ein Eintrag dort ist eine Entscheidung, kein Weg am Check vorbei. Wird eine
+reservierte Spalte später doch geschrieben, sagt der Check das und verlangt,
+den Eintrag zu entfernen: ein veralteter Vermerk ist der Weg, auf dem der
+nächste echte Fund durchgewunken wird.
 
 Die App-seitige Hälfte braucht den Frontend-Checkout. Liegen beide Repos
 nebeneinander — als `norra-frontend` oder als `frontend` — findet das Skript

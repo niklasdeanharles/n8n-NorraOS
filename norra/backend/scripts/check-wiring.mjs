@@ -51,6 +51,9 @@ const problems = [];
 const notes = [];
 
 /** Table -> Set(columns), assembled from CREATE TABLE and ALTER TABLE ADD COLUMN. */
+/** `table.column` for every column the database fills without being told. */
+const selfFilled = new Set();
+
 async function readSchema() {
   const schema = new Map();
   const files = (await readdir(MIGRATIONS)).filter((f) => f.endsWith('.sql')).sort();
@@ -67,6 +70,15 @@ async function readSchema() {
         const column = /^(\w+)\s+[a-z]/i.exec(trimmed);
         if (column && !/^(constraint|primary|unique|check|foreign|create)\b/i.test(trimmed)) {
           columns.add(column[1]);
+          // Only a *generating* default means the database supplies the real
+          // value: now(), a uuid, a sequence, a generated column. A literal
+          // default is a placeholder someone is expected to move off, and
+          // treating it as filled is how this check first failed to see
+          // `agent_test_runs.tools_used` sitting empty on every run.
+          // `default now()`, `default (now() + interval '7 days')`, a
+          // sequence, or a generated column: the database produces the value.
+          const generated = /\bdefault\s+(?:[\w.]+\s*\(|\()|\bgenerated\b|primary key|\bdefault\s+nextval\b/i;
+          if (generated.test(trimmed)) selfFilled.add(`${table}.${column[1]}`);
         }
       }
       schema.set(table, columns);
@@ -77,7 +89,11 @@ async function readSchema() {
       const columns = schema.get(table);
       if (!columns) continue;
       for (const add of body.matchAll(/add column (?:if not exists )?(\w+)/gi)) columns.add(add[1]);
-      for (const add of body.matchAll(/^\s*add\s+(\w+)\s+[a-z]/gim)) columns.add(add[1]);
+      // Bare `add <name> <type>`. `column` and `constraint` are the keyword
+      // forms handled above and below; capturing them invents a column.
+      for (const add of body.matchAll(/^\s*add\s+(\w+)\s+[a-z]/gim)) {
+        if (!/^(column|constraint|primary|unique|check|foreign|exclude)$/i.test(add[1])) columns.add(add[1]);
+      }
     }
   }
   return schema;
@@ -295,6 +311,195 @@ async function checkAppColumns(schema) {
   notes.push(`${checked} app column references checked`);
 }
 
+/**
+ * 5. Every column without a default needs something that writes it.
+ *
+ * A column nothing writes answers with null or its default forever, and a
+ * screen reading it shows a blank that looks like real data. That is how
+ * `agent_test_runs.tools_used` sat empty on every run while the page dutifully
+ * rendered it — the bug is invisible from either side alone.
+ *
+ * Reserved columns are listed below with the reason. The list is meant to be
+ * short and to shrink; adding to it is a decision, not a way past the check.
+ */
+const RESERVED = {
+  'users.avatar_url': 'no avatar anywhere in the console yet',
+  // These four carry a default that *is* the value today. Listed rather than
+  // treated as filled, because the day one of them needs to vary the check
+  // should say so instead of staying quiet.
+  'organizations.settings': 'presentation preferences only; everything a workflow reads became a column',
+  'tickets.tags': 'no tagging in the console yet',
+  'phone_numbers.provider': "twilio is the only provider, so the default is the value",
+  'calls.direction': 'only inbound calls exist; outbound would need its own route',
+  'conversations.end_user_email': 'no channel asks a visitor for one yet; the widget is anonymous',
+  'conversations.end_user_external_id': 'set once a channel carries a customer id (email, WhatsApp)',
+  'messages.tokens_in': 'per-message cost needs agent-turn to report usage',
+  'messages.tokens_out': 'as above',
+  'messages.latency_ms': 'as above',
+  'knowledge_base_documents.source_url': 'for crawled sources; today ingest takes pasted text',
+  'knowledge_base_documents.storage_path': 'for file upload; not built',
+  'knowledge_base_documents.mime_type': 'as above',
+  // The vector store node writes its own columns (content, metadata, embedding)
+  // and knows nothing about these. They cannot be filled on the current ingest
+  // path at all -- either that path changes or the columns go.
+  // Written by the LangChain vector store node, which names no fields for
+  // the checker to read. Listed so its absence is a decision, not an oversight.
+  'knowledge_base_chunks.embedding': 'written by the vector store node, which declares no field mapping',
+  'knowledge_base_chunks.chunk_index': 'the vector store node cannot write it; chunks are unordered today',
+  'knowledge_base_chunks.token_count': 'as above',
+  'tool_calls_log.message_id': 'would tie a tool call to the turn that caused it; the trace groups by conversation',
+  'phone_numbers.provider_sid': 'the number is entered by hand, not provisioned through an API',
+};
+
+/**
+ * The column names in every object literal handed to insert/update/upsert.
+ *
+ * Brace matching over the whole argument, not just an object right after the
+ * paren: the payload can sit inside a ternary
+ * (`.update(done ? { closed_at: stamp } : { ... })`), span lines, and contain
+ * its own parentheses. An earlier regex version stopped at the first of those
+ * and reported four columns as unwritten that the app writes on every request.
+ *
+ * Shorthand counts too — `{ checksum, title }` writes both.
+ */
+function writtenKeys(source) {
+  let keys = '';
+  for (const call of source.matchAll(/\.(?:insert|update|upsert)\(/g)) {
+    const open = call.index + call[0].length - 1;
+    const region = balanced(source, open);
+    if (region === null) continue;
+
+    // The payload is often built above the call and passed by name, so a
+    // literal argument is only one of the two shapes that occur.
+    const byName = /^\s*(\w+)\s*[,)]?\s*$/.exec(region);
+    if (byName) {
+      const declaration = new RegExp(`\\b(?:const|let|var)\\s+${byName[1]}\\s*(?::[^=]+)?=\\s*\\{`).exec(source);
+      if (declaration) {
+        const body = balanced(source, declaration.index + declaration[0].length - 1);
+        if (body !== null) keys += objectKeys(body);
+      }
+      continue;
+    }
+
+    // Every object literal in the argument, each contributing its own keys.
+    for (let i = 0; i < region.length; i += 1) {
+      if (region[i] !== '{') continue;
+      const body = balanced(region, i);
+      if (body === null) continue;
+      keys += objectKeys(body);
+    }
+  }
+  return keys;
+}
+
+/** The text between `source[open]` and its matching close, or null. */
+function balanced(source, open) {
+  const pairs = { '{': '}', '(': ')', '[': ']' };
+  let depth = 0;
+  for (let i = open; i < source.length; i += 1) {
+    const char = source[i];
+    if (char in pairs) depth += 1;
+    else if (char === '}' || char === ')' || char === ']') {
+      depth -= 1;
+      if (depth === 0) return source.slice(open + 1, i);
+    }
+  }
+  return null;
+}
+
+/** Top-level `key:` and shorthand `key` names of one object body. */
+function objectKeys(body) {
+  let keys = '';
+  let depth = 0;
+  let token = '';
+  for (let i = 0; i <= body.length; i += 1) {
+    const char = body[i];
+    if (char === '{' || char === '(' || char === '[') depth += 1;
+    else if (char === '}' || char === ')' || char === ']') depth -= 1;
+
+    if (depth === 0 && char !== undefined && /[\w$]/.test(char)) {
+      token += char;
+      continue;
+    }
+    if (depth === 0 && token) {
+      // `name:` is a key; `name,` or `name}` at the end is shorthand. Anything
+      // else (a value, an operator) is not.
+      const rest = body.slice(i).trimStart();
+      if (rest.startsWith(':') || rest === '' || rest.startsWith(',')) keys += `${token}\n`;
+    }
+    if (!/[\w$]/.test(char ?? '')) token = '';
+  }
+  return keys;
+}
+
+async function checkWriters(workflows, schema) {
+  // What counts as a write: an n8n field mapping, or the object literal handed
+  // to insert/update/upsert. A select list deliberately does not count -- that
+  // is the difference this check exists to see.
+  let written = '';
+  for (const { workflow } of workflows) {
+    for (const node of workflow.nodes) {
+      for (const field of node.parameters?.fieldsUi?.fieldValues ?? []) written += `${field.fieldId}\n`;
+    }
+  }
+
+  if (APP_PRESENT) {
+    for (const file of await sourceFiles(path.join(APP, 'src'))) {
+      written += writtenKeys(await readFile(file, 'utf8'));
+    }
+  }
+
+  // Migrations write too, but only in three shapes. Counting every mention
+  // would let an RLS policy or an index name stand in for a writer, which
+  // makes the check pass on everything.
+  for (const file of (await readdir(MIGRATIONS)).filter((f) => f.endsWith('.sql'))) {
+    const sql = await readFile(path.join(MIGRATIONS, file), 'utf8');
+    for (const insert of sql.matchAll(/insert\s+into\s+[\w.]+\s*\(([^)]*)\)/gi)) written += insert[1] + '\n';
+    // The table may carry an alias (`update public.documents d set ...`).
+    // Without it this missed the trigger that maintains chunk_count, and the
+    // check reported a column as unwritten that the database has kept correct
+    // since day one.
+    for (const update of sql.matchAll(
+      /\bupdate\s+(?:only\s+)?[\w."]+(?:\s+(?:as\s+)?(?!set\b)\w+)?\s+set\s+([^;]*?)(?:\bwhere\b|;)/gi,
+    )) {
+      for (const assign of update[1].matchAll(/(\w+)\s*=/g)) written += assign[1] + '\n';
+    }
+    for (const trigger of sql.matchAll(/\bnew\.(\w+)\s*(?::=|=[^=])/gi)) written += trigger[1] + '\n';
+  }
+
+  let checked = 0;
+  const reservedButWritten = [];
+  for (const [table, columns] of schema) {
+    for (const column of columns) {
+      const key = `${table}.${column}`;
+      if (selfFilled.has(key)) continue;
+      checked += 1;
+      if (new RegExp(`\\b${column}\\b`).test(written)) {
+        if (key in RESERVED) reservedButWritten.push(key);
+        continue;
+      }
+      if (key in RESERVED) continue;
+      problems.push(`${key} has no default and nothing writes it — it will read empty forever`);
+    }
+  }
+
+  // A reserved entry that is now written is a note gone stale, and a stale note
+  // is how the next real one gets waved through.
+  for (const key of reservedButWritten) notes.push(`reserved column is written now, drop it from RESERVED: ${key}`);
+  notes.push(`${checked} columns checked for a writer`);
+}
+
+/** Every .ts/.tsx under a directory, skipping build output. */
+async function sourceFiles(dir, found = []) {
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (['node_modules', '.next', '.git'].includes(entry.name)) continue;
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) await sourceFiles(full, found);
+    else if (/\.tsx?$/.test(entry.name)) found.push(full);
+  }
+  return found;
+}
+
 const [schema, workflows] = await Promise.all([readSchema(), readWorkflows()]);
 
 if (APP_PRESENT) {
@@ -304,6 +509,7 @@ if (APP_PRESENT) {
 }
 checkColumns(workflows, schema);
 if (APP_PRESENT) await checkAppColumns(schema);
+await checkWriters(workflows, schema);
 
 console.log(`Schema: ${schema.size} tables, ${[...schema.values()].reduce((n, c) => n + c.size, 0)} columns`);
 console.log(`Workflows: ${workflows.length}`);

@@ -31,6 +31,16 @@ export async function takeOver(_prev: HandoffState, formData: FormData): Promise
 
   if (error) return { error: error.message };
 
+  // The ticket the escalation opened carries its own owner. Leaving it null
+  // means the customer has a ticket number for something nobody is named on,
+  // while the conversation next to it shows an owner — two answers to "who has
+  // this". Only open tickets: a closed one records who handled it then.
+  await supabase
+    .from('tickets')
+    .update({ assignee_id: user.id })
+    .eq('conversation_id', parsed.data)
+    .eq('status', 'open');
+
   const actor = await currentActor(supabase);
   if (actor) {
     await recordAudit(supabase, {
@@ -59,6 +69,14 @@ export async function releaseToAgent(_prev: HandoffState, formData: FormData): P
     .eq('id', parsed.data);
 
   if (error) return { error: error.message };
+
+  // Handing the conversation back releases the ticket with it, or the next
+  // person sees one that is open and already someone else's.
+  await supabase
+    .from('tickets')
+    .update({ assignee_id: null })
+    .eq('conversation_id', parsed.data)
+    .eq('status', 'open');
 
   const actor = await currentActor(supabase);
   if (actor) {
