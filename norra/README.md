@@ -57,6 +57,7 @@ npm ci
 npm run typecheck && npm run lint
 node tests/voice/run.mjs     # 16 Szenarien: Anruf → Turn → Weiterleitung → Status
 node tests/widget/run.mjs    # 13 Szenarien: Session → Turn → Token-Angriffe → Bewertung
+node tests/simulate/run.mjs  # 12 Szenarien: Testfälle als angemeldeter Admin
 ```
 
 ```bash

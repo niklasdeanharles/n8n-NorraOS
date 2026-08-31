@@ -49,8 +49,8 @@ nie hierher. Hierher gehört, was der Betreiber *sieht* und was ein Besucher
 | `src/components/` | Geteilte Bausteine (Nav, Skeletons, CopyField) |
 | `src/lib/` | Supabase-Clients, Env-Validierung, Voice- und Widget-Hilfen |
 | `src/types/database.ts` | Handgeschriebener Spiegel des Backend-Schemas |
-| `tests/voice/`, `tests/widget/` | End-to-End gegen die gebaute App |
-| `tests/mocks/` | Von beiden geteilte Stand-ins für PostgREST und n8n |
+| `tests/voice/`, `tests/widget/`, `tests/simulate/` | End-to-End gegen die gebaute App |
+| `tests/mocks/` | Geteilte Stand-ins für PostgREST, GoTrue und n8n |
 
 ## Namenskonventionen
 
@@ -151,9 +151,20 @@ Anlagezeitpunkt nicht.
 ist; die Datenbank verweigert eine leere Liste. Voice hängt zusätzlich an einer
 Nummer in `phone_numbers`, Web direkt am Widget unten.
 
-**Testfälle** (`agent_test_cases`) sind jetzt ein Formular auf der
-Agenten-Seite, nicht mehr nur ein Datenbank-Insert — das war die letzte Lücke,
-die für "vor dem Start testen" einen Entwickler gebraucht hätte.
+**Testfälle** (`agent_test_cases`) sind ein Formular auf der Agenten-Seite,
+nicht nur ein Datenbank-Insert — das war die letzte Lücke, die für "vor dem
+Start testen" einen Entwickler gebraucht hätte.
+
+Ein Fall prüft dreierlei: was die Antwort enthalten muss, was sie nie enthalten
+darf, und **welches Tool tatsächlich gelaufen ist**. Das dritte lässt sich am
+Antworttext nicht feststellen — „ich habe ein Ticket angelegt" schreibt ein
+Modell auch dann, wenn es `escalate_to_human` nie gerufen hat. Geprüft wird
+deshalb gegen `tool_calls_log`, das die Sub-Workflows selbst schreiben.
+
+Die Zuordnung läuft über Zeilen-IDs, nicht über Zeitstempel: alle Fälle eines
+Laufs teilen sich dieselbe Wegwerf-Konversation, und `created_at` kommt aus
+Postgres, während der Runner `Date.now()` kennt. Ein paar Sekunden Uhrenversatz
+würden einem Fall den Tool-Aufruf eines anderen zuschreiben.
 
 ## Das Web-Widget
 
@@ -321,12 +332,13 @@ npm run lint
 npm run build
 ```
 
-Die beiden End-to-End-Suiten bauen die App selbst und fahren sie gegen
+Die drei End-to-End-Suiten bauen die App selbst und fahren sie gegen
 In-Memory-Stand-ins hoch:
 
 ```bash
-node tests/voice/run.mjs    # 16 Szenarien vom eingehenden Anruf bis zum Status-Callback
-node tests/widget/run.mjs   # 13 Szenarien von der Session bis zur Bewertung
+node tests/voice/run.mjs      # 16 Szenarien vom eingehenden Anruf bis zum Status-Callback
+node tests/widget/run.mjs     # 13 Szenarien von der Session bis zur Bewertung
+node tests/simulate/run.mjs   # 12 Szenarien der Testfall-Simulation, als angemeldeter Admin
 ```
 
 Der Build-Schritt darin ist nicht optional: `NEXT_PUBLIC_*` wird beim Bauen

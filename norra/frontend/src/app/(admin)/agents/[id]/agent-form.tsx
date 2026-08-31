@@ -3,6 +3,7 @@
 import { useActionState, useState } from 'react';
 import { saveAgent, type AgentFormState } from '../actions';
 import { CopyField } from '@/components/copy-field';
+import { TOOL_CATALOGUE } from '@/lib/tools';
 import type { AgentRow } from '@/types/database';
 
 const initial: AgentFormState = { error: null };
@@ -17,24 +18,6 @@ const CHANNELS = [
   { value: 'api', label: 'API' },
 ] as const;
 
-/** Tool slugs that exist as n8n sub-workflows. Keep in step with norra/n8n-workflows. */
-const AVAILABLE_TOOLS = [
-  {
-    slug: 'lookup_record',
-    hint: 'Datensatz im System des Kunden nachschlagen, read-only',
-    endpoint: 'Read-only-Endpunkt, den das Tool mit ?query=… aufruft',
-  },
-  {
-    slug: 'escalate_to_human',
-    hint: 'Ticket anlegen und an einen Menschen übergeben',
-    endpoint: null,
-  },
-  {
-    slug: 'request_action',
-    hint: 'Folgenreiche Aktion zur Freigabe einreichen — führt nichts aus',
-    endpoint: null,
-  },
-] as const;
 
 type Guardrails = { allowed_topics?: string[]; forbidden_topics?: string[]; refusal_message?: string | null };
 type EscalationRules = { on_keywords?: string[]; on_low_confidence?: boolean };
@@ -190,7 +173,7 @@ export function AgentForm({ agent, publicUrl }: { agent: AgentRow; publicUrl: st
       <div className="card">
         <div className="card-head"><h3>Tools</h3></div>
         <div className="card-body stack" style={{ gap: 10 }}>
-          {AVAILABLE_TOOLS.map((tool) => (
+          {TOOL_CATALOGUE.map((tool) => (
             <div key={tool.slug} className="tool-row">
               <label style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 9, fontWeight: 400 }}>
                 <input

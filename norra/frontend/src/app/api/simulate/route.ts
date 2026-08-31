@@ -39,6 +39,25 @@ function checkAbsent(output: string, needles: string[]): Assertion[] {
   );
 }
 
+/**
+ * Whether the turn actually reached the tool the case demands.
+ *
+ * The answer text cannot prove this: an agent that says "Ich habe ein Ticket
+ * angelegt" without calling `escalate_to_human` produces the exact same string
+ * as one that did. Only `tool_calls_log`, written by the sub-workflow itself,
+ * separates the two.
+ */
+function checkToolUsed(expected: string, used: string[]): Assertion {
+  if (used.includes(expected)) return { ok: true };
+  return {
+    ok: false,
+    failure:
+      used.length === 0
+        ? `Tool "${expected}" erwartet, aber der Agent hat kein Tool aufgerufen`
+        : `Tool "${expected}" erwartet, aufgerufen wurde: ${used.join(', ')}`,
+  };
+}
+
 export async function POST(request: NextRequest): Promise<Response> {
   const supabase = await createClient();
   const actor = await currentActor(supabase);
@@ -88,7 +107,19 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   if (!scratch) return NextResponse.json({ error: 'could not start simulation' }, { status: 500 });
 
-  const results: Array<{ caseId: string; name: string; status: string; failures: string[] }> = [];
+  const results: Array<{
+    caseId: string;
+    name: string;
+    status: string;
+    failures: string[];
+    toolsUsed: string[];
+  }> = [];
+
+  // All cases share the scratch conversation, so rows have to be attributed by
+  // identity, not by timestamp: `created_at` comes from Postgres and
+  // `Date.now()` from this process, and a few seconds of clock skew between
+  // them would hand one case another case's tool call.
+  const seenToolCalls = new Set<string>();
 
   try {
     for (const testCase of cases) {
@@ -96,6 +127,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       let output = '';
       let status: 'passed' | 'failed' | 'error' = 'failed';
       let failures: string[] = [];
+      const toolsUsed: string[] = [];
 
       try {
         const upstream = await callN8nWebhook(N8N_WEBHOOKS.agentTurn, {
@@ -111,9 +143,22 @@ export async function POST(request: NextRequest): Promise<Response> {
         if (!upstream.ok) throw new Error(`n8n antwortete ${upstream.status}`);
         output = await upstream.text();
 
+        const { data: logged } = await supabase
+          .from('tool_calls_log')
+          .select('id, tool_name')
+          .eq('conversation_id', scratch.id)
+          .order('created_at');
+
+        for (const row of logged ?? []) {
+          if (seenToolCalls.has(row.id)) continue;
+          seenToolCalls.add(row.id);
+          toolsUsed.push(row.tool_name);
+        }
+
         const assertions = [
           ...checkContains(output, testCase.expect_contains),
           ...checkAbsent(output, testCase.expect_absent),
+          ...(testCase.expect_tool ? [checkToolUsed(testCase.expect_tool, toolsUsed)] : []),
         ];
         failures = assertions.filter((a) => !a.ok).map((a) => a.failure ?? 'unbekannt');
         status = failures.length === 0 ? 'passed' : 'failed';
@@ -129,10 +174,11 @@ export async function POST(request: NextRequest): Promise<Response> {
         status,
         output: output.slice(0, 20_000),
         failures,
+        tools_used: toolsUsed,
         duration_ms: Date.now() - startedAt,
       });
 
-      results.push({ caseId: testCase.id, name: testCase.name, status, failures });
+      results.push({ caseId: testCase.id, name: testCase.name, status, failures, toolsUsed });
     }
   } finally {
     // Messages cascade with the conversation, so the scratch run leaves nothing.

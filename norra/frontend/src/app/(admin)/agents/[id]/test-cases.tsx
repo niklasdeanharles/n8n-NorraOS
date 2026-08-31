@@ -2,6 +2,7 @@
 
 import { useActionState } from 'react';
 import { addTestCase, deleteTestCase, type TestCaseFormState } from './test-case-actions';
+import { TOOL_CATALOGUE } from '@/lib/tools';
 import type { AgentTestCaseRow } from '@/types/database';
 
 const initial: TestCaseFormState = { error: null };
@@ -24,8 +25,19 @@ function DeleteButton({ id, agentId }: { id: string; agentId: string }) {
  * database console. Without this form, "vor dem Start testen" only works for
  * whoever can write SQL directly against Supabase.
  */
-export function TestCases({ agentId, cases }: { agentId: string; cases: AgentTestCaseRow[] }) {
+export function TestCases({
+  agentId,
+  cases,
+  enabledTools,
+}: {
+  agentId: string;
+  cases: AgentTestCaseRow[];
+  enabledTools: string[];
+}) {
   const [state, action, pending] = useActionState(addTestCase, initial);
+  // Only tools this agent actually has: expecting one it was never given fails
+  // every run and says nothing about the agent.
+  const offerable = TOOL_CATALOGUE.filter((tool) => enabledTools.includes(tool.slug));
 
   return (
     <>
@@ -54,6 +66,7 @@ export function TestCases({ agentId, cases }: { agentId: string; cases: AgentTes
                       {testCase.expect_absent.length > 0 ? (
                         <div>nie: {testCase.expect_absent.join(', ')}</div>
                       ) : null}
+                      {testCase.expect_tool ? <div>ruft auf: {testCase.expect_tool}</div> : null}
                     </td>
                     <td>
                       <DeleteButton id={testCase.id} agentId={agentId} />
@@ -94,6 +107,23 @@ export function TestCases({ agentId, cases }: { agentId: string; cases: AgentTes
               <span className="field-hint">Eine Zeichenfolge pro Zeile.</span>
             </label>
           </div>
+          {offerable.length > 0 ? (
+            <label>
+              Muss dieses Tool aufrufen
+              <select name="expectTool" defaultValue="">
+                <option value="">— egal —</option>
+                {offerable.map((tool) => (
+                  <option key={tool.slug} value={tool.slug}>
+                    {tool.slug}
+                  </option>
+                ))}
+              </select>
+              <span className="field-hint">
+                Wird gegen das Tool-Protokoll geprüft, nicht gegen den Antworttext — „ich habe ein Ticket
+                angelegt” zu schreiben reicht nicht.
+              </span>
+            </label>
+          ) : null}
           {state.error ? <p className="error">{state.error}</p> : null}
           {state.ok ? <p className="notice notice-ok">{state.ok}</p> : null}
           <div>

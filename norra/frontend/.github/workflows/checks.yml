@@ -48,6 +48,12 @@ jobs:
       - name: Widget path end to end
         run: node tests/widget/run.mjs
 
+      # Runs the agent's own test cases through the real turn path as a
+      # signed-in admin. Catches an assertion that stops asserting -- which is
+      # exactly how `expect_tool` went green for every agent.
+      - name: Simulation end to end
+        run: node tests/simulate/run.mjs
+
   wiring:
     name: Wiring against the backend schema
     runs-on: ubuntu-latest

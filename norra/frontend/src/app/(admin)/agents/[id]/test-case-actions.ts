@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { currentActor, recordAudit } from '@/lib/audit';
 import { createClient } from '@/lib/supabase/server';
+import { isToolSlug } from '@/lib/tools';
 
 export type TestCaseFormState = { error: string | null; ok?: string };
 
@@ -37,7 +38,16 @@ export async function addTestCase(_prev: TestCaseFormState, formData: FormData):
 
   const expectContains = toLines(formData.get('expectContains'));
   const expectAbsent = toLines(formData.get('expectAbsent'));
-  if (expectContains.length === 0 && expectAbsent.length === 0) {
+
+  const rawTool = formData.get('expectTool');
+  const expectTool = typeof rawTool === 'string' && rawTool.trim() ? rawTool.trim() : null;
+  // A slug outside the catalogue can never appear in `tool_calls_log`, so the
+  // case would fail every run for a reason that reads like an agent bug.
+  if (expectTool !== null && !isToolSlug(expectTool)) {
+    return { error: 'Unbekanntes Tool.' };
+  }
+
+  if (expectContains.length === 0 && expectAbsent.length === 0 && expectTool === null) {
     return { error: 'Mindestens eine Erwartung angeben — sonst prüft der Testfall nichts.' };
   }
 
@@ -55,6 +65,7 @@ export async function addTestCase(_prev: TestCaseFormState, formData: FormData):
       input: parsed.data.input,
       expect_contains: expectContains,
       expect_absent: expectAbsent,
+      expect_tool: expectTool,
       created_by: actor.id,
     })
     .select('id')

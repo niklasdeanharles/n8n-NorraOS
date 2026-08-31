@@ -5,6 +5,7 @@ import { statusTone } from '@/lib/format';
 import { AgentForm } from './agent-form';
 import { Simulation } from './simulation';
 import { TestCases } from './test-cases';
+import { enabledToolSlugs } from '@/lib/tools';
 import type { AgentTestRunRow } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
@@ -42,7 +43,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
       </header>
       <div className="content stack" style={{ maxWidth: 840 }}>
         <AgentForm agent={agent} publicUrl={process.env.NORRA_PUBLIC_URL?.replace(/\/$/, '') ?? null} />
-        <TestCases agentId={agent.id} cases={casesResult.data ?? []} />
+        <TestCases agentId={agent.id} cases={casesResult.data ?? []} enabledTools={enabledToolSlugs(agent.tools)} />
         <Simulation agentId={agent.id} cases={casesResult.data ?? []} lastRuns={lastRuns} />
       </div>
     </>

@@ -15,7 +15,21 @@ const db = {
   tickets: [],
   agents: [],
   organizations: [],
+  users: [],
+  tool_calls_log: [],
+  agent_test_cases: [],
+  agent_test_runs: [],
+  audit_log: [],
 };
+
+/**
+ * The signed-in user for `/auth/v1/user`, or null for an anonymous run.
+ *
+ * GoTrue validates the access token server-side, so `getUser()` always goes
+ * over the wire — which is what lets a test drive an authenticated route
+ * without a real Supabase project. Set it through `reset()`.
+ */
+let authUser = null;
 
 let seq = 1;
 const uuid = () => `00000000-0000-4000-8000-${String(seq++).padStart(12, '0')}`;
@@ -26,6 +40,9 @@ const uuid = () => `00000000-0000-4000-8000-${String(seq++).padStart(12, '0')}`;
  * exactly what production would not do.
  */
 const DEFAULTS = {
+  agent_test_cases: { expect_contains: [], expect_absent: [], expect_tool: null },
+  agent_test_runs: { failures: [], tools_used: [] },
+  tool_calls_log: { status: 'success', input: {}, output: null },
   calls: { status: 'ringing', direction: 'inbound', turn_count: 0, started_at: () => new Date().toISOString() },
   // csat: null, not omitted -- a real nullable column with no value set
   // still comes back as null in the row, never as a missing key.
@@ -61,10 +78,16 @@ function parseFilters(url) {
   return filters;
 }
 
-export function reset(seed) {
+export function reset(seed, user = null) {
   for (const key of Object.keys(db)) db[key] = [];
   Object.assign(db, seed);
+  authUser = user;
   seq = 1000;
+}
+
+/** Swaps the signed-in user mid-scenario, e.g. to check an admin-only route. */
+export function setUser(user) {
+  authUser = user;
 }
 
 export const store = db;
@@ -72,6 +95,18 @@ export const store = db;
 export function start(port) {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
+
+    // GoTrue, not PostgREST. `currentActor()` starts here, so every
+    // authenticated route in the app depends on this answer.
+    if (url.pathname.startsWith('/auth/v1/user')) {
+      res.writeHead(authUser ? 200 : 401, { 'content-type': 'application/json' });
+      return res.end(
+        JSON.stringify(
+          authUser ?? { code: 401, error_code: 'session_missing', msg: 'Auth session missing!' },
+        ),
+      );
+    }
+
     const table = url.pathname.replace('/rest/v1/', '');
     const rows = db[table];
     // PostgREST returns a bare object rather than an array when the client asks
@@ -139,6 +174,20 @@ export function start(port) {
     if (req.method === 'PATCH') {
       const updated = rows.filter((row) => matches(row, filters)).map((row) => Object.assign(row, body));
       return send(200, updated);
+    }
+
+    if (req.method === 'DELETE') {
+      const removed = rows.filter((row) => matches(row, filters));
+      // Cascades are the database's job in production; here they have to be
+      // spelled out, or a deleted scratch conversation leaves its messages and
+      // tool calls behind and the next case inherits them.
+      for (const row of removed) {
+        for (const child of ['messages', 'tool_calls_log', 'calls']) {
+          db[child] = db[child].filter((c) => c.conversation_id !== row.id);
+        }
+      }
+      db[table] = rows.filter((row) => !removed.includes(row));
+      return send(200, removed);
     }
 
     return send(405, { message: 'not supported' });
