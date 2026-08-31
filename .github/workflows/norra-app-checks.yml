@@ -7,19 +7,19 @@ on:
     branches:
       - master
     paths:
-      - norra/app/**
-      - norra/scripts/**
-      - norra/tests/**
-      - norra/n8n-workflows/**
-      - norra/supabase/migrations/**
+      - norra/frontend/**
+      - norra/backend/scripts/**
+      - norra/frontend/tests/**
+      - norra/backend/n8n-workflows/**
+      - norra/backend/supabase/migrations/**
       - .github/workflows/norra-app-checks.yml
   pull_request:
     paths:
-      - norra/app/**
-      - norra/scripts/**
-      - norra/tests/**
-      - norra/n8n-workflows/**
-      - norra/supabase/migrations/**
+      - norra/frontend/**
+      - norra/backend/scripts/**
+      - norra/frontend/tests/**
+      - norra/backend/n8n-workflows/**
+      - norra/backend/supabase/migrations/**
       - .github/workflows/norra-app-checks.yml
   workflow_dispatch:
 
@@ -41,34 +41,34 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: norra/app/package-lock.json
+          cache-dependency-path: norra/frontend/package-lock.json
 
       - name: Install
-        working-directory: norra/app
+        working-directory: norra/frontend
         run: npm ci
 
       - name: Type check
-        working-directory: norra/app
+        working-directory: norra/frontend
         run: npm run typecheck
 
       - name: Lint
-        working-directory: norra/app
+        working-directory: norra/frontend
         run: npm run lint
 
       - name: Check wiring
-        working-directory: norra
+        working-directory: norra/backend
         run: node scripts/check-wiring.mjs
 
       # Builds the app against in-memory stand-ins and drives real signed
       # webhooks through it. This is the check that catches a call path broken
       # by something outside the routes -- middleware, a header, a status code.
       - name: Phone path end to end
-        working-directory: norra
+        working-directory: norra/frontend
         run: node tests/voice/run.mjs
 
       # Same shape, for the embeddable web widget: mints a session, posts
       # turns, and spends half its scenarios trying to break the signed token
       # a tampered, forged, or merely expired one all have to fail the same way.
       - name: Widget path end to end
-        working-directory: norra
+        working-directory: norra/frontend
         run: node tests/widget/run.mjs

@@ -39,7 +39,7 @@ function parse<T extends z.ZodTypeAny>(schema: T, source: Record<string, string 
   const result = schema.safeParse(source);
   if (!result.success) {
     const missing = result.error.issues.map((issue) => issue.path.join('.')).join(', ');
-    throw new Error(`Missing or invalid environment variables: ${missing}. See norra/app/.env.example.`);
+    throw new Error(`Missing or invalid environment variables: ${missing}. See .env.example.`);
   }
   return result.data;
 }

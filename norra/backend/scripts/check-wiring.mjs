@@ -13,6 +13,7 @@
  * runs anywhere, including in a pull request with no Postgres attached.
  */
 
+import { existsSync } from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
@@ -20,7 +21,31 @@ import process from 'node:process';
 const ROOT = path.resolve(import.meta.dirname, '..');
 const WORKFLOWS = path.join(ROOT, 'n8n-workflows');
 const MIGRATIONS = path.join(ROOT, 'supabase/migrations');
-const CLIENT = path.join(ROOT, 'app/src/lib/n8n/client.ts');
+
+/**
+ * The app lives beside this repository rather than inside it, so half of what
+ * this script checks is only reachable when that checkout is present. Point
+ * NORRA_APP_DIR at it, or use one of the two layouts below and it is found
+ * without configuration.
+ *
+ * Without it the schema-versus-workflow half still runs: that is the half this
+ * repository can actually break on its own, and it is the half a deploy job
+ * here needs. The app-side half runs in the frontend repository's CI, which is
+ * where a route or a payload field changes in the first place.
+ */
+const APP_CANDIDATES = [
+  process.env.NORRA_APP_DIR,
+  path.join(ROOT, '../norra-frontend'), // two repositories side by side
+  path.join(ROOT, '../frontend'),       // norra/backend and norra/frontend
+].filter(Boolean);
+
+const APP = APP_CANDIDATES
+  .map((candidate) => path.resolve(candidate))
+  .find((candidate) => existsSync(path.join(candidate, 'src/lib/n8n/client.ts')))
+  ?? path.resolve(APP_CANDIDATES[0]);
+
+const CLIENT = path.join(APP, 'src/lib/n8n/client.ts');
+const APP_PRESENT = existsSync(CLIENT);
 
 const problems = [];
 const notes = [];
@@ -101,15 +126,15 @@ function checkWebhookPaths(workflows, clientSource) {
 /** 2. Every field the app sends must be read by the workflow that receives it. */
 async function checkPayloadFields(workflows) {
   const routes = [
-    { file: 'app/src/app/api/agent-turn/route.ts', webhook: 'norra/agent-turn' },
-    { file: 'app/src/app/api/kb-ingest/route.ts', webhook: 'norra/kb-ingest' },
-    { file: 'app/src/app/api/voice/turn/route.ts', webhook: 'norra/voice-turn' },
+    { file: 'src/app/api/agent-turn/route.ts', webhook: 'norra/agent-turn' },
+    { file: 'src/app/api/kb-ingest/route.ts', webhook: 'norra/kb-ingest' },
+    { file: 'src/app/api/voice/turn/route.ts', webhook: 'norra/voice-turn' },
   ];
 
   for (const route of routes) {
     let source;
     try {
-      source = await readFile(path.join(ROOT, route.file), 'utf8');
+      source = await readFile(path.join(APP, route.file), 'utf8');
     } catch {
       problems.push(`${route.file} is missing`);
       continue;
@@ -209,20 +234,20 @@ function checkColumns(workflows, schema) {
  */
 async function checkAppColumns(schema) {
   const files = [
-    'app/src/app/api/voice/incoming/route.ts',
-    'app/src/app/api/voice/turn/route.ts',
-    'app/src/app/api/voice/status/route.ts',
-    'app/src/app/api/voice/recording/route.ts',
-    'app/src/app/api/widget/session/route.ts',
-    'app/src/app/api/widget/turn/route.ts',
-    'app/src/app/api/feedback/route.ts',
+    'src/app/api/voice/incoming/route.ts',
+    'src/app/api/voice/turn/route.ts',
+    'src/app/api/voice/status/route.ts',
+    'src/app/api/voice/recording/route.ts',
+    'src/app/api/widget/session/route.ts',
+    'src/app/api/widget/turn/route.ts',
+    'src/app/api/feedback/route.ts',
   ];
   let checked = 0;
 
   for (const file of files) {
     let source;
     try {
-      source = await readFile(path.join(ROOT, file), 'utf8');
+      source = await readFile(path.join(APP, file), 'utf8');
     } catch {
       problems.push(`${file} is missing`);
       continue;
@@ -270,19 +295,19 @@ async function checkAppColumns(schema) {
   notes.push(`${checked} app column references checked`);
 }
 
-const [schema, workflows, clientSource] = await Promise.all([
-  readSchema(),
-  readWorkflows(),
-  readFile(CLIENT, 'utf8'),
-]);
+const [schema, workflows] = await Promise.all([readSchema(), readWorkflows()]);
 
-checkWebhookPaths(workflows, clientSource);
-await checkPayloadFields(workflows);
+if (APP_PRESENT) {
+  const clientSource = await readFile(CLIENT, 'utf8');
+  checkWebhookPaths(workflows, clientSource);
+  await checkPayloadFields(workflows);
+}
 checkColumns(workflows, schema);
-await checkAppColumns(schema);
+if (APP_PRESENT) await checkAppColumns(schema);
 
 console.log(`Schema: ${schema.size} tables, ${[...schema.values()].reduce((n, c) => n + c.size, 0)} columns`);
 console.log(`Workflows: ${workflows.length}`);
+console.log(APP_PRESENT ? `App: ${APP}` : `App: nicht gefunden unter ${APP} — App-seitige Prüfungen übersprungen`);
 for (const note of notes) console.log(`  ${note}`);
 
 if (problems.length > 0) {
@@ -290,4 +315,4 @@ if (problems.length > 0) {
   for (const problem of problems) console.error(`  ✗ ${problem}`);
   process.exit(1);
 }
-console.log('\n✓ App and workflows agree.');
+console.log(APP_PRESENT ? '\n✓ App and workflows agree.' : '\n✓ Workflows and schema agree (app checks skipped).');

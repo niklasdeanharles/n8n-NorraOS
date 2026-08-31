@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 /**
- * Builds the app against the mocks, starts it, runs the widget scenarios.
- * See tests/voice/run.mjs -- same shape, same reason for the build step
- * (`NEXT_PUBLIC_*` is inlined at build time).
+ * Builds the app against the mocks, starts it, runs the call scenarios.
+ *
+ * The build step is not optional: `NEXT_PUBLIC_*` is inlined at build time, so
+ * an app built against the real Supabase URL would quietly talk to it instead
+ * of the mock — which looked exactly like a broken lookup for half an hour.
  */
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
 
-const ROOT = path.resolve(import.meta.dirname, '../..');
-const APP = path.join(ROOT, 'app');
-const PORT = process.env.PORT ?? '3998';
+// The app is the repository root here; `tests/` sits beside `src/`.
+const APP = path.resolve(import.meta.dirname, '../..');
+const PORT = process.env.PORT ?? '3999';
 
 const env = {
   ...process.env,
@@ -19,6 +21,7 @@ const env = {
   SUPABASE_SERVICE_ROLE_KEY: 'service-key-for-test',
   N8N_WEBHOOK_URL: 'http://127.0.0.1:54322',
   N8N_WEBHOOK_SECRET: '0123456789abcdef0123',
+  TWILIO_AUTH_TOKEN: 'test-token-0123456789abcdef',
   NORRA_PUBLIC_URL: 'https://norra.test',
 };
 

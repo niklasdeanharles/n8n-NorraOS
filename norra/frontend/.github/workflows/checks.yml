@@ -1,0 +1,79 @@
+name: 'Checks'
+
+# Type check, lint, build, and the two end-to-end suites.
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Type check, lint, call and widget paths
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      # Builds the app against in-memory stand-ins and drives real signed
+      # webhooks through it. This is the check that catches a call path broken
+      # by something outside the routes -- middleware, a header, a status code.
+      - name: Phone path end to end
+        run: node tests/voice/run.mjs
+
+      # Same shape, for the embeddable web widget: mints a session, posts
+      # turns, and spends half its scenarios trying to break the signed token —
+      # a tampered, forged, or merely expired one all have to fail the same way.
+      - name: Widget path end to end
+        run: node tests/widget/run.mjs
+
+  wiring:
+    name: Wiring against the backend schema
+    runs-on: ubuntu-latest
+    # Needs the backend repository to compare against. Set the repository
+    # variable NORRA_BACKEND_REPO (e.g. "you/norra-backend") to switch this on;
+    # without it the job skips rather than failing a checkout nobody configured.
+    if: vars.NORRA_BACKEND_REPO != ''
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: app
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: ${{ vars.NORRA_BACKEND_REPO }}
+          path: backend
+          token: ${{ secrets.NORRA_BACKEND_TOKEN || github.token }}
+
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: 22
+
+      # A renamed webhook path, a payload field the workflow stopped reading, a
+      # column an API route names that the schema no longer has: none of those
+      # break a build, all of them break a customer.
+      - name: Check wiring
+        env:
+          NORRA_APP_DIR: ${{ github.workspace }}/app
+        run: node backend/scripts/check-wiring.mjs

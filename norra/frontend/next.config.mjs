@@ -1,8 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // norra/app is deliberately outside n8n's pnpm workspace. Without this, Next
-  // walks up to the monorepo lockfile and traces the wrong file tree.
+  // Pins tracing to this repository. Left over from living inside a monorepo,
+  // and still correct standalone: without it Next walks up looking for a
+  // lockfile and can pick one outside the checkout.
   outputFileTracingRoot: import.meta.dirname,
   // Fail the build on type or lint errors rather than shipping them.
   typescript: { ignoreBuildErrors: false },

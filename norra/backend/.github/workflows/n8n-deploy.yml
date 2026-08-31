@@ -1,27 +1,21 @@
-name: 'Norra: n8n Deploy'
+name: 'n8n Deploy'
 
-# Pushes committed workflow definitions back to the n8n instance. Only fires on
-# changes under norra/backend/n8n-workflows, so n8n's own repository changes never
-# trigger a deploy.
+# Pushes committed workflow definitions back to the n8n instance.
 on:
   push:
     branches:
-      - master
+      - main
     paths:
-      - norra/backend/n8n-workflows/**
-      - norra/backend/scripts/**
-      - norra/backend/supabase/migrations/**
-      - norra/frontend/src/lib/n8n/**
-      - norra/frontend/src/app/api/**
-      - .github/workflows/norra-n8n-deploy.yml
+      - n8n-workflows/**
+      - scripts/**
+      - supabase/migrations/**
+      - .github/workflows/n8n-deploy.yml
   pull_request:
     paths:
-      - norra/backend/n8n-workflows/**
-      - norra/backend/scripts/**
-      - norra/backend/supabase/migrations/**
-      - norra/frontend/src/lib/n8n/**
-      - norra/frontend/src/app/api/**
-      - .github/workflows/norra-n8n-deploy.yml
+      - n8n-workflows/**
+      - scripts/**
+      - supabase/migrations/**
+      - .github/workflows/n8n-deploy.yml
   workflow_dispatch:
 
 concurrency:
@@ -47,7 +41,7 @@ jobs:
           node-version: '22'
 
       - name: Validate workflow JSON
-        working-directory: norra/backend/n8n-workflows
+        working-directory: n8n-workflows
         run: |
           set -euo pipefail
           for file in *.json; do
@@ -60,12 +54,13 @@ jobs:
             echo "ok  $file"
           done
 
-      - name: Check app and workflows still agree
-        working-directory: norra/backend
+      # Without the frontend checked out this covers workflows against the
+      # schema only; the app-side half runs in the frontend repository, which
+      # is where app changes actually land.
+      - name: Check workflows and schema still agree
         run: node scripts/check-wiring.mjs
 
       - name: Dry run
-        working-directory: norra/backend
         env:
           N8N_BASE_URL: ${{ secrets.N8N_BASE_URL }}
           N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
@@ -73,7 +68,6 @@ jobs:
 
       - name: Deploy
         if: github.event_name != 'pull_request'
-        working-directory: norra/backend
         env:
           N8N_BASE_URL: ${{ secrets.N8N_BASE_URL }}
           N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
