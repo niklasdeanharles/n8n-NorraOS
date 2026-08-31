@@ -159,9 +159,14 @@ und API-Routen — nicht nur an den Workflow-JSONs.
 `topic`, `knowledge_gap` und `title` schreibt ein Klassifikations-Schritt am Ende
 von `agent-turn`, nach der gestreamten Antwort — er kostet den Kunden also keine
 Wartezeit. Ohne ihn bleiben Topic Explorer und Gap Detection dauerhaft leer.
-`csat` kommt aus `/api/feedback`, das das Chat-Widget aufruft; Endkunden sind
-keine Auth-User, deshalb läuft die Route über den Service-Role-Key und prüft
-Konversations- und Organisations-ID als Paar.
+`csat` kommt aus `/api/feedback`, das die Bewertungsleiste im Web-Widget nach
+der ersten Antwort einblendet — einmalig pro Konversation, weggeklickt oder
+beantwortet bleibt sie verschwunden. Die Route läuft über den Service-Role-Key
+und authentifiziert wie jede andere Widget-Route über das signierte Token aus
+`lib/widget/token.ts`, nicht über Konversations- und Organisations-ID im
+Body: der Kanal *Web* ist der einzige, an dem eine Bewertung überhaupt anfällt,
+also nutzt die Route dieselbe Vertrauensgrenze, die für diesen Kanal ohnehin
+schon gilt, statt eine eigene zu erfinden.
 
 Der Klassifikator nutzt `claude-opus-5` mit `temperature: 0`. Ein günstigeres
 Modell wäre hier der naheliegende Kostenhebel — das ist eine bewusste
@@ -320,6 +325,9 @@ Drei Entscheidungen, die nicht offensichtlich sind:
    Schaltet ein Betreiber den Kanal *Web* mitten in einem Gespräch ab, bricht
    der nächste Turn sauber mit 404 ab, statt mit der alten Freigabe
    weiterzulaufen.
+
+`/api/feedback` (CSAT) authentifiziert nach demselben Muster — ein Rating ohne
+gültiges Token scheitert genauso wie ein Turn ohne eines.
 
 **Bekannte Grenze:** Vercels Functions haben kein geteiltes Gedächtnis über
 Aufrufe hinweg, klassisches Rate-Limiting nach IP oder Token geht dort also

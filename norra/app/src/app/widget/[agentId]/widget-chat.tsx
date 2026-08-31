@@ -9,7 +9,9 @@ function storageKey(agentId: string): string {
   return `norra-widget:${agentId}`;
 }
 
-function loadStoredConversation(agentId: string): { conversationId: string; token: string } | null {
+type StoredConversation = { conversationId: string; token: string; csatDone?: boolean };
+
+function loadStoredConversation(agentId: string): StoredConversation | null {
   try {
     const raw = localStorage.getItem(storageKey(agentId));
     if (!raw) return null;
@@ -20,7 +22,7 @@ function loadStoredConversation(agentId: string): { conversationId: string; toke
       typeof (parsed as { conversationId?: unknown }).conversationId === 'string' &&
       typeof (parsed as { token?: unknown }).token === 'string'
     ) {
-      return parsed as { conversationId: string; token: string };
+      return parsed as StoredConversation;
     }
   } catch {
     // Private browsing or a cleared store: fall through to a fresh session.
@@ -28,9 +30,13 @@ function loadStoredConversation(agentId: string): { conversationId: string; toke
   return null;
 }
 
-function storeConversation(agentId: string, conversationId: string, token: string): void {
+/** `csatDone` carries forward from whatever was already stored -- refreshing the
+ *  token on every turn must not un-hide a rating bar the visitor already used. */
+function storeConversation(agentId: string, conversationId: string, token: string, csatDone?: boolean): void {
   try {
-    localStorage.setItem(storageKey(agentId), JSON.stringify({ conversationId, token }));
+    const existing = loadStoredConversation(agentId);
+    const merged: StoredConversation = { conversationId, token, csatDone: csatDone ?? existing?.csatDone ?? false };
+    localStorage.setItem(storageKey(agentId), JSON.stringify(merged));
   } catch {
     // Storage can be unavailable; the chat still works within the page load.
   }
@@ -56,6 +62,8 @@ export function WidgetChat({ agentId }: { agentId: string }) {
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
+  const [csatDone, setCsatDone] = useState(false);
+  const [csatSubmitting, setCsatSubmitting] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
   const conversationIdRef = useRef<string | null>(null);
 
@@ -72,6 +80,7 @@ export function WidgetChat({ agentId }: { agentId: string }) {
         conversationIdRef.current = data.conversationId;
         setToken(data.token);
         setAgentName(data.agentName);
+        setCsatDone(stored?.conversationId === data.conversationId && stored.csatDone === true);
         storeConversation(agentId, data.conversationId, data.token);
       })
       .catch(() => setUnavailable(true));
@@ -104,7 +113,7 @@ export function WidgetChat({ agentId }: { agentId: string }) {
       const refreshed = response.headers.get('x-norra-widget-token');
       if (refreshed) {
         setToken(refreshed);
-        if (conversationIdRef.current) storeConversation(agentId, conversationIdRef.current, refreshed);
+        if (conversationIdRef.current) storeConversation(agentId, conversationIdRef.current, refreshed, csatDone);
       }
 
       if (!response.ok || !response.body) {
@@ -138,6 +147,31 @@ export function WidgetChat({ agentId }: { agentId: string }) {
       setStreaming(false);
     }
   }
+
+  async function rate(value: number) {
+    if (!token || csatSubmitting) return;
+    setCsatSubmitting(true);
+    try {
+      const response = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token, rating: value }),
+      });
+      // 409 means an earlier tab or reload already rated this conversation --
+      // treated the same as success, since the visitor's intent (stop asking)
+      // is identical either way.
+      if (response.ok || response.status === 409) {
+        setCsatDone(true);
+        if (conversationIdRef.current) storeConversation(agentId, conversationIdRef.current, token, true);
+      }
+    } catch {
+      // A failed rating is not worth surfacing as an error in the chat itself.
+    } finally {
+      setCsatSubmitting(false);
+    }
+  }
+
+  const hasAssistantReply = messages.some((message) => message.role === 'assistant');
 
   if (unavailable) {
     return (
@@ -173,6 +207,27 @@ export function WidgetChat({ agentId }: { agentId: string }) {
         ) : null}
       </div>
       {error ? <div className="widget-error">{error}</div> : null}
+      {hasAssistantReply && !csatDone ? (
+        <div className="widget-csat">
+          <span>War das hilfreich?</span>
+          <div className="widget-csat-scale">
+            {[1, 2, 3, 4, 5].map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => rate(value)}
+                disabled={csatSubmitting}
+                aria-label={`${value} von 5`}
+              >
+                {value}
+              </button>
+            ))}
+          </div>
+          <button type="button" className="widget-csat-dismiss" onClick={() => setCsatDone(true)} aria-label="Nicht jetzt">
+            ✕
+          </button>
+        </div>
+      ) : null}
       <form className="widget-compose" onSubmit={send}>
         <textarea
           value={draft}

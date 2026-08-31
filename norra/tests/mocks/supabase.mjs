@@ -27,7 +27,9 @@ const uuid = () => `00000000-0000-4000-8000-${String(seq++).padStart(12, '0')}`;
  */
 const DEFAULTS = {
   calls: { status: 'ringing', direction: 'inbound', turn_count: 0, started_at: () => new Date().toISOString() },
-  conversations: { status: 'open', channel: 'web' },
+  // csat: null, not omitted -- a real nullable column with no value set
+  // still comes back as null in the row, never as a missing key.
+  conversations: { status: 'open', channel: 'web', csat: null },
   messages: { content: '' },
   tickets: { status: 'open', priority: 'normal' },
 };

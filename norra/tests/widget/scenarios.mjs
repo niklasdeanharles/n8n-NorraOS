@@ -176,6 +176,30 @@ await scenario('Die Nachrichten-Obergrenze pro Konversation greift', async () =>
   await n8n.stop();
 });
 
+await scenario('Eine Bewertung wird einmalig übernommen', async () => {
+  seed();
+  const sessionRes = await post('/api/widget/session', { agentId: AGENT });
+  const session = await sessionRes.json();
+
+  const first = await post('/api/feedback', { token: session.token, rating: 5 });
+  check('200', first.status === 200, `bekam ${first.status}`);
+  check('csat gespeichert', store.conversations[0]?.csat === 5);
+
+  const second = await post('/api/feedback', { token: session.token, rating: 1 });
+  check('409 bei erneuter Bewertung', second.status === 409, `bekam ${second.status}`);
+  check('csat bleibt bei der ersten Bewertung', store.conversations[0]?.csat === 5);
+});
+
+await scenario('Eine Bewertung mit manipuliertem Token wird abgelehnt', async () => {
+  seed();
+  const sessionRes = await post('/api/widget/session', { agentId: AGENT });
+  const session = await sessionRes.json();
+  const [body] = session.token.split('.');
+  const res = await post('/api/feedback', { token: `${body}.${'C'.repeat(43)}`, rating: 5 });
+  check('401', res.status === 401, `bekam ${res.status}`);
+  check('csat bleibt leer', store.conversations[0]?.csat == null);
+});
+
 console.log(`\n${results.length} Szenarien, ${failures} Fehler`);
 supabase.close();
 process.exit(failures === 0 ? 0 : 1);
