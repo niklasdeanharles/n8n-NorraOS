@@ -12,7 +12,13 @@ import type { Database } from '@/types/database';
  * by signature instead, which every one of those routes checks before it does
  * anything -- see lib/voice/session.ts.
  */
-const PUBLIC_PATHS = ['/login', '/signup', '/auth', '/api/agent-turn', '/api/feedback', '/api/voice'];
+const PUBLIC_PATHS = [
+  '/login', '/signup', '/auth', '/api/agent-turn', '/api/feedback', '/api/voice',
+  // The embeddable chat widget and its API. A website visitor is not a
+  // Supabase user either; the widget authenticates by the signed token from
+  // lib/widget/token.ts, checked inside each route, not by session.
+  '/widget', '/api/widget',
+];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));

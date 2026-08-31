@@ -9,8 +9,8 @@
  * it caught the middleware redirecting every incoming call to the login page.
  */
 import { createHmac } from 'node:crypto';
-import { start as startSupabase, reset, store } from './mock-supabase.mjs';
-import { start as startN8n } from './mock-n8n.mjs';
+import { start as startSupabase, reset, store } from '../mocks/supabase.mjs';
+import { start as startN8n } from '../mocks/n8n.mjs';
 
 const AUTH_TOKEN = 'test-token-0123456789abcdef';
 const BASE = 'https://norra.test';

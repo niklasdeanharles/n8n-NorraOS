@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { currentActor, recordAudit } from '@/lib/audit';
+import { findTemplate } from './templates';
 
 export type AgentFormState = { error: string | null; ok?: string };
 
@@ -51,6 +52,10 @@ export async function saveAgent(_prev: AgentFormState, formData: FormData): Prom
   }
 
   const enabledTools = formData.getAll('tools').filter((t): t is string => typeof t === 'string');
+  const channels = formData.getAll('channels').filter((c): c is string => typeof c === 'string');
+  if (channels.length === 0) {
+    return { error: 'Mindestens ein Kanal muss aktiv sein — sonst nimmt der Agent nirgends Kontakt an.' };
+  }
 
   // `lookup_record` calls a customer endpoint; without one the sub-workflow has
   // nothing to hit, so refuse to store a tool that cannot work. https only —
@@ -75,7 +80,7 @@ export async function saveAgent(_prev: AgentFormState, formData: FormData): Prom
   // Read the current values first: the trail records what changed, not the row.
   const { data: before } = await supabase
     .from('agents')
-    .select('name, status, model, temperature, max_tokens, system_prompt')
+    .select('name, status, model, temperature, max_tokens, system_prompt, channels')
     .eq('id', parsed.data.id)
     .single();
 
@@ -94,6 +99,7 @@ export async function saveAgent(_prev: AgentFormState, formData: FormData): Prom
         refusal_message: parsed.data.refusalMessage || null,
       },
       tools: toolRows,
+      channels,
       escalation_rules: {
         on_keywords: toList(formData.get('escalationKeywords')),
         on_low_confidence: formData.get('escalateOnLowConfidence') === 'on',
@@ -114,6 +120,9 @@ export async function saveAgent(_prev: AgentFormState, formData: FormData): Prom
       const previous = (before as Record<string, unknown>)[key];
       if (previous !== value) changes[key] = { from: previous, to: value };
     }
+    const previousChannels = (before.channels ?? []).slice().sort().join(',');
+    const nextChannels = channels.slice().sort().join(',');
+    if (previousChannels !== nextChannels) changes.channels = { from: before.channels, to: channels };
   }
 
   await recordAudit(supabase, {
@@ -144,6 +153,8 @@ export async function createAgent(_prev: AgentFormState, formData: FormData): Pr
   const parsed = createSchema.safeParse({ name: formData.get('name'), slug: formData.get('slug') });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Eingabe ungültig.' };
 
+  const template = findTemplate(formData.get('template') as string | null);
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -160,6 +171,13 @@ export async function createAgent(_prev: AgentFormState, formData: FormData): Pr
       name: parsed.data.name,
       slug: parsed.data.slug,
       created_by: user.id,
+      system_prompt: template.systemPrompt,
+      guardrails: {
+        forbidden_topics: template.forbiddenTopics,
+        refusal_message: template.refusalMessage || null,
+      },
+      tools: template.tools.map((slug) => ({ slug, enabled: true, config: {} })),
+      escalation_rules: { on_low_confidence: template.escalateOnLowConfidence },
     })
     .select('id')
     .single();
@@ -174,7 +192,7 @@ export async function createAgent(_prev: AgentFormState, formData: FormData): Pr
     entityType: 'agent',
     entityId: created?.id ?? null,
     entityLabel: parsed.data.name,
-    changes: { slug: parsed.data.slug },
+    changes: { slug: parsed.data.slug, template: template.id },
   });
 
   revalidatePath('/agents');

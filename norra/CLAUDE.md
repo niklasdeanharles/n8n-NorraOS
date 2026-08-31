@@ -50,6 +50,8 @@ Next.js und n8n sprechen nie direkt miteinander außer über den einen Webhook.
 | `norra/n8n-workflows/` | Exportierte Workflow-JSONs (Sync via REST-API) |
 | `norra/scripts/` | Sync-/Wartungsskripte |
 | `norra/tests/voice/` | Anrufpfad end-to-end gegen die gebaute App |
+| `norra/tests/widget/` | Widget-Pfad end-to-end gegen die gebaute App |
+| `norra/tests/mocks/` | Von beiden geteilte Stand-ins für PostgREST und n8n |
 | `norra/docs/` | Architektur- und Betriebsnotizen |
 
 ## Namenskonventionen
@@ -104,7 +106,10 @@ Diese vier Regeln sind nicht verhandelbar:
 | `N8N_WEBHOOK_URL` | Vercel | Basis-URL der n8n-Instanz |
 | `N8N_WEBHOOK_SECRET` | Vercel + n8n | Header-Auth zwischen Proxy und Webhook |
 | `TWILIO_AUTH_TOKEN` | nur Server, optional | Signaturprüfung der Telefonie-Webhooks |
-| `NORRA_PUBLIC_URL` | Vercel, optional | öffentliche Basis-URL — Grundlage der Signatur |
+| `NORRA_PUBLIC_URL` | Vercel, optional | öffentliche Basis-URL für Telefonie-Signatur und Embed-Code |
+
+Das Web-Widget braucht keine eigene Variable — sein Signaturschlüssel leitet
+sich aus `N8N_WEBHOOK_SECRET` ab (siehe *Das Web-Widget* unten).
 
 Secrets stehen niemals im Repo. `.env.local` ist gitignored;
 `norra/app/.env.example` dokumentiert nur die Namen.
@@ -240,6 +245,90 @@ Nachricht einer Konversation liefert die Abfrage null Zeilen, und n8n
 überspringt Nodes ohne Input-Items — die Kette wäre gestorben, bevor der Agent
 je gelaufen wäre. Nebeneffekt: `messages` bleibt einzige Quelle der Wahrheit,
 es gibt keine zweite History-Tabelle (deshalb auch kein Postgres-Chat-Memory).
+
+### Ohne Entwicklung nutzbar
+
+Ein Agent lässt sich vollständig ohne Codezugriff aufbauen und live schalten:
+eine Vorlage liefert System-Prompt und Guardrails, der Editor deckt Tools,
+Kanäle und Testfälle ab, und der Kanal *Web* endet in einem Code, den man in
+die eigene Website einfügt — nirgends dazwischen ist ein Deploy oder ein Ticket
+nötig.
+
+**Vorlagen** (`agents/templates.ts`) sind statische Startpunkte, keine
+KI-Generierung: Next.js hat bewusst keine Claude-Integration, siehe
+Architektur oben. Eine Vorlage füllt System-Prompt, verbotene Themen und
+Standard-Tools vor; `[Unternehmen]` im Text ist ein Platzhalter, den der
+Betreiber vor dem Livegang ersetzt — Norra kennt den Firmennamen zum
+Anlagezeitpunkt nicht.
+
+**Kanäle** (`agents.channels`) entscheiden, wo ein Agent überhaupt erreichbar
+ist; die Datenbank verweigert eine leere Liste. Voice hängt zusätzlich an einer
+Nummer in `phone_numbers`, Web direkt am Widget unten.
+
+**Testfälle** (`agent_test_cases`) sind jetzt ein Formular auf der
+Agenten-Seite, nicht mehr nur ein Datenbank-Insert — das war die letzte Lücke,
+die für "vor dem Start testen" einen Entwickler gebraucht hätte.
+
+### Das Web-Widget
+
+Der einzige Kanal, auf dem eine Organisation einen Agenten heute selbst vor
+echte Kunden stellt, ohne Telefonnummer oder E-Mail-Anbindung. Der Code, den
+der Kunde in seine Seite einfügt, steht direkt auf der Agenten-Seite, sobald
+der Kanal *Web* aktiv ist:
+
+```html
+<script src="https://<host>/api/widget/embed" data-agent="<agent-id>" async></script>
+```
+
+Das Skript liest seinen eigenen `data-agent` und die eigene `src`-Origin aus
+und hängt einen schwebenden Button plus ein Iframe auf `/widget/[agentId]` ein
+— dieselbe Zeile funktioniert auf jeder Domain und jedem Deploy, ohne dass der
+Betreiber eine Basis-URL eintragen muss.
+
+```mermaid
+sequenceDiagram
+  participant B as Besucher
+  participant I as Iframe /widget/[agentId]
+  participant N as Next.js
+  participant W as n8n agent-turn
+  I->>N: POST /api/widget/session {agentId}
+  N-->>I: {conversationId, token}
+  B->>I: schreibt eine Nachricht
+  I->>N: POST /api/widget/turn {token, message}
+  N->>W: agent-turn, gestreamt
+  W-->>N: Antwort
+  N-->>I: gestreamter Body + aufgefrischtes Token
+```
+
+Drei Entscheidungen, die nicht offensichtlich sind:
+
+1. **Das signierte Token ist die gesamte Vertrauensgrenze**, nicht bloß eine
+   Ergänzung zu ihr. Ein Website-Besucher ist kein Supabase-User; `/api/widget/*`
+   liegt in `PUBLIC_PATHS` und jede Route liest `organization_id`, `agent_id`
+   und `conversation_id` ausschließlich aus dem Token (`lib/widget/token.ts`),
+   nie aus dem Request-Body. Ein Body-Feld mit einer fremden Organisations-ID
+   wird schlicht ignoriert. Format ist HMAC-SHA256 über eine JSON-Payload, kein
+   JWT — dieselbe Idee wie die Twilio-Signatur, mit demselben Beweisstandard:
+   der Test versucht ein manipuliertes, ein für eine fremde Konversation
+   gefälschtes und ein korrekt signiertes, aber abgelaufenes Token, und alle
+   drei müssen an derselben Stelle scheitern.
+2. **Es gibt kein zweites Secret.** Der Signaturschlüssel leitet sich aus
+   `N8N_WEBHOOK_SECRET` ab (`hmac('sha256', 'widget:' + secret)`) statt eine
+   eigene Umgebungsvariable zu verlangen, die ein Betreiber sonst separat
+   rotieren müsste, ohne dass es irgendwo einen Grund dafür gäbe.
+3. **Der Agent wird bei jedem Turn neu geprüft**, nicht nur beim Sessionstart.
+   Schaltet ein Betreiber den Kanal *Web* mitten in einem Gespräch ab, bricht
+   der nächste Turn sauber mit 404 ab, statt mit der alten Freigabe
+   weiterzulaufen.
+
+**Bekannte Grenze:** Vercels Functions haben kein geteiltes Gedächtnis über
+Aufrufe hinweg, klassisches Rate-Limiting nach IP oder Token geht dort also
+nicht ohne einen externen Store. Der Ersatz ist eine harte Obergrenze an
+Nachrichten pro Konversation (`MAX_MESSAGES_PER_CONVERSATION` in
+`/api/widget/turn`), durchgesetzt gegen die einzige Größe, die tatsächlich
+dauerhaft ist: die Zeilenzahl in `messages`. Schutz gegen einen verteilten
+Angriff ist bewusst nicht Teil dieser Route — das ist die Ebene eines WAF oder
+Cloudflare vor der Domain, nicht der Anwendung.
 
 ### Der Telefon-Assistent
 

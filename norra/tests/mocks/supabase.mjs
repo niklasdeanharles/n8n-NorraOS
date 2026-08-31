@@ -75,20 +75,32 @@ export function start(port) {
     // PostgREST returns a bare object rather than an array when the client asks
     // for one, which is what `.single()` and `.maybeSingle()` rely on.
     const wantsObject = (req.headers.accept ?? '').includes('vnd.pgrst.object+json');
+    // `{ count: 'exact', head: true }` sends a HEAD request with this Prefer
+    // header and reads the total back from Content-Range, never from a body —
+    // a HEAD response has none. Getting this wrong doesn't error, it just
+    // makes every count read as null, which is worse: the caller silently
+    // treats an over-limit conversation as brand new.
+    const wantsCount = /count=exact/.test(req.headers.prefer ?? '');
     const send = (status, body) => {
+      const headers = { 'content-type': 'application/json' };
+      if (wantsCount && Array.isArray(body)) headers['content-range'] = `0-0/${body.length}`;
+      if (req.method === 'HEAD') {
+        res.writeHead(status, headers);
+        return res.end();
+      }
       if (wantsObject && Array.isArray(body)) {
         if (body.length === 1) {
-          res.writeHead(status, { 'content-type': 'application/json' });
+          res.writeHead(status, headers);
           return res.end(JSON.stringify(body[0]));
         }
-        res.writeHead(406, { 'content-type': 'application/json' });
+        res.writeHead(406, headers);
         return res.end(JSON.stringify({
           code: 'PGRST116',
           message: `JSON object requested, multiple (or no) rows returned`,
           details: `Results contain ${body.length} rows`,
         }));
       }
-      res.writeHead(status, { 'content-type': 'application/json' });
+      res.writeHead(status, headers);
       res.end(JSON.stringify(body));
     };
     if (!rows) return send(404, { message: `unknown table ${table}` });
@@ -99,7 +111,7 @@ export function start(port) {
     const filters = parseFilters(url);
     if (process.env.MOCK_DEBUG) console.error('[mock]', req.method, table, JSON.stringify(filters));
 
-    if (req.method === 'GET') {
+    if (req.method === 'GET' || req.method === 'HEAD') {
       let found = rows.filter((row) => matches(row, filters));
       const limit = url.searchParams.get('limit');
       if (limit) found = found.slice(0, Number(limit));

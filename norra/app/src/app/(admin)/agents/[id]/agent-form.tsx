@@ -1,10 +1,21 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 import { saveAgent, type AgentFormState } from '../actions';
+import { CopyField } from '@/components/copy-field';
 import type { AgentRow } from '@/types/database';
 
 const initial: AgentFormState = { error: null };
+
+/** Mirrors `conversation_channel` in the schema — an agent's channels are meant to line up with it. */
+const CHANNELS = [
+  { value: 'web', label: 'Web-Chat', hint: 'Einbettbares Widget für die eigene Website' },
+  { value: 'voice', label: 'Telefon', hint: 'Nummer im Screen „Telefon” zuweisen' },
+  { value: 'email', label: 'E-Mail' },
+  { value: 'whatsapp', label: 'WhatsApp' },
+  { value: 'slack', label: 'Slack' },
+  { value: 'api', label: 'API' },
+] as const;
 
 /** Tool slugs that exist as n8n sub-workflows. Keep in step with norra/n8n-workflows. */
 const AVAILABLE_TOOLS = [
@@ -32,8 +43,9 @@ function asObject<T>(value: unknown): T {
   return (typeof value === 'object' && value !== null && !Array.isArray(value) ? value : {}) as T;
 }
 
-export function AgentForm({ agent }: { agent: AgentRow }) {
+export function AgentForm({ agent, publicUrl }: { agent: AgentRow; publicUrl: string | null }) {
   const [state, action, pending] = useActionState(saveAgent, initial);
+  const [channels, setChannels] = useState<string[]>(agent.channels);
 
   const guardrails = asObject<Guardrails>(agent.guardrails);
   const escalation = asObject<EscalationRules>(agent.escalation_rules);
@@ -77,6 +89,69 @@ export function AgentForm({ agent }: { agent: AgentRow }) {
           </label>
         </div>
       </div>
+
+      <div className="card">
+        <div className="card-head">
+          <h3>Kanäle</h3>
+          <div className="small muted" style={{ marginTop: 3 }}>
+            Wo dieser Agent Kontakt annimmt. Mindestens einer muss aktiv sein.
+          </div>
+        </div>
+        <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
+          {CHANNELS.map((channel) => (
+            <label key={channel.value} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, fontWeight: 400 }}>
+              <input
+                type="checkbox"
+                name="channels"
+                value={channel.value}
+                checked={channels.includes(channel.value)}
+                onChange={(event) =>
+                  setChannels((current) =>
+                    event.target.checked ? [...current, channel.value] : current.filter((c) => c !== channel.value),
+                  )
+                }
+                style={{ width: 'auto', marginTop: 3 }}
+              />
+              <span>
+                {channel.label}
+                {'hint' in channel && channel.hint ? (
+                  <span className="field-hint" style={{ display: 'block' }}>{channel.hint}</span>
+                ) : null}
+              </span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {channels.includes('web') ? (
+        <div className="card">
+          <div className="card-head">
+            <h3>Einbetten</h3>
+            <div className="small muted" style={{ marginTop: 3 }}>
+              Eine Zeile für die eigene Website. Funktioniert erst, sobald der Agent live ist.
+            </div>
+          </div>
+          <div className="card-body">
+            {publicUrl ? (
+              <>
+                <CopyField
+                  value={`<script src="${publicUrl}/api/widget/embed" data-agent="${agent.id}" async></script>`}
+                />
+                {agent.status !== 'live' ? (
+                  <p className="tiny muted" style={{ margin: '8px 0 0' }}>
+                    Der Code funktioniert erst, wenn der Status oben auf „Live” steht.
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              <p className="notice">
+                <code>NORRA_PUBLIC_URL</code> ist auf dieser Instanz nicht gesetzt — ohne die öffentliche
+                Basis-URL kann hier kein fertiger Code stehen.
+              </p>
+            )}
+          </div>
+        </div>
+      ) : null}
 
       <div className="card">
         <div className="card-head"><h3>System-Prompt</h3></div>

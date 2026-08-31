@@ -65,3 +65,10 @@ jobs:
       - name: Phone path end to end
         working-directory: norra
         run: node tests/voice/run.mjs
+
+      # Same shape, for the embeddable web widget: mints a session, posts
+      # turns, and spends half its scenarios trying to break the signed token
+      # a tampered, forged, or merely expired one all have to fail the same way.
+      - name: Widget path end to end
+        working-directory: norra
+        run: node tests/widget/run.mjs

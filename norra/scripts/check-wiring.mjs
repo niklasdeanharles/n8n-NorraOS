@@ -213,6 +213,8 @@ async function checkAppColumns(schema) {
     'app/src/app/api/voice/turn/route.ts',
     'app/src/app/api/voice/status/route.ts',
     'app/src/app/api/voice/recording/route.ts',
+    'app/src/app/api/widget/session/route.ts',
+    'app/src/app/api/widget/turn/route.ts',
   ];
   let checked = 0;
 

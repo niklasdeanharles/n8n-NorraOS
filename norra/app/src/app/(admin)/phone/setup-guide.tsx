@@ -1,4 +1,4 @@
-import { CopyField } from './copy-field';
+import { CopyField } from '@/components/copy-field';
 
 /**
  * The whole setup, on one card.
