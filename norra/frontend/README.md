@@ -12,7 +12,7 @@ liegen im Repository `norra-backend`.
 | `src/app/widget/` | Das öffentliche Chat-Widget (läuft im Iframe auf Kundenseiten) |
 | `src/app/api/` | Proxy nach n8n, Twilio-Webhooks, Widget-API, CSAT |
 | `src/lib/` | Supabase-Clients, Env-Validierung, Voice- und Widget-Hilfen |
-| `tests/` | Drei End-to-End-Suiten gegen die gebaute App |
+| `tests/` | Vier End-to-End-Suiten gegen die gebaute App |
 
 ## Schnellstart
 
@@ -35,9 +35,10 @@ npm run lint
 node tests/voice/run.mjs     # 16 Szenarien: Anruf → Turn → Weiterleitung → Status
 node tests/widget/run.mjs    # 13 Szenarien: Session → Turn → Token-Angriffe → Bewertung
 node tests/simulate/run.mjs  # 12 Szenarien: Testfälle als angemeldeter Admin
+node tests/console/run.mjs   # 17 Szenarien: Agent-Turn und Wissens-Ingest
 ```
 
-Alle drei Suiten bauen die App selbst und fahren sie gegen In-Memory-Stand-ins
+Alle vier Suiten bauen die App selbst und fahren sie gegen In-Memory-Stand-ins
 für PostgREST und n8n hoch. Sie haben in dieser Form schon Fehler gefunden,
 die kein Typecheck sieht — eine Middleware, die jeden Anruf auf die
 Login-Seite geschickt hätte, zum Beispiel.

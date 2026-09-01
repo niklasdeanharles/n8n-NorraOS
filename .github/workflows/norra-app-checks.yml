@@ -79,3 +79,11 @@ jobs:
       - name: Simulation end to end
         working-directory: norra/frontend
         run: node tests/simulate/run.mjs
+
+      # The two authenticated console routes. Covers what the mock can prove --
+      # validation, persistence order, history, failure branches. Tenant
+      # isolation is proven against a real Postgres in the backend's SQL suite,
+      # because the mock has no RLS and would pass either way.
+      - name: Console routes end to end
+        working-directory: norra/frontend
+        run: node tests/console/run.mjs

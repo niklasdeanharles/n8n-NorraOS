@@ -34,12 +34,18 @@ let authUser = null;
 let seq = 1;
 const uuid = () => `00000000-0000-4000-8000-${String(seq++).padStart(12, '0')}`;
 
+let identity = 0;
+const nextSeq = () => (identity += 1);
+
 /**
  * Column defaults, mirroring the migrations. Without them a route that relies
  * on `not null default 0` reads undefined and quietly computes NaN — which is
  * exactly what production would not do.
  */
 const DEFAULTS = {
+  // `messages.seq` is `generated always as identity`; history order depends on
+  // it, so the mock has to hand one out or every row sorts equal.
+  messages: { content: '', seq: () => nextSeq() },
   agent_test_cases: { expect_contains: [], expect_absent: [], expect_tool: null },
   agent_test_runs: { failures: [], tools_used: [] },
   tool_calls_log: { status: 'success', input: {}, output: null },
@@ -47,9 +53,33 @@ const DEFAULTS = {
   // csat: null, not omitted -- a real nullable column with no value set
   // still comes back as null in the row, never as a missing key.
   conversations: { status: 'open', channel: 'web', csat: null },
-  messages: { content: '' },
   tickets: { status: 'open', priority: 'normal' },
 };
+
+/**
+ * Unique indexes, mirroring the migrations.
+ *
+ * Without them a route's duplicate branch is unreachable from a test: the mock
+ * accepts the second insert, the route returns success, and the 409 it is
+ * supposed to produce is never exercised. A partial index (`where col is not
+ * null`) is expressed by the null check in `conflictsWith`.
+ */
+const UNIQUE = {
+  knowledge_base_documents: [['organization_id', 'checksum']],
+  phone_numbers: [['e164']],
+  calls: [['provider_call_id']],
+};
+
+/** The row an insert would collide with, or undefined. */
+function conflictsWith(table, rows, incoming) {
+  for (const keys of UNIQUE[table] ?? []) {
+    // A partial unique index does not constrain rows with a null in the key.
+    if (keys.some((key) => incoming[key] === null || incoming[key] === undefined)) continue;
+    const hit = rows.find((row) => keys.every((key) => row[key] === incoming[key]));
+    if (hit) return hit;
+  }
+  return undefined;
+}
 
 function withDefaults(table, row) {
   const defaults = DEFAULTS[table] ?? {};
@@ -68,6 +98,33 @@ function matches(row, filters) {
   });
 }
 
+/**
+ * PostgREST `order=col.dir[.nulls...]`, comma separated for several keys.
+ *
+ * Sorting a copy: the caller's array is the store itself, and sorting it in
+ * place would silently reorder the fixture other assertions read.
+ */
+function ordered(rows, spec) {
+  if (!spec) return rows;
+  const keys = spec.split(',').map((part) => {
+    const [column, ...rest] = part.split('.');
+    return { column, descending: rest.includes('desc') };
+  });
+  return [...rows].sort((a, b) => {
+    for (const { column, descending } of keys) {
+      const left = a[column];
+      const right = b[column];
+      if (left === right) continue;
+      // Nulls last in either direction, matching PostgREST's default for desc
+      // and the common case for asc.
+      if (left === null || left === undefined) return 1;
+      if (right === null || right === undefined) return -1;
+      return (left < right ? -1 : 1) * (descending ? -1 : 1);
+    }
+    return 0;
+  });
+}
+
 function parseFilters(url) {
   const filters = [];
   for (const [key, raw] of url.searchParams) {
@@ -83,6 +140,10 @@ export function reset(seed, user = null) {
   Object.assign(db, seed);
   authUser = user;
   seq = 1000;
+  // Continue above whatever the fixtures already carry, the way a sequence does
+  // after a restore. Starting at zero puts the first row the test writes
+  // *before* its own fixtures.
+  identity = Math.max(0, ...Object.values(db).flat().map((row) => Number(row.seq) || 0));
 }
 
 /** Swaps the signed-in user mid-scenario, e.g. to check an admin-only route. */
@@ -150,6 +211,10 @@ export function start(port) {
 
     if (req.method === 'GET' || req.method === 'HEAD') {
       let found = rows.filter((row) => matches(row, filters));
+      // Order before limit, as the database does. Skipping this made the mock
+      // return the *oldest* rows for a `.order(desc).limit(n)` and no test
+      // could tell a correct history from a reversed one.
+      found = ordered(found, url.searchParams.get('order'));
       const limit = url.searchParams.get('limit');
       if (limit) found = found.slice(0, Number(limit));
       return send(200, found);
@@ -157,17 +222,29 @@ export function start(port) {
 
     if (req.method === 'POST') {
       const incoming = Array.isArray(body) ? body : [body];
-      const conflict = url.searchParams.get('on_conflict');
+      const onConflict = url.searchParams.get('on_conflict');
       const written = incoming.map((item) => {
-        if (conflict) {
-          const keys = conflict.split(',');
+        if (onConflict) {
+          const keys = onConflict.split(',');
           const existing = rows.find((row) => keys.every((k) => row[k] === item[k]));
           if (existing) return Object.assign(existing, item);
         }
         const row = withDefaults(table, { id: uuid(), created_at: new Date().toISOString(), ...item });
+        if (conflictsWith(table, rows, row)) return { __conflict: true };
         rows.push(row);
         return row;
       });
+
+      const conflict = written.find((row) => row.__conflict);
+      if (conflict) {
+        // PostgREST surfaces a unique violation as PGRST/23505 with 409, and
+        // supabase-js hands the code to the caller. A route branching on
+        // `error.code === '23505'` reads exactly this.
+        res.writeHead(409, { 'content-type': 'application/json' });
+        return res.end(
+          JSON.stringify({ code: '23505', message: 'duplicate key value violates unique constraint', details: null }),
+        );
+      }
       return send(201, written);
     }
 

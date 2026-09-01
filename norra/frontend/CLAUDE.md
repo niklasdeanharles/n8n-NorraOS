@@ -49,7 +49,7 @@ nie hierher. Hierher gehört, was der Betreiber *sieht* und was ein Besucher
 | `src/components/` | Geteilte Bausteine (Nav, Skeletons, CopyField) |
 | `src/lib/` | Supabase-Clients, Env-Validierung, Voice- und Widget-Hilfen |
 | `src/types/database.ts` | Handgeschriebener Spiegel des Backend-Schemas |
-| `tests/voice/`, `tests/widget/`, `tests/simulate/` | End-to-End gegen die gebaute App |
+| `tests/voice/`, `tests/widget/`, `tests/simulate/`, `tests/console/` | End-to-End gegen die gebaute App |
 | `tests/mocks/` | Geteilte Stand-ins für PostgREST, GoTrue und n8n |
 
 ## Namenskonventionen
@@ -332,14 +332,24 @@ npm run lint
 npm run build
 ```
 
-Die drei End-to-End-Suiten bauen die App selbst und fahren sie gegen
+Die vier End-to-End-Suiten bauen die App selbst und fahren sie gegen
 In-Memory-Stand-ins hoch:
 
 ```bash
 node tests/voice/run.mjs      # 16 Szenarien vom eingehenden Anruf bis zum Status-Callback
 node tests/widget/run.mjs     # 13 Szenarien von der Session bis zur Bewertung
 node tests/simulate/run.mjs   # 12 Szenarien der Testfall-Simulation, als angemeldeter Admin
+node tests/console/run.mjs    # 17 Szenarien der Konsolen-Routen (Agent-Turn, Wissens-Ingest)
 ```
+
+**Was diese Suiten nicht beweisen können: Mandantentrennung.** Der Mock hat
+kein RLS, also wäre „eine fremde Konversations-ID ergibt 404" hier grün, egal
+was die Route tut — die stille Fehlgrün-Sorte. Diese Garantie wird dort
+geprüft, wo sie real ist: gegen ein echtes Postgres in
+`norra-backend/supabase/tests/tenancy.test.sql`. Was die Suiten sehr wohl
+beweisen, ist die Kehrseite davon: dass die Route ihre `organization_id` aus
+der Datenbankzeile nimmt und nicht aus dem Request-Body — denn n8n läuft mit
+`service_role` und umgeht RLS vollständig.
 
 Der Build-Schritt darin ist nicht optional: `NEXT_PUBLIC_*` wird beim Bauen
 eingesetzt, eine gegen die echte Supabase-URL gebaute App redet auch dann mit
