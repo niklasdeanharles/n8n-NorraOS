@@ -8,9 +8,10 @@ liegen im Repository `norra-backend`.
 
 | Ordner | Inhalt |
 |---|---|
-| `src/app/(admin)/` | Acht Screens: Dashboard, Chat, Analytics, Agenten, Telefon, Wissen, Governance, Team, Einstellungen |
-| `src/app/widget/` | Das öffentliche Chat-Widget (läuft im Iframe auf Kundenseiten) |
+| `src/app/(console)/` | Die Konsole — eigenes Root-Layout: acht Screens plus Login |
+| `src/app/widget/` | Das öffentliche Chat-Widget, eigenes Root-Layout (läuft im Iframe auf Kundenseiten) |
 | `src/app/api/` | Proxy nach n8n, Twilio-Webhooks, Widget-API, CSAT |
+| `src/styles/` | `base.css` (beide), `console.css`, `widget.css` |
 | `src/lib/` | Supabase-Clients, Env-Validierung, Voice- und Widget-Hilfen |
 | `tests/` | Vier End-to-End-Suiten gegen die gebaute App |
 

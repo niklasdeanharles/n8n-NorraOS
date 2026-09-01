@@ -10,7 +10,7 @@ Agent *weiß* und *entscheidet*; die Oberfläche liegt im Repository
 |---|---|
 | `supabase/migrations/` | 13 Migrationen: Schema, RLS, Vektor-Suche, Telefonie |
 | `supabase/tests/` | Drei ausführbare Testsuiten für Mandantentrennung, Governance und Telefonie |
-| `n8n-workflows/` | 7 Workflow-JSONs — der Agenten-Turn, die Tools, die Benachrichtigung |
+| `n8n-workflows/` | 7 Workflow-JSONs: `webhooks/` (was das Backend ruft), `sub-workflows/` (was ein Workflow ruft) |
 | `scripts/` | `n8n-sync.mjs` (Git ↔ n8n) und `check-wiring.mjs` (Drift-Prüfung) |
 | `docs/` | Betriebsnotizen |
 

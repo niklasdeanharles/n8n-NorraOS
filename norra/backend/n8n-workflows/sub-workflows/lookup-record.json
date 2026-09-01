@@ -1,5 +1,5 @@
 {
-  "name": "Norra – Tool: lookup_record",
+  "name": "Norra \u2013 Tool: lookup_record",
   "nodes": [
     {
       "name": "Lookup Requested",
@@ -175,7 +175,7 @@
         -50
       ],
       "parameters": {
-        "content": "## lookup_record – ein Tool, kein Konnektor\nDer Endpunkt kommt pro Turn aus der tools-Konfiguration des Agenten, nicht aus diesem Workflow. Damit dient derselbe Workflow jedem Kunden und jedem System: CRM, Auftragsverwaltung, Ticketsystem.\n\nneverError ist gesetzt, damit eine 404 als Datensatz zurueckkommt statt den Agenten-Turn abzubrechen -- der Agent soll \"nicht gefunden\" sagen koennen, nicht abstuerzen.\n\nReihenfolge ist Absicht: Return To Agent steht zuletzt, weil ein Sub-Workflow die Ausgabe seines letzten Nodes zurueckgibt.",
+        "content": "## lookup_record \u2013 ein Tool, kein Konnektor\nDer Endpunkt kommt pro Turn aus der tools-Konfiguration des Agenten, nicht aus diesem Workflow. Damit dient derselbe Workflow jedem Kunden und jedem System: CRM, Auftragsverwaltung, Ticketsystem.\n\nneverError ist gesetzt, damit eine 404 als Datensatz zurueckkommt statt den Agenten-Turn abzubrechen -- der Agent soll \"nicht gefunden\" sagen koennen, nicht abstuerzen.\n\nReihenfolge ist Absicht: Return To Agent steht zuletzt, weil ein Sub-Workflow die Ausgabe seines letzten Nodes zurueckgibt.",
         "color": 4,
         "width": 740,
         "height": 260
@@ -223,7 +223,7 @@
   },
   "norra": {
     "workflowId": "KHHKDV5CoyiDxuCO",
-    "slug": "tool-lookup-record"
+    "slug": "lookup-record"
   },
   "tags": [
     "norra",

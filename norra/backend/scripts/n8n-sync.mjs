@@ -20,7 +20,7 @@
  * Requires N8N_BASE_URL and N8N_API_KEY.
  */
 
-import { readFile, writeFile, readdir } from 'node:fs/promises';
+import { readFile, writeFile, readdir, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -107,16 +107,31 @@ function normalize(workflow, bookkeeping) {
   };
 }
 
+/**
+ * Workflows are filed one folder deep by what starts them: `webhooks/` for the
+ * ones n8n exposes over HTTP, `sub-workflows/` for the ones another workflow
+ * calls. `name` carries that folder, so it stays the file's identity.
+ */
 async function readRepoWorkflows() {
-  const entries = await readdir(WORKFLOW_DIR);
   const files = [];
-  for (const entry of entries) {
-    if (!entry.endsWith('.json')) continue;
-    const file = path.join(WORKFLOW_DIR, entry);
-    const parsed = JSON.parse(await readFile(file, 'utf8'));
-    files.push({ file, name: entry, workflow: parsed });
+  for (const dir of (await readdir(WORKFLOW_DIR, { withFileTypes: true })).filter((e) => e.isDirectory())) {
+    for (const entry of await readdir(path.join(WORKFLOW_DIR, dir.name))) {
+      if (!entry.endsWith('.json')) continue;
+      const name = `${dir.name}/${entry}`;
+      const file = path.join(WORKFLOW_DIR, name);
+      files.push({ file, name, workflow: JSON.parse(await readFile(file, 'utf8')) });
+    }
   }
   return files;
+}
+
+/**
+ * Where a workflow the repo has never seen belongs. A webhook node means the
+ * outside world calls it; anything else is started by another workflow.
+ */
+function folderFor(workflow) {
+  const webhook = (workflow.nodes ?? []).some((node) => node.type === 'n8n-nodes-base.webhook');
+  return webhook ? 'webhooks' : 'sub-workflows';
 }
 
 async function runExport({ dryRun }) {
@@ -134,8 +149,8 @@ async function runExport({ dryRun }) {
   let written = 0;
   for (const summary of summaries) {
     const full = await api(`/workflows/${summary.id}`);
-    const filename = filenameById.get(summary.id) ?? `${slugify(summary.name)}.json`;
-    const slug = filename.replace(/\.json$/, '');
+    const filename = filenameById.get(summary.id) ?? `${folderFor(full)}/${slugify(summary.name)}.json`;
+    const slug = path.basename(filename, '.json');
     const normalized = normalize(full, { workflowId: summary.id, slug });
     const serialized = `${JSON.stringify(normalized, null, 2)}\n`;
 
@@ -152,7 +167,10 @@ async function runExport({ dryRun }) {
       continue;
     }
     console.log(`  ${previous === null ? 'new      ' : 'changed  '}  ${filename}  (${summary.name})`);
-    if (!dryRun) await writeFile(target, serialized);
+    if (!dryRun) {
+      await mkdir(path.dirname(target), { recursive: true });
+      await writeFile(target, serialized);
+    }
     written += 1;
   }
 

@@ -1,6 +1,6 @@
 import type { ConversationStatus, TicketPriority } from '@/types/database';
 
-/** Maps a status or priority onto one of the badge styles in globals.css. */
+/** Maps a status or priority onto one of the badge styles in `styles/console.css`. */
 export function statusTone(status: string): string {
   switch (status) {
     case 'resolved':

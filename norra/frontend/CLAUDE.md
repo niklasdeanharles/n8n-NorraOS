@@ -42,15 +42,32 @@ nie hierher. Hierher gehört, was der Betreiber *sieht* und was ein Besucher
 
 | Pfad | Inhalt |
 |---|---|
-| `src/app/(admin)/` | Die Konsole: Dashboard, Chat, Agenten, Wissen, Telefon, Governance, Team, Einstellungen |
-| `src/app/(auth)/` | Login und Registrierung |
+| `src/app/(console)/` | Root-Layout der Konsole, darunter `(admin)/` (acht Screens) und `(auth)/` (Login, Registrierung) |
 | `src/app/api/` | Proxy- und Webhook-Routen (Agent-Turn, Voice, Widget, Feedback) |
-| `src/app/widget/` | Das öffentliche Chat-Widget, das im Iframe auf Kundenseiten läuft |
+| `src/app/widget/` | Das öffentliche Chat-Widget mit **eigenem Root-Layout**, läuft im Iframe auf Kundenseiten |
+| `src/styles/` | `base.css` (Tokens + Resets, beide Oberflächen), `console.css`, `widget.css` |
 | `src/components/` | Geteilte Bausteine (Nav, Skeletons, CopyField) |
 | `src/lib/` | Supabase-Clients, Env-Validierung, Voice- und Widget-Hilfen |
 | `src/types/database.ts` | Handgeschriebener Spiegel des Backend-Schemas |
 | `tests/voice/`, `tests/widget/`, `tests/simulate/`, `tests/console/` | End-to-End gegen die gebaute App |
 | `tests/mocks/` | Geteilte Stand-ins für PostgREST, GoTrue und n8n |
+
+### Zwei Root-Layouts, zwei Stylesheets
+
+Konsole und Widget sind zwei getrennte Oberflächen, kein gemeinsames
+Root-Layout: `(console)/layout.tsx` und `widget/layout.tsx` bringen beide ihr
+eigenes `<html>`/`<body>` mit. Grund ist das Widget — es lädt im Iframe auf der
+Website eines Kunden und soll weder die Admin-Shell noch deren CSS mitziehen.
+
+```
+base.css      Tokens, Element-Resets, Keyframes   -> beide
+console.css   Shell, Tabellen, Charts, Skeletons  -> nur (console)
+widget.css    Widget-Blasen, Compose, CSAT        -> nur widget
+```
+
+Eine Regel, die nur eine Oberfläche rendert, gehört in deren Datei — nicht in
+`base.css`. Wächst etwas zum geteilten Baustein (wie der Tipp-Indikator
+`.typing`), wandert es nach `base.css`.
 
 ## Namenskonventionen
 

@@ -1,16 +1,20 @@
 import type { Metadata } from 'next';
+import '@/styles/base.css';
+import '@/styles/widget.css';
 
 /**
- * Deliberately its own layout, outside `(admin)`: this page is loaded in an
- * iframe on a customer's own website, by a visitor who has never heard of
- * Norra and is not signed in. It gets none of the admin shell — no nav, no
- * auth redirect, nothing that assumes a logged-in operator.
- *
- * The root layout still owns `<html>`/`<body>` and `globals.css` — a nested
- * layout must not repeat them — so this only overrides the page title.
+ * Eigenes Root-Layout, bewusst getrennt von der Konsole: diese Seite lädt im
+ * iframe auf der Website eines Kunden, bei einem Besucher, der Norra nicht
+ * kennt und nicht eingeloggt ist. Sie bekommt nichts von der Admin-Shell —
+ * keine Navigation, kein Auth-Redirect, nichts, das einen eingeloggten
+ * Operator voraussetzt, und nicht deren Stylesheet.
  */
 export const metadata: Metadata = { title: 'Chat' };
 
 export default function WidgetLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+  return (
+    <html lang="de">
+      <body>{children}</body>
+    </html>
+  );
 }

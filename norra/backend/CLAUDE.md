@@ -52,7 +52,7 @@ genau hier: was ein Modell entscheidet oder eine Policy erzwingt, liegt hier.
 |---|---|
 | `supabase/migrations/` | SQL-Migrationen, per GitHub Action ausgerollt |
 | `supabase/tests/` | Ausführbare Mandanten- und Governance-Garantien |
-| `n8n-workflows/` | Exportierte Workflow-JSONs (Sync via REST-API) |
+| `n8n-workflows/` | Exportierte Workflow-JSONs, abgelegt nach Trigger: `webhooks/`, `sub-workflows/` |
 | `scripts/` | Sync- und Prüfskripte |
 | `docs/` | Architektur- und Betriebsnotizen |
 
@@ -115,15 +115,15 @@ n8n-Credential `httpHeaderAuth` mit dem Header-Namen `x-norra-secret`.
 
 Hostinger VPS, self-hosted Community Edition: `https://n8n-fdhh.srv1817599.hstgr.cloud`
 
-| Workflow | Slug | ID | Webhook-Pfad | Zweck |
+| Workflow | Datei | ID | Webhook-Pfad | Zweck |
 |---|---|---|---|---|
-| Agent Turn | `agent-turn` | `yTH3YQeR5qdNVxSI` | `POST /webhook/norra/agent-turn` | Zentraler Turn: Config laden, RAG, Streaming |
-| Voice Turn | `voice-turn` | `wc4s77ROyul5LR5X` | `POST /webhook/norra/voice-turn` | Ein gesprochener Turn, ohne Streaming |
-| KB Ingest | `kb-ingest` | `Q3XhlP6eet9eqnm0` | `POST /webhook/norra/kb-ingest` | Dokument chunken, einbetten, speichern |
-| Tool: lookup_record | `tool-lookup-record` | `KHHKDV5CoyiDxuCO` | Sub-Workflow | Datensatz beim Kunden nachschlagen, read-only |
-| Tool: escalate_to_human | `tool-escalate-to-human` | `pw6OzhBSG2oxagNt` | Sub-Workflow | Ticket anlegen, Konversation eskalieren |
-| Tool: request_action | `tool-request-action` | `LwyJZr8WFsjd0L9v` | Sub-Workflow | Folgenreiche Aktion zur **Freigabe** einreichen |
-| Notify Escalation | `notify-escalation` | `zU1x0scrqFmPClmg` | Sub-Workflow | E-Mail an das Support-Team |
+| Agent Turn | `webhooks/agent-turn.json` | `yTH3YQeR5qdNVxSI` | `POST /webhook/norra/agent-turn` | Zentraler Turn: Config laden, RAG, Streaming |
+| Voice Turn | `webhooks/voice-turn.json` | `wc4s77ROyul5LR5X` | `POST /webhook/norra/voice-turn` | Ein gesprochener Turn, ohne Streaming |
+| KB Ingest | `webhooks/kb-ingest.json` | `Q3XhlP6eet9eqnm0` | `POST /webhook/norra/kb-ingest` | Dokument chunken, einbetten, speichern |
+| Tool: lookup_record | `sub-workflows/lookup-record.json` | `KHHKDV5CoyiDxuCO` | Sub-Workflow | Datensatz beim Kunden nachschlagen, read-only |
+| Tool: escalate_to_human | `sub-workflows/escalate-to-human.json` | `pw6OzhBSG2oxagNt` | Sub-Workflow | Ticket anlegen, Konversation eskalieren |
+| Tool: request_action | `sub-workflows/request-action.json` | `LwyJZr8WFsjd0L9v` | Sub-Workflow | Folgenreiche Aktion zur **Freigabe** einreichen |
+| Notify Escalation | `sub-workflows/notify-escalation.json` | `zU1x0scrqFmPClmg` | Sub-Workflow | E-Mail an das Support-Team |
 
 ### Ordnung auf der Instanz
 

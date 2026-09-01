@@ -99,8 +99,19 @@ async function readSchema() {
   return schema;
 }
 
+/**
+ * Workflows live one folder deep: `webhooks/` for the ones n8n exposes over
+ * HTTP, `sub-workflows/` for the ones another workflow calls. `file` keeps the
+ * folder so an error message points at the file on disk.
+ */
 async function readWorkflows() {
-  const files = (await readdir(WORKFLOWS)).filter((f) => f.endsWith('.json')).sort();
+  const files = [];
+  for (const dir of (await readdir(WORKFLOWS, { withFileTypes: true })).filter((e) => e.isDirectory())) {
+    for (const entry of await readdir(path.join(WORKFLOWS, dir.name))) {
+      if (entry.endsWith('.json')) files.push(`${dir.name}/${entry}`);
+    }
+  }
+  files.sort();
   return await Promise.all(
     files.map(async (file) => ({ file, workflow: JSON.parse(await readFile(path.join(WORKFLOWS, file), 'utf8')) })),
   );

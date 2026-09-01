@@ -1,8 +1,8 @@
 {
-  "name": "Norra – Tool: escalate_to_human",
+  "name": "Norra \u2013 Tool: request_action",
   "nodes": [
     {
-      "name": "Escalation Requested",
+      "name": "Action Requested",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.2,
       "position": [
@@ -26,15 +26,27 @@
               "type": "string"
             },
             {
+              "name": "action",
+              "type": "string"
+            },
+            {
               "name": "subject",
               "type": "string"
             },
             {
-              "name": "summary",
+              "name": "reason",
               "type": "string"
             },
             {
-              "name": "priority",
+              "name": "record_reference",
+              "type": "string"
+            },
+            {
+              "name": "amount",
+              "type": "string"
+            },
+            {
+              "name": "currency",
               "type": "string"
             }
           ]
@@ -42,7 +54,7 @@
       }
     },
     {
-      "name": "Create Ticket",
+      "name": "File Ticket",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
@@ -74,7 +86,7 @@
             },
             {
               "fieldId": "description",
-              "fieldValue": "={{ $json.summary }}"
+              "fieldValue": "={{ $json.reason }}"
             },
             {
               "fieldId": "status",
@@ -82,18 +94,22 @@
             },
             {
               "fieldId": "priority",
-              "fieldValue": "={{ [\"low\",\"normal\",\"high\",\"urgent\"].includes($json.priority) ? $json.priority : \"normal\" }}"
+              "fieldValue": "high"
             },
             {
               "fieldId": "source",
               "fieldValue": "agent_escalation"
+            },
+            {
+              "fieldId": "external_ref",
+              "fieldValue": "={{ JSON.stringify({ kind: $json.action, record_reference: $json.record_reference, amount: $json.amount, currency: $json.currency }) }}"
             }
           ]
         }
       }
     },
     {
-      "name": "Mark Conversation Escalated",
+      "name": "Mark Conversation Pending",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
@@ -111,12 +127,12 @@
             {
               "keyName": "id",
               "condition": "eq",
-              "keyValue": "={{ $(\"Escalation Requested\").item.json.conversation_id }}"
+              "keyValue": "={{ $('Action Requested').item.json.conversation_id }}"
             },
             {
               "keyName": "organization_id",
               "condition": "eq",
-              "keyValue": "={{ $(\"Escalation Requested\").item.json.organization_id }}"
+              "keyValue": "={{ $('Action Requested').item.json.organization_id }}"
             }
           ]
         },
@@ -125,11 +141,7 @@
           "fieldValues": [
             {
               "fieldId": "status",
-              "fieldValue": "escalated"
-            },
-            {
-              "fieldId": "escalated_at",
-              "fieldValue": "={{ $now.toISO() }}"
+              "fieldValue": "pending"
             }
           ]
         }
@@ -140,7 +152,7 @@
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        660,
+        880,
         0
       ],
       "parameters": {
@@ -152,19 +164,19 @@
           "fieldValues": [
             {
               "fieldId": "organization_id",
-              "fieldValue": "={{ $(\"Escalation Requested\").item.json.organization_id }}"
+              "fieldValue": "={{ $('Action Requested').item.json.organization_id }}"
             },
             {
               "fieldId": "conversation_id",
-              "fieldValue": "={{ $(\"Escalation Requested\").item.json.conversation_id }}"
+              "fieldValue": "={{ $('Action Requested').item.json.conversation_id }}"
             },
             {
               "fieldId": "agent_id",
-              "fieldValue": "={{ $(\"Escalation Requested\").item.json.agent_id }}"
+              "fieldValue": "={{ $('Action Requested').item.json.agent_id }}"
             },
             {
               "fieldId": "tool_name",
-              "fieldValue": "escalate_to_human"
+              "fieldValue": "request_action"
             },
             {
               "fieldId": "n8n_workflow_id",
@@ -176,11 +188,11 @@
             },
             {
               "fieldId": "input",
-              "fieldValue": "={{ JSON.stringify($(\"Escalation Requested\").item.json) }}"
+              "fieldValue": "={{ JSON.stringify($('Action Requested').item.json) }}"
             },
             {
               "fieldId": "output",
-              "fieldValue": "={{ JSON.stringify({ ticket_id: $(\"Create Ticket\").item.json.id, ticket_number: $(\"Create Ticket\").item.json.number }) }}"
+              "fieldValue": "={{ JSON.stringify({ ticket_number: $('File Ticket').item.json.number, approval_id: $('File Approval Request').item.json.id, executed: false }) }}"
             },
             {
               "fieldId": "status",
@@ -204,15 +216,27 @@
         "assignments": {
           "assignments": [
             {
+              "id": "executed",
+              "name": "executed",
+              "value": "={{ false }}",
+              "type": "boolean"
+            },
+            {
+              "id": "approval-id",
+              "name": "approval_id",
+              "value": "={{ $('File Approval Request').item.json.id }}",
+              "type": "string"
+            },
+            {
               "id": "ticket-number",
               "name": "ticket_number",
-              "value": "={{ $(\"Create Ticket\").item.json.number }}",
+              "value": "={{ $('File Ticket').item.json.number }}",
               "type": "string"
             },
             {
               "id": "result",
               "name": "result",
-              "value": "=Die Anfrage wurde als Ticket #{{ $(\"Create Ticket\").item.json.number }} an das menschliche Support-Team uebergeben.",
+              "value": "=Die Aktion wurde NICHT ausgefuehrt. Sie liegt als Ticket #{{ $('File Ticket').item.json.number }} zur Freigabe bei einem Mitarbeiter. Sage dem Kunden zu, dass ein Mitarbeiter prueft und sich meldet. Bestaetige niemals, dass die Aktion bereits erfolgt ist, und nenne keinen Termin.",
               "type": "string"
             }
           ]
@@ -220,7 +244,7 @@
       }
     },
     {
-      "name": "Sticky Note escalate",
+      "name": "Sticky Note refund",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -228,129 +252,108 @@
         -50
       ],
       "parameters": {
-        "content": "## escalate_to_human\nDer Agent ruft dieses Tool, wenn er nicht weiterkommt oder der Kunde einen Menschen verlangt. Es legt ein Ticket an, setzt die Konversation auf escalated und protokolliert den Aufruf. Das Handoff-Dashboard sieht die Aenderung ueber Supabase Realtime.\n\nDie Benachrichtigung per E-Mail/Slack haengt bewusst nicht hier, sondern kommt als eigener Workflow in Phase 3.",
-        "color": 4,
+        "content": "## request_action fuehrt bewusst NICHTS aus\nJede folgenreiche Aktion -- Erstattung, Stornierung, Datenaenderung -- wird hier zur menschlichen Freigabe eingereicht, statt ausgefuehrt. Ein Sprachmodell, das eine Referenz und einen Betrag halluziniert, wuerde sonst echten Schaden anrichten, der nicht rueckholbar ist.\n\nDie Sperre ist die Zeile in approvals, nicht das Ticket: ein Ticket ist eine Notiz, die jemand uebersehen kann, eine Freigabe bleibt offen, bis ein Admin entscheidet.\n\nDer Rueckgabewert sagt dem Agenten ausdruecklich, dass nichts ausgefuehrt wurde.",
+        "color": 3,
         "width": 740,
-        "height": 220
+        "height": 340
       }
     },
     {
-      "name": "Notify Support Team",
-      "type": "n8n-nodes-base.executeWorkflow",
-      "typeVersion": 1.3,
+      "name": "File Approval Request",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
       "position": [
-        880,
+        660,
         0
       ],
-      "onError": "continueRegularOutput",
-      "notes": "onError=continueRegularOutput: eine fehlgeschlagene Mail darf die Eskalation nicht scheitern lassen. Das Ticket ist der Vorgang, die Mail nur der Hinweis darauf.",
+      "notes": "Die eigentliche Sperre: der Vorgang wartet als Zeile in approvals auf eine menschliche Entscheidung. Das Ticket allein waere nur eine Notiz, die jemand uebersehen kann.",
       "parameters": {
-        "source": "database",
-        "mode": "once",
-        "workflowId": {
-          "__rl": true,
-          "mode": "list",
-          "value": "zU1x0scrqFmPClmg",
-          "cachedResultName": "Norra – Notify Escalation"
-        },
-        "workflowInputs": {
-          "mappingMode": "defineBelow",
-          "matchingColumns": [],
-          "value": {
-            "organization_id": "={{ $('Escalation Requested').item.json.organization_id }}",
-            "conversation_id": "={{ $('Escalation Requested').item.json.conversation_id }}",
-            "ticket_number": "={{ $('Create Ticket').item.json.number }}",
-            "subject": "={{ $('Escalation Requested').item.json.subject }}",
-            "summary": "={{ $('Escalation Requested').item.json.summary }}",
-            "priority": "={{ $('Escalation Requested').item.json.priority }}"
-          },
-          "schema": [
+        "resource": "row",
+        "operation": "create",
+        "tableId": "approvals",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
             {
-              "id": "organization_id",
-              "displayName": "organization_id",
-              "type": "string",
-              "required": true,
-              "display": true,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true
+              "fieldId": "organization_id",
+              "fieldValue": "={{ $('Action Requested').item.json.organization_id }}"
             },
             {
-              "id": "conversation_id",
-              "displayName": "conversation_id",
-              "type": "string",
-              "required": true,
-              "display": true,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true
+              "fieldId": "conversation_id",
+              "fieldValue": "={{ $('Action Requested').item.json.conversation_id }}"
             },
             {
-              "id": "ticket_number",
-              "displayName": "ticket_number",
-              "type": "string",
-              "required": true,
-              "display": true,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true
+              "fieldId": "agent_id",
+              "fieldValue": "={{ $('Action Requested').item.json.agent_id }}"
             },
             {
-              "id": "subject",
-              "displayName": "subject",
-              "type": "string",
-              "required": true,
-              "display": true,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true
+              "fieldId": "ticket_id",
+              "fieldValue": "={{ $('File Ticket').item.json.id }}"
             },
             {
-              "id": "summary",
-              "displayName": "summary",
-              "type": "string",
-              "required": true,
-              "display": true,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true
+              "fieldId": "tool_name",
+              "fieldValue": "={{ $('Action Requested').item.json.action }}"
             },
             {
-              "id": "priority",
-              "displayName": "priority",
-              "type": "string",
-              "required": false,
-              "display": true,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true
+              "fieldId": "summary",
+              "fieldValue": "={{ $('Action Requested').item.json.subject }}"
+            },
+            {
+              "fieldId": "amount",
+              "fieldValue": "={{ $('Action Requested').item.json.amount || null }}"
+            },
+            {
+              "fieldId": "currency",
+              "fieldValue": "={{ $('Action Requested').item.json.currency || null }}"
+            },
+            {
+              "fieldId": "payload",
+              "fieldValue": "={{ JSON.stringify({ action: $('Action Requested').item.json.action, record_reference: $('Action Requested').item.json.record_reference, reason: $('Action Requested').item.json.reason, ticket_number: $('File Ticket').item.json.number }) }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "pending"
             }
           ]
-        },
-        "options": {
-          "waitForSubWorkflow": true
         }
       }
     }
   ],
   "connections": {
-    "Escalation Requested": {
+    "Action Requested": {
       "main": [
         [
           {
-            "node": "Create Ticket",
+            "node": "File Ticket",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Create Ticket": {
+    "File Ticket": {
       "main": [
         [
           {
-            "node": "Mark Conversation Escalated",
+            "node": "Mark Conversation Pending",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Mark Conversation Escalated": {
+    "Mark Conversation Pending": {
+      "main": [
+        [
+          {
+            "node": "File Approval Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "File Approval Request": {
       "main": [
         [
           {
@@ -362,17 +365,6 @@
       ]
     },
     "Log Tool Call": {
-      "main": [
-        [
-          {
-            "node": "Notify Support Team",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Notify Support Team": {
       "main": [
         [
           {
@@ -389,8 +381,8 @@
     "availableInMCP": true
   },
   "norra": {
-    "workflowId": "pw6OzhBSG2oxagNt",
-    "slug": "tool-escalate-to-human"
+    "workflowId": "LwyJZr8WFsjd0L9v",
+    "slug": "request-action"
   },
   "tags": [
     "norra",

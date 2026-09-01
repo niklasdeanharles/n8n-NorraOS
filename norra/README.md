@@ -1,20 +1,23 @@
-# Norra
+# NorraOS
 
-Die Norra-Plattform liegt in zwei getrennten Hälften. Sie sind bewusst
+Die Norra-Plattform: ein KI-Support-Agent, der über Web-Widget und Telefon
+erreichbar ist, mit einer Konsole zum Bauen, Testen und Überwachen.
+
+Sie liegt in zwei getrennten Hälften. Sie sind bewusst
 getrennt, weil sie unterschiedlich schnell und aus unterschiedlichen Gründen
 geändert werden: das Schema und die Agentenlogik hinten, die Oberfläche und
 die Webhook-Routen vorne.
 
 ```
-norra/
+NorraOS/
 ├── backend/     Supabase-Schema, RLS, Vektor-Suche, n8n-Workflows, Sync-Skripte
 └── frontend/    Next.js-App: Betreiber-Konsole, Web-Widget, Telefon-Webhooks
 ```
 
-Beide Ordner sind vollständige, für sich lauffähige Repositories: eigenes
-`README.md`, eigenes `CLAUDE.md`, eigenes `.gitignore`, eigene
-`.github/workflows/`. Wer sie herauslösen will, kopiert den Ordner und hat ein
-fertiges Repository — es fehlt nichts.
+Jeder Ordner steht für sich: eigenes `README.md`, eigenes `CLAUDE.md`, eigenes
+`.gitignore`, eigene Abhängigkeiten. Die CI liegt gemeinsam unter
+`.github/workflows/`, weil GitHub Workflows ausschließlich aus dem
+Repository-Wurzelverzeichnis liest.
 
 ## Was wo hingehört
 
@@ -29,7 +32,7 @@ vergleicht Webhook-Pfade, Payload-Felder und jeden Spaltennamen, den eine
 API-Route nennt, gegen die Migrationen und die Workflow-JSONs.
 
 ```bash
-cd norra/backend && node scripts/check-wiring.mjs
+cd backend && node scripts/check-wiring.mjs
 ```
 
 Das Skript findet die App von selbst, sowohl in dieser Anordnung
@@ -38,21 +41,24 @@ nebeneinander liegen (`norra-backend/` + `norra-frontend/`).
 
 ## CI
 
-Norra hängt hier im n8n-Fork, und GitHub liest Workflows ausschließlich aus
-dem Repository-Wurzelverzeichnis. Deshalb gibt es sie zweimal:
+Vier Workflows, alle in `.github/workflows/`, jeder mit `paths:`-Filtern, damit
+eine Änderung am Frontend keinen Datenbank-Rollout auslöst:
 
-| Ort | Läuft |
-|---|---|
-| `/.github/workflows/norra-*.yml` | jetzt, in diesem Fork — mit `norra/`-Pfaden und `paths:`-Filtern, damit sie auf n8n-eigene Änderungen nie feuern |
-| `norra/backend/.github/workflows/`, `norra/frontend/.github/workflows/` | sobald der jeweilige Ordner ein eigenes Repository ist — ohne Präfix, mit `main` statt `master` |
+| Workflow | Auslöser | Wirkung |
+|---|---|---|
+| `app-checks.yml` | Änderungen an `frontend/` oder am Schema | typecheck, lint, Verdrahtung, vier End-to-End-Suiten |
+| `db-migrate.yml` | Änderungen an `backend/supabase/` | prüft die Migrationen gegen ein Wegwerf-Postgres, rollt dann aus |
+| `n8n-deploy.yml` | Änderungen an `backend/n8n-workflows/` | schiebt die Workflow-Definitionen auf die n8n-Instanz |
+| `n8n-backup.yml` | täglich | holt die Workflows von der Instanz und committet, was abgedriftet ist |
 
-Inhaltlich sind es dieselben Jobs. Ändert sich einer, gehört der andere
-nachgezogen.
+Der letzte ist der, der das Leitprinzip durchsetzt: was jemand in der n8n-UI
+zusammenklickt, landet spätestens am nächsten Morgen als Commit in git — oder
+es gibt keine Drift.
 
 ## Prüfen
 
 ```bash
-cd norra/frontend
+cd frontend
 npm ci
 npm run typecheck && npm run lint
 node tests/voice/run.mjs     # 16 Szenarien: Anruf → Turn → Weiterleitung → Status
@@ -62,7 +68,7 @@ node tests/console/run.mjs   # 17 Szenarien: Agent-Turn und Wissens-Ingest
 ```
 
 ```bash
-cd norra/backend/supabase
+cd backend/supabase
 psql -v ON_ERROR_STOP=1 -f tests/bootstrap.local.sql
 for f in migrations/*.sql; do psql -v ON_ERROR_STOP=1 -q -f "$f"; done
 for t in tenancy governance phone; do psql -v ON_ERROR_STOP=1 -f "tests/$t.test.sql"; done
