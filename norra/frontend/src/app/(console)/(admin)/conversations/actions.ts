@@ -146,3 +146,48 @@ export async function sendHumanReply(_prev: HandoffState, formData: FormData): P
   revalidatePath(`/conversations/${conversation.id}`);
   return { error: null };
 }
+
+/**
+ * Names the caller behind a conversation.
+ *
+ * This is what makes `identify_caller` worth having: the tool can only say
+ * "Bekannter Anrufer" until someone writes down who that is. One operator
+ * spending five seconds here changes the next call's opening line.
+ */
+const contactSchema = z.object({
+  contactId: z.string().uuid(),
+  conversationId: z.string().uuid(),
+  displayName: z.string().trim().max(200),
+  note: z.string().trim().max(2000),
+});
+
+export async function saveContact(_prev: HandoffState, formData: FormData): Promise<HandoffState> {
+  const parsed = contactSchema.safeParse({
+    contactId: formData.get('contactId'),
+    conversationId: formData.get('conversationId'),
+    displayName: formData.get('displayName') ?? '',
+    note: formData.get('note') ?? '',
+  });
+  if (!parsed.success) return { error: 'Eingabe ungültig.' };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: 'Nicht angemeldet.' };
+
+  // No organization filter: RLS already scopes contacts to the caller's own
+  // tenant, and a filter here would only repeat that less reliably.
+  const { error } = await supabase
+    .from('contacts')
+    .update({
+      display_name: parsed.data.displayName || null,
+      note: parsed.data.note || null,
+    })
+    .eq('id', parsed.data.contactId);
+
+  if (error) return { error: error.message };
+
+  revalidatePath(`/conversations/${parsed.data.conversationId}`);
+  return { error: null, ok: 'Gespeichert. Beim nächsten Anruf erkennt der Agent ihn.' };
+}

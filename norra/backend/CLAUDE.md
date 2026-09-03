@@ -124,6 +124,41 @@ Hostinger VPS, self-hosted Community Edition: `https://n8n-fdhh.srv1817599.hstgr
 | Tool: escalate_to_human | `sub-workflows/escalate-to-human.json` | `pw6OzhBSG2oxagNt` | Sub-Workflow | Ticket anlegen, Konversation eskalieren |
 | Tool: request_action | `sub-workflows/request-action.json` | `LwyJZr8WFsjd0L9v` | Sub-Workflow | Folgenreiche Aktion zur **Freigabe** einreichen |
 | Notify Escalation | `sub-workflows/notify-escalation.json` | `zU1x0scrqFmPClmg` | Sub-Workflow | E-Mail an das Support-Team |
+| Tool: identify_caller | `sub-workflows/identify-caller.json` | — | Sub-Workflow | Anrufer an seiner Nummer erkennen (nur Telefon) |
+| Tool: send_sms | `sub-workflows/send-sms.json` | — | Sub-Workflow | SMS an den Anrufer (nur Telefon) |
+| Tool: schedule_callback | `sub-workflows/schedule-callback.json` | — | Sub-Workflow | Rückruf notieren (nur Telefon) |
+| Tool: transfer_to_department | `sub-workflows/transfer-to-department.json` | — | Sub-Workflow | An eine Fachabteilung durchstellen (nur Telefon) |
+
+Die vier ohne ID sind neu und noch nicht auf der Instanz. Wie sie dorthin
+kommen, steht in `n8n-workflows/README.md`.
+
+### Was der Agent nie bestimmt
+
+Am Telefon gibt es keine Sitzung, keinen Login, keine Seite zum Nachschlagen.
+Der Agent bekommt dort mehr Macht als im Chat — und genau deshalb gilt für alle
+vier Telefon-Tools dieselbe Regel:
+
+> **Das Modell bestimmt die Worte, nie das Ziel.**
+
+Konkret heißt das:
+
+| Tool | Was das Modell liefert | Woher das Ziel kommt |
+|---|---|---|
+| `identify_caller` | nichts | `calls.from_e164` — es kann nur nach dem Anrufer in der Leitung fragen, nicht nach beliebigen Kontakten |
+| `send_sms` | den Text | `calls.from_e164` als Empfänger, `calls.to_e164` als Absender |
+| `schedule_callback` | Grund und Zeitwunsch | `calls.from_e164` als Rückrufnummer |
+| `transfer_to_department` | einen Abteilungs**namen** | `phone_departments.e164`, nachgeschlagen in `/api/voice/turn` |
+
+Bei der Weiterleitung ist das nicht Vorsicht, sondern notwendig: läge die Nummer
+irgendwo im Kontext des Modells, könnte ein präparierter Text im
+Wissensdokument oder im gesprochenen Satz des Anrufers sie ersetzen — und der
+Anruf ginge auf Rechnung des Kunden zu einem Fremden. Es gibt deshalb keinen
+Pfad, auf dem eine Rufnummer aus dem Modell in ein `<Dial>` gelangt. Der
+Sub-Workflow gibt einen Namen zurück, die Route schlägt ihn nach, und ein Name
+ohne Zeile in der Tabelle führt zu keiner Verbindung.
+
+Die Szenarien `Eine erfundene Nummer wird niemals gewählt` und `Eine pausierte
+Abteilung nimmt keine Anrufe` in `tests/voice/scenarios.mjs` halten das fest.
 
 ### Ordnung auf der Instanz
 
@@ -164,6 +199,14 @@ ein Eintrag dort ist eine Entscheidung, kein Weg am Check vorbei. Wird eine
 reservierte Spalte später doch geschrieben, sagt der Check das und verlangt,
 den Eintrag zu entfernen: ein veralteter Vermerk ist der Weg, auf dem der
 nächste echte Fund durchgewunken wird.
+
+Seit den Telefon-Tools prüft es zusätzlich, dass **jedes Tool auf einen
+Sub-Workflow zeigt, den dieses Repository kennt**. Ein `toolWorkflow`-Node
+nennt sein Ziel im Feld `cachedResultName`; benennt jemand den Sub-Workflow um
+oder vertippt sich, bekommt der Agent ein Tool, das beim ersten Gebrauch
+scheitert — und zwar während ein Kunde am Telefon ist. Der Deploy-Job löst diese
+Namen zu Instanz-IDs auf, dieser Check fängt denselben Fehler schon im Pull
+Request.
 
 Die App-seitige Hälfte braucht den Frontend-Checkout. Liegen beide Repos
 nebeneinander — als `norra-frontend` oder als `frontend` — findet das Skript

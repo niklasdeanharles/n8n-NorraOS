@@ -171,3 +171,150 @@ export async function savePhoneNumber(_prev: PhoneFormState, formData: FormData)
   revalidatePath(`/phone/${input.id}`);
   return { error: null, ok: 'Gespeichert. Der nächste Anruf nutzt diese Einstellungen.' };
 }
+
+// ---------------------------------------------------------------------------
+// Departments
+//
+// The table the agent's `transfer_to_department` tool resolves against. A wrong
+// number here sends a customer to a stranger, so writing is admin-only in the
+// policy and checked again here.
+// ---------------------------------------------------------------------------
+
+const departmentSchema = z.object({
+  name: z.string().trim().min(1, 'Name fehlt.').max(80),
+  e164: z.string().transform(normalizeE164).refine((v) => E164.test(v), 'Nummer im Format +49301234567 angeben.'),
+  // Written for the model, not for a colleague: the agent reads this to decide
+  // whether the caller belongs here. "Buchhaltung" routes worse than "Fragen zu
+  // Rechnungen, Mahnungen und Zahlungsarten".
+  description: z.string().trim().min(1, 'Beschreibung fehlt — der Agent wählt danach aus.').max(500),
+});
+
+export async function addDepartment(_prev: PhoneFormState, formData: FormData): Promise<PhoneFormState> {
+  const parsed = departmentSchema.safeParse({
+    name: formData.get('name'),
+    e164: formData.get('e164'),
+    description: formData.get('description'),
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Eingabe ungültig.' };
+
+  const supabase = await createClient();
+  const actor = await currentActor(supabase);
+  if (!actor) return { error: 'Nicht angemeldet.' };
+  if (actor.role !== 'admin') return { error: 'Nur Admins können Abteilungen anlegen.' };
+
+  const { error } = await supabase.from('phone_departments').insert({
+    organization_id: actor.organizationId,
+    name: parsed.data.name,
+    e164: parsed.data.e164,
+    description: parsed.data.description,
+    created_by: actor.id,
+  });
+
+  if (error) {
+    // The unique index is on lower(trim(name)): the agent picks by name, so a
+    // name has to mean one thing.
+    if (error.code === '23505') return { error: 'Eine Abteilung mit diesem Namen gibt es schon.' };
+    return { error: error.message };
+  }
+
+  await recordAudit(supabase, {
+    organizationId: actor.organizationId,
+    actorId: actor.id,
+    actorLabel: actor.label,
+    action: 'create',
+    entityType: 'phone_department',
+    entityId: parsed.data.name,
+    entityLabel: `${parsed.data.name} → ${parsed.data.e164}`,
+  });
+
+  revalidatePath('/phone');
+  return { error: null, ok: `„${parsed.data.name}” angelegt. Der Agent kann ab dem nächsten Anruf dorthin verbinden.` };
+}
+
+/**
+ * Pauses a department without losing it — holiday cover, a number mid-migration.
+ * The agent only ever sees active rows, so pausing takes it out of the choice
+ * immediately, while the number and its wording stay for when it comes back.
+ */
+export async function toggleDepartment(_prev: PhoneFormState, formData: FormData): Promise<PhoneFormState> {
+  const id = z.string().uuid().safeParse(formData.get('id'));
+  const active = formData.get('active') === 'true';
+  if (!id.success) return { error: 'Unbekannte Abteilung.' };
+
+  const supabase = await createClient();
+  const actor = await currentActor(supabase);
+  if (!actor) return { error: 'Nicht angemeldet.' };
+  if (actor.role !== 'admin') return { error: 'Nur Admins können Abteilungen ändern.' };
+
+  const { error } = await supabase.from('phone_departments').update({ active }).eq('id', id.data);
+  if (error) return { error: error.message };
+
+  revalidatePath('/phone');
+  return {
+    error: null,
+    ok: active ? 'Wieder aktiv. Der Agent verbindet dorthin.' : 'Pausiert. Der Agent bietet sie nicht mehr an.',
+  };
+}
+
+export async function removeDepartment(_prev: PhoneFormState, formData: FormData): Promise<PhoneFormState> {
+  const id = z.string().uuid().safeParse(formData.get('id'));
+  if (!id.success) return { error: 'Unbekannte Abteilung.' };
+
+  const supabase = await createClient();
+  const actor = await currentActor(supabase);
+  if (!actor) return { error: 'Nicht angemeldet.' };
+  if (actor.role !== 'admin') return { error: 'Nur Admins können Abteilungen entfernen.' };
+
+  const { data: before } = await supabase
+    .from('phone_departments')
+    .select('name, e164')
+    .eq('id', id.data)
+    .maybeSingle();
+
+  const { error } = await supabase.from('phone_departments').delete().eq('id', id.data);
+  if (error) return { error: error.message };
+
+  await recordAudit(supabase, {
+    organizationId: actor.organizationId,
+    actorId: actor.id,
+    actorLabel: actor.label,
+    action: 'delete',
+    entityType: 'phone_department',
+    entityId: id.data,
+    entityLabel: before ? `${before.name} → ${before.e164}` : id.data,
+  });
+
+  revalidatePath('/phone');
+  return { error: null, ok: 'Entfernt. Der Agent verbindet nicht mehr dorthin.' };
+}
+
+// ---------------------------------------------------------------------------
+// Callbacks
+// ---------------------------------------------------------------------------
+
+/**
+ * Closes a callback the agent promised.
+ *
+ * `completed_at` is set here rather than defaulted in the schema, because the
+ * check constraint reads both ways: a row that says `done` must carry a time,
+ * and one that does not must carry none.
+ */
+export async function completeCallback(_prev: PhoneFormState, formData: FormData): Promise<PhoneFormState> {
+  const id = z.string().uuid().safeParse(formData.get('id'));
+  if (!id.success) return { error: 'Unbekannter Rückruf.' };
+
+  const supabase = await createClient();
+  const actor = await currentActor(supabase);
+  if (!actor) return { error: 'Nicht angemeldet.' };
+
+  const { error } = await supabase
+    .from('callbacks')
+    .update({ status: 'done', completed_at: new Date().toISOString(), completed_by: actor.id })
+    .eq('id', id.data)
+    .eq('status', 'pending');
+
+  if (error) return { error: error.message };
+
+  revalidatePath('/phone');
+  return { error: null, ok: 'Als erledigt vermerkt.' };
+}

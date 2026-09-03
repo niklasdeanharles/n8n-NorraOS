@@ -3,7 +3,7 @@
 import { useActionState, useState } from 'react';
 import { saveAgent, type AgentFormState } from '../actions';
 import { CopyField } from '@/components/copy-field';
-import { TOOL_CATALOGUE } from '@/lib/tools';
+import { TOOL_CATALOGUE, type ToolChannel } from '@/lib/tools';
 import type { AgentRow } from '@/types/database';
 
 const initial: AgentFormState = { error: null };
@@ -39,6 +39,42 @@ export function AgentForm({ agent, publicUrl }: { agent: AgentRow; publicUrl: st
     const tool = asObject<{ slug?: unknown; enabled?: unknown; config?: unknown }>(entry);
     if (typeof tool.slug !== 'string' || tool.enabled === false) continue;
     configured.set(tool.slug, asObject<{ url?: string }>(tool.config));
+  }
+
+
+  /**
+   * One channel's worth of tool rows. Split into two cards rather than one
+   * list, because "läuft nur am Telefon" is not a detail you want to read past.
+   */
+  function renderTools(channel: ToolChannel) {
+    return TOOL_CATALOGUE.filter((tool) => tool.channel === channel).map((tool) => (
+      <div key={tool.slug} className="tool-row">
+        <label style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 9, fontWeight: 400 }}>
+          <input
+            type="checkbox"
+            name="tools"
+            value={tool.slug}
+            defaultChecked={configured.has(tool.slug)}
+            style={{ width: 'auto', marginTop: 3 }}
+          />
+          <span>
+            <code style={{ fontWeight: 550 }}>{tool.slug}</code>
+            <span className="field-hint" style={{ display: 'block' }}>{tool.hint}</span>
+          </span>
+        </label>
+        {tool.endpoint ? (
+          <label style={{ marginLeft: 26 }}>
+            <input
+              name={`toolUrl:${tool.slug}`}
+              type="url"
+              placeholder="https://api.example.com/records"
+              defaultValue={configured.get(tool.slug)?.url ?? ''}
+            />
+            <span className="field-hint">{tool.endpoint}</span>
+          </label>
+        ) : null}
+      </div>
+    ));
   }
 
   return (
@@ -173,37 +209,30 @@ export function AgentForm({ agent, publicUrl }: { agent: AgentRow; publicUrl: st
       <div className="card">
         <div className="card-head"><h3>Tools</h3></div>
         <div className="card-body stack" style={{ gap: 10 }}>
-          {TOOL_CATALOGUE.map((tool) => (
-            <div key={tool.slug} className="tool-row">
-              <label style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 9, fontWeight: 400 }}>
-                <input
-                  type="checkbox"
-                  name="tools"
-                  value={tool.slug}
-                  defaultChecked={configured.has(tool.slug)}
-                  style={{ width: 'auto', marginTop: 3 }}
-                />
-                <span>
-                  <code style={{ fontWeight: 550 }}>{tool.slug}</code>
-                  <span className="field-hint" style={{ display: 'block' }}>{tool.hint}</span>
-                </span>
-              </label>
-              {tool.endpoint ? (
-                <label style={{ marginLeft: 26 }}>
-                  <input
-                    name={`toolUrl:${tool.slug}`}
-                    type="url"
-                    placeholder="https://api.example.com/records"
-                    defaultValue={configured.get(tool.slug)?.url ?? ''}
-                  />
-                  <span className="field-hint">{tool.endpoint}</span>
-                </label>
-              ) : null}
-            </div>
-          ))}
+          {renderTools('both')}
         </div>
       </div>
 
+      <div className="card">
+        <div className="card-head">
+          <h3>Tools am Telefon</h3>
+          <span className="field-hint">
+            Diese vier brauchen einen laufenden Anruf und stehen im Chat nicht zur Verfügung.
+          </span>
+        </div>
+        <div className="card-body stack" style={{ gap: 10 }}>
+          {/* Nicht deaktiviert, nur angesagt: ein deaktiviertes Feld wird nicht
+              mitgeschickt und würde ein einmal gesetztes Tool beim nächsten
+              Speichern stillschweigend wieder entfernen. */}
+          {!channels.includes('voice') ? (
+            <p className="notice">
+              Dieser Agent beantwortet noch keine Anrufe. Du kannst die Tools jetzt setzen — sie
+              greifen, sobald du ihm im Screen „Telefon” eine Nummer zuweist.
+            </p>
+          ) : null}
+          {renderTools('voice')}
+        </div>
+      </div>
       <div className="card">
         <div className="card-head"><h3>Eskalation</h3></div>
         <div className="card-body stack">

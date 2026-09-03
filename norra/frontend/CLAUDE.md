@@ -69,6 +69,25 @@ Eine Regel, die nur eine Oberfläche rendert, gehört in deren Datei — nicht i
 `base.css`. Wächst etwas zum geteilten Baustein (wie der Tipp-Indikator
 `.typing`), wandert es nach `base.css`.
 
+### Tools am Telefon
+
+Der Katalog in `src/lib/tools.ts` trägt seit den Telefon-Tools ein Feld
+`channel`. Es ist keine Vorliebe, sondern eine Tatsache: die vier Tools
+`identify_caller`, `send_sms`, `schedule_callback` und `transfer_to_department`
+brauchen eine `call_id`, und eine Chat-Konversation hat keine. Der Agent-Editor
+zeigt sie deshalb in einer eigenen Karte.
+
+Sie sind dort **nicht deaktiviert**, wenn dem Agenten noch keine Nummer
+zugewiesen ist — nur mit einem Hinweis versehen. Ein `disabled`-Feld wird vom
+Browser nicht mitgeschickt und würde ein einmal gesetztes Tool beim nächsten
+Speichern stillschweigend wieder entfernen.
+
+Bei `transfer_to_department` liegt die Absicherung in `/api/voice/turn`: das
+Modell liefert einen Abteilungs**namen**, die Route schlägt ihn in
+`phone_departments` nach und wählt nur eine dort hinterlegte Nummer. Warum das
+so und nicht anders geht, steht im Backend-`CLAUDE.md` unter „Was der Agent nie
+bestimmt".
+
 ## Namenskonventionen
 
 - **TypeScript:** `camelCase` für Variablen, `PascalCase` für Typen. Kein `any`.

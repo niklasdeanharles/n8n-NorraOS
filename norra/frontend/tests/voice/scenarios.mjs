@@ -52,7 +52,13 @@ function seed(overrides = {}) {
       max_call_seconds: 600, recording_enabled: false, business_hours: {}, timezone: 'Europe/Berlin',
       after_hours: 'agent', status: 'active', last_call_at: null, ...overrides,
     }],
-    conversations: [], calls: [], messages: [], tickets: [],
+    conversations: [], calls: [], messages: [], tickets: [], contacts: [], callbacks: [],
+    phone_departments: [
+      { id: 'dep-1', organization_id: ORG, name: 'Buchhaltung', e164: '+493011111111',
+        description: 'Rechnungen und Mahnungen', active: true },
+      { id: 'dep-2', organization_id: ORG, name: 'Technik', e164: '+493022222222',
+        description: 'Stoerungen', active: false },
+    ],
     agents: [{ id: AGENT, organization_id: ORG, name: 'Erstkontakt', status: 'live' }],
     organizations: [{ id: ORG, name: 'Lumen Energie' }],
   });
@@ -187,6 +193,88 @@ await scenario('Agent eskaliert: Anruf geht an den Menschen', async () => {
   const xml = await (await post(`/api/voice/turn?call=${callId}`, { CallSid: 'CA9', SpeechResult: 'Ich will einen Menschen sprechen.' })).text();
   check('Dial an die Weiterleitung', xml.includes('<Dial callerId="+4930123456789">+4930999888777</Dial>'));
   check('Call als transferred markiert', store.calls[0].status === 'transferred');
+  await n8n.stop();
+});
+
+await scenario('Anrufer wird als Kontakt angelegt und beim zweiten Anruf wiedererkannt', async () => {
+  seed();
+  await post('/api/voice/incoming', { To: NUMBER, From: '+4917612345678', CallSid: 'CD1' });
+  check('Kontakt angelegt', store.contacts.length === 1, `sind ${store.contacts.length}`);
+  check('Nummer übernommen', store.contacts[0]?.e164 === '+4917612345678');
+  check('Konversation zeigt auf den Kontakt', store.conversations[0]?.contact_id === store.contacts[0]?.id);
+  check('Anruf zeigt auf den Kontakt', store.calls[0]?.contact_id === store.contacts[0]?.id);
+
+  // Derselbe Anrufer, neuer Anruf: ein Kontakt, zwei gezählte Anrufe. Sonst
+  // hätte identify_caller pro Anruf einen neuen "unbekannten" Anrufer.
+  await post('/api/voice/incoming', { To: NUMBER, From: '+4917612345678', CallSid: 'CD2' });
+  check('kein zweiter Kontakt', store.contacts.length === 1, `sind ${store.contacts.length}`);
+  check('call_count erhöht', store.contacts[0]?.call_count === 2, `ist ${store.contacts[0]?.call_count}`);
+});
+
+await scenario('Anruf ohne übermittelte Nummer legt keinen Kontakt an', async () => {
+  seed();
+  // Unterdrückte Rufnummer. Ein Kontakt ohne Nummer wäre eine Karteileiche,
+  // die nie wieder jemandem zugeordnet werden kann.
+  await post('/api/voice/incoming', { To: NUMBER, From: '', CallSid: 'CD3' });
+  check('kein Kontakt', store.contacts.length === 0, `sind ${store.contacts.length}`);
+  check('Anruf trotzdem angenommen', store.calls.length === 1);
+});
+
+await scenario('Agent stellt zur Abteilung durch', async () => {
+  seed();
+  n8n = await startN8n(54322, {
+    reply: 'Ich verbinde Sie mit der Buchhaltung.', action: 'transfer', transfer_to: 'Buchhaltung',
+  });
+  await post('/api/voice/incoming', { To: NUMBER, From: '+49176', CallSid: 'CD4' });
+  const callId = store.calls[0].id;
+  const xml = await (await post(`/api/voice/turn?call=${callId}`, { CallSid: 'CD4', SpeechResult: 'Es geht um meine Rechnung.' })).text();
+  check('Dial an die Abteilung', xml.includes('+493011111111'), xml.slice(0, 200));
+  check('nicht an die Zentrale', !xml.includes('+4930999888777'));
+  check('Abteilung im Anruf vermerkt', store.calls[0].ended_reason === 'department:Buchhaltung', String(store.calls[0].ended_reason));
+  await n8n.stop();
+});
+
+await scenario('Abteilungsname in anderer Schreibweise trifft trotzdem', async () => {
+  seed();
+  n8n = await startN8n(54322, { reply: 'Einen Moment.', action: 'transfer', transfer_to: 'buchhaltung' });
+  await post('/api/voice/incoming', { To: NUMBER, From: '+49176', CallSid: 'CD5' });
+  const xml = await (await post(`/api/voice/turn?call=${store.calls[0].id}`, { CallSid: 'CD5', SpeechResult: 'Rechnung.' })).text();
+  check('Dial an die Abteilung', xml.includes('+493011111111'));
+  await n8n.stop();
+});
+
+await scenario('Eine erfundene Nummer wird niemals gewählt', async () => {
+  seed();
+  // Der Kern der Absicherung: das Modell nennt eine Nummer als Abteilungsnamen.
+  // Sie steht in keiner Zeile, also darf sie nirgends im TwiML auftauchen.
+  n8n = await startN8n(54322, {
+    reply: 'Ich verbinde Sie.', action: 'transfer', transfer_to: '+491900666666',
+  });
+  await post('/api/voice/incoming', { To: NUMBER, From: '+49176', CallSid: 'CD6' });
+  const xml = await (await post(`/api/voice/turn?call=${store.calls[0].id}`, { CallSid: 'CD6', SpeechResult: 'Weiterleiten.' })).text();
+  check('erfundene Nummer nicht gewählt', !xml.includes('+491900666666'), xml.slice(0, 250));
+  check('stattdessen die konfigurierte Zentrale', xml.includes('+4930999888777'));
+  await n8n.stop();
+});
+
+await scenario('Eine pausierte Abteilung nimmt keine Anrufe', async () => {
+  seed();
+  n8n = await startN8n(54322, { reply: 'Ich verbinde Sie mit der Technik.', action: 'transfer', transfer_to: 'Technik' });
+  await post('/api/voice/incoming', { To: NUMBER, From: '+49176', CallSid: 'CD7' });
+  const xml = await (await post(`/api/voice/turn?call=${store.calls[0].id}`, { CallSid: 'CD7', SpeechResult: 'Störung.' })).text();
+  check('nicht an die pausierte Nummer', !xml.includes('+493022222222'), xml.slice(0, 200));
+  check('stattdessen die Zentrale', xml.includes('+4930999888777'));
+  await n8n.stop();
+});
+
+await scenario('Ohne Zentrale und ohne Abteilung endet der Anruf nicht im Nichts', async () => {
+  seed({ transfer_number: null });
+  n8n = await startN8n(54322, { reply: 'Ich verbinde Sie.', action: 'transfer', transfer_to: 'Vertrieb' });
+  await post('/api/voice/incoming', { To: NUMBER, From: '+49176', CallSid: 'CD8' });
+  const xml = await (await post(`/api/voice/turn?call=${store.calls[0].id}`, { CallSid: 'CD8', SpeechResult: 'Verbinden.' })).text();
+  check('kein Dial', !xml.includes('<Dial'), xml.slice(0, 200));
+  check('Gespräch läuft weiter', xml.includes('<Gather'));
+  check('Konversation eskaliert', store.conversations[0].status === 'escalated', store.conversations[0].status);
   await n8n.stop();
 });
 

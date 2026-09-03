@@ -5,6 +5,8 @@ import { describeHours, parseBusinessHours } from '@/lib/voice/hours';
 import { relativeTime } from '@/lib/format';
 import { AddNumberForm } from './add-number-form';
 import { SetupGuide } from './setup-guide';
+import { Departments } from './departments';
+import { Callbacks } from './callbacks';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,7 +25,8 @@ const STATUS_LABEL: Record<string, string> = {
 export default async function PhonePage() {
   const supabase = await createClient();
 
-  const [numbersResult, callsResult, agentsResult] = await Promise.all([
+  const [numbersResult, callsResult, agentsResult, departmentsResult, callbacksResult, meResult] =
+    await Promise.all([
     supabase
       .from('phone_numbers')
       .select('id, e164, label, status, agent_id, business_hours, timezone, after_hours, last_call_at')
@@ -34,11 +37,29 @@ export default async function PhonePage() {
       .order('started_at', { ascending: false })
       .limit(10),
     supabase.from('agents').select('id, name').order('name'),
+    supabase
+      .from('phone_departments')
+      .select('id, name, e164, description, active')
+      .order('name'),
+    supabase
+      .from('callbacks')
+      .select('id, e164, reason, preference, requested_for, created_at')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(50),
+    supabase.auth.getUser(),
   ]);
 
   const numbers = numbersResult.data ?? [];
   const calls = callsResult.data ?? [];
   const agentNames = new Map((agentsResult.data ?? []).map((a) => [a.id, a.name]));
+
+  // The policy already blocks a non-admin write; asking here only decides
+  // whether to show a form that would be refused.
+  const userId = meResult.data.user?.id;
+  const { data: me } = userId
+    ? await supabase.from('users').select('role').eq('id', userId).maybeSingle()
+    : { data: null };
   const live = numbers.filter((n) => n.status === 'active').length;
 
   return (
@@ -113,6 +134,10 @@ export default async function PhonePage() {
         <AddNumberForm />
 
         <SetupGuide numbers={numbers.map((n) => ({ id: n.id, e164: n.e164, status: n.status }))} />
+
+        <Departments departments={departmentsResult.data ?? []} canEdit={me?.role === 'admin'} />
+
+        <Callbacks callbacks={callbacksResult.data ?? []} />
 
         <div className="card card-body-flush">
           <div className="card-head">

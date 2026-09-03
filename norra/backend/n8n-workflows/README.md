@@ -40,10 +40,42 @@ Workflows automatisch anwendet):
 | `escalate-to-human.json` | Agent-Tool `escalate_to_human` | `pw6OzhBSG2oxagNt` | angelegt |
 | `request-action.json` | Agent-Tool `request_action` | `LwyJZr8WFsjd0L9v` | angelegt |
 | `notify-escalation.json` | `escalate-to-human` | `zU1x0scrqFmPClmg` | angelegt, braucht `organizations.escalation_email` |
+| `identify-caller.json` | Agent-Tool `identify_caller` | **noch keine** | nur Telefon |
+| `send-sms.json` | Agent-Tool `send_sms` | **noch keine** | nur Telefon, braucht Twilio-Credential in n8n |
+| `schedule-callback.json` | Agent-Tool `schedule_callback` | **noch keine** | nur Telefon |
+| `transfer-to-department.json` | Agent-Tool `transfer_to_department` | **noch keine** | nur Telefon, braucht Einträge in `phone_departments` |
 
-Die drei Agent-Tools sind der Katalog aus `frontend/src/lib/tools.ts`;
+Die sieben Agent-Tools sind der Katalog aus `frontend/src/lib/tools.ts`;
 `notify-escalation` ist kein Tool, sondern der Mail-Versand, den
 `escalate-to-human` anstößt.
+
+### Die vier Telefon-Tools
+
+Sie brauchen alle eine `call_id` und stehen deshalb nur im Voice-Agenten, nicht
+im Chat. Was sie gemeinsam haben, ist wichtiger als was sie unterscheidet:
+
+**Das Modell bestimmt die Worte, nie das Ziel.** `send_sms` bekommt einen Text,
+aber die Empfängernummer kommt aus `calls.from_e164`. `identify_caller` bekommt
+eine `call_id`, keine Rufnummer — sonst wäre es eine freie Abfrage auf die
+Kontaktliste des Mandanten. `transfer_to_department` gibt einen Abteilungsnamen
+zurück, keine Nummer; `/api/voice/turn` schlägt ihn ein zweites Mal in
+`phone_departments` nach, unmittelbar vor dem Wählen. Eine vom Modell erfundene
+Nummer kann damit nirgends gewählt werden — es gibt keinen Pfad, auf dem sie
+ankäme.
+
+### Neue Sub-Workflows in Betrieb nehmen
+
+Der Deploy-Job legt bewusst nichts an. Die vier neuen Dateien haben deshalb noch
+keine `norra.workflowId`:
+
+1. In n8n: **Workflows → Import from File**, je eine Datei.
+2. `node scripts/n8n-sync.mjs export` holt sie mitsamt ihrer neuen ID zurück.
+3. Beim nächsten Deploy löst der Sync die Tool-Verweise im Voice-Agenten
+   automatisch am Namen auf — IDs müssen nirgends von Hand eingetragen werden.
+
+Fehlt einer der vier auf der Instanz, bricht `deploy` ab und nennt ihn beim
+Namen, statt einen Agenten mit einem Tool live zu schalten, das ins Leere zeigt.
+`check-wiring.mjs` fängt denselben Fehler schon im Pull Request.
 
 Die Workflow-ID steht in jeder Datei unter `norra.workflowId` — daran hängt der
 Deploy-Job seinen `PUT /api/v1/workflows/:id` auf. Wer eine Datei ohne diesen

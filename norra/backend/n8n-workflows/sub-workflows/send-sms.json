@@ -1,0 +1,249 @@
+{
+  "name": "Norra – Tool: send_sms",
+  "nodes": [
+    {
+      "name": "SMS Requested",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "organization_id",
+              "type": "string"
+            },
+            {
+              "name": "conversation_id",
+              "type": "string"
+            },
+            {
+              "name": "agent_id",
+              "type": "string"
+            },
+            {
+              "name": "call_id",
+              "type": "string"
+            },
+            {
+              "name": "message",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Load Call",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "calls",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $json.call_id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.organization_id }}"
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "name": "Send SMS",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "resource": "sms",
+        "operation": "send",
+        "from": "={{ $json.to_e164 }}",
+        "to": "={{ $json.from_e164 }}",
+        "message": "={{ $('SMS Requested').item.json.message.slice(0, 480) }}",
+        "options": {}
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "name": "Log Tool Call",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "tool_calls_log",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "organization_id",
+              "fieldValue": "={{ $('SMS Requested').item.json.organization_id }}"
+            },
+            {
+              "fieldId": "conversation_id",
+              "fieldValue": "={{ $('SMS Requested').item.json.conversation_id }}"
+            },
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "={{ $('SMS Requested').item.json.agent_id }}"
+            },
+            {
+              "fieldId": "tool_name",
+              "fieldValue": "send_sms"
+            },
+            {
+              "fieldId": "n8n_workflow_id",
+              "fieldValue": "={{ $workflow.id }}"
+            },
+            {
+              "fieldId": "n8n_execution_id",
+              "fieldValue": "={{ $execution.id }}"
+            },
+            {
+              "fieldId": "input",
+              "fieldValue": "={{ JSON.stringify($('SMS Requested').item.json) }}"
+            },
+            {
+              "fieldId": "output",
+              "fieldValue": "={{ JSON.stringify({ sid: $('Send SMS').item.json.sid ?? null, error: $('Send SMS').item.json.error ?? null }) }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "={{ $('Send SMS').item.json.sid ? 'success' : 'error' }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Return To Agent",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "sent",
+              "name": "sent",
+              "value": "={{ !!$('Send SMS').item.json.sid }}",
+              "type": "boolean"
+            },
+            {
+              "id": "result",
+              "name": "result",
+              "value": "={{ $('Send SMS').item.json.sid ? 'Die SMS ist an die Nummer des Anrufers unterwegs. Sage ihm, dass sie gleich ankommt.' : 'Die SMS konnte nicht gesendet werden. Sage das offen und biete an, die Angaben vorzulesen.' }}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Sticky Note sms",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -50,
+        -60
+      ],
+      "parameters": {
+        "content": "## send_sms – das Modell schreibt, es adressiert nicht\nEmpfaenger ist calls.from_e164, Absender calls.to_e164. Beide kommen aus dem Anrufdatensatz, keiner aus der Eingabe des Modells. Sonst waere das Tool ein Versand an beliebige Nummern auf Rechnung des Kunden.\n\nDer Text wird bei 480 Zeichen gekappt (drei SMS-Segmente). Ein Modell, das ins Erzaehlen kommt, kostet sonst pro Turn.\n\nWozu das auf dem Telefon: Sprache kann nichts zeigen. Ein Link, eine Auftragsnummer, eine Adresse -- vorgelesen sind sie weg, per SMS bleiben sie.",
+        "color": 4,
+        "width": 760,
+        "height": 300
+      }
+    }
+  ],
+  "connections": {
+    "SMS Requested": {
+      "main": [
+        [
+          {
+            "node": "Load Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Call": {
+      "main": [
+        [
+          {
+            "node": "Send SMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send SMS": {
+      "main": [
+        [
+          {
+            "node": "Log Tool Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Tool Call": {
+      "main": [
+        [
+          {
+            "node": "Return To Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "norra": {
+    "slug": "send-sms"
+  },
+  "tags": [
+    "norra",
+    "norra:tool"
+  ]
+}

@@ -64,6 +64,22 @@ export async function POST(request: NextRequest): Promise<Response> {
     );
   }
 
+  // The caller, recognised by their number. Doing this before the conversation
+  // means both it and the call can point at the contact from the start, so
+  // `identify_caller` has something to find on the very first turn.
+  //
+  // One statement rather than select-then-insert: two lines ringing at once
+  // from the same number would otherwise race into a unique violation. A
+  // failure here is not fatal — an unrecognised caller is still a caller.
+  let contactId: string | null = null;
+  if (from) {
+    const { data } = await supabase.rpc('touch_contact', {
+      p_organization_id: number.organization_id,
+      p_e164: from,
+    });
+    contactId = typeof data === 'string' ? data : null;
+  }
+
   // One conversation per call, keyed by the provider's call id so a retried
   // webhook lands on the same row instead of starting a second conversation.
   const { data: conversation, error: conversationError } = await supabase
@@ -74,6 +90,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         agent_id: number.agent_id,
         channel: 'voice',
         external_id: providerCallId,
+        contact_id: contactId,
         end_user_name: from || null,
         last_message_at: new Date().toISOString(),
       },
@@ -97,6 +114,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         provider_call_id: providerCallId,
         from_e164: from || null,
         to_e164: to,
+        contact_id: contactId,
         status: 'in_progress',
         answered_at: new Date().toISOString(),
       },

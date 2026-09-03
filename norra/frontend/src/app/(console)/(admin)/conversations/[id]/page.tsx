@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { conversationStatusLabel, formatDateTime, statusTone } from '@/lib/format';
 import { ChatPanel, type ChatMessage } from './chat-panel';
 import { HandoffBar } from './handoff-bar';
+import { ContactCard } from './contact-card';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,7 +14,7 @@ export default async function ConversationPage({ params }: { params: Promise<{ i
 
   const { data: conversation } = await supabase
     .from('conversations')
-    .select('id, status, channel, title, end_user_email, end_user_name, end_user_external_id, assigned_user_id, created_at, last_message_at, agents(id, name, model, status)')
+    .select('id, status, channel, title, end_user_email, end_user_name, end_user_external_id, assigned_user_id, created_at, last_message_at, agents(id, name, model, status), contacts(id, e164, display_name, note, call_count)')
     .eq('id', id)
     .single();
 
@@ -76,6 +77,9 @@ export default async function ConversationPage({ params }: { params: Promise<{ i
         </div>
 
         <aside className="stack">
+          {conversation.contacts ? (
+            <ContactCard contact={conversation.contacts} conversationId={conversation.id} />
+          ) : null}
           <div className="card">
             <div className="card-head"><h3>Übergabe</h3></div>
             <div className="card-body stack" style={{ gap: 10 }}>

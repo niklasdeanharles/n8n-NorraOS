@@ -513,6 +513,33 @@ async function sourceFiles(dir, found = []) {
 
 const [schema, workflows] = await Promise.all([readSchema(), readWorkflows()]);
 
+/**
+ * 6. Every tool an agent offers must point at a sub-workflow this repo has.
+ *
+ * A `toolWorkflow` node names its target in `cachedResultName`. Rename the
+ * sub-workflow, delete it, or mistype the name, and n8n gives the agent a tool
+ * that fails on first use -- at which point the customer is on the phone. The
+ * deploy job resolves these names to instance ids; this catches the same
+ * mistake in a pull request, before anything is deployed.
+ */
+function checkToolReferences(workflows) {
+  const available = new Set(workflows.map(({ workflow }) => workflow.name));
+
+  for (const { file, workflow } of workflows) {
+    for (const node of workflow.nodes ?? []) {
+      if (node.type !== '@n8n/n8n-nodes-langchain.toolWorkflow') continue;
+      const target = node.parameters?.workflowId?.cachedResultName;
+      if (!target) {
+        problems.push(`${file}: tool "${node.name}" names no sub-workflow — nothing can resolve it`);
+        continue;
+      }
+      if (!available.has(target)) {
+        problems.push(`${file}: tool "${node.name}" points at "${target}", which no file in this repo defines`);
+      }
+    }
+  }
+}
+
 if (APP_PRESENT) {
   const clientSource = await readFile(CLIENT, 'utf8');
   checkWebhookPaths(workflows, clientSource);
@@ -521,6 +548,7 @@ if (APP_PRESENT) {
 checkColumns(workflows, schema);
 if (APP_PRESENT) await checkAppColumns(schema);
 await checkWriters(workflows, schema);
+checkToolReferences(workflows);
 
 console.log(`Schema: ${schema.size} tables, ${[...schema.values()].reduce((n, c) => n + c.size, 0)} columns`);
 console.log(`Workflows: ${workflows.length}`);

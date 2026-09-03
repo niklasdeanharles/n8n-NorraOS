@@ -28,6 +28,16 @@ const AGENT_TIMEOUT_MS = 12_000;
 const agentReplySchema = z.object({
   reply: z.string().trim().min(1).max(4000),
   action: z.enum(['continue', 'transfer', 'hangup']).default('continue'),
+  /**
+   * The department the agent picked, by name.
+   *
+   * Deliberately not a number. A number reaching this point would have passed
+   * through the model's context, where a prepared document or a crafted caller
+   * sentence could have replaced it — and the call would go to a stranger on
+   * the customer's bill. The name is looked up in `phone_departments` below;
+   * one that is not there transfers nowhere.
+   */
+  transfer_to: z.string().trim().min(1).max(80).nullish(),
 });
 
 export async function POST(request: NextRequest): Promise<Response> {
@@ -170,12 +180,54 @@ export async function POST(request: NextRequest): Promise<Response> {
     .update({ last_message_at: new Date().toISOString() })
     .eq('id', call.conversation_id);
 
-  if (parsed.action === 'transfer' && number?.transfer_number) {
+  if (parsed.action === 'transfer') {
+    // The name from the agent buys exactly one thing: a row in this table,
+    // scoped to this tenant. No row, no dial — we fall back to the number an
+    // admin configured on the line, or to nothing at all.
+    let target = number?.transfer_number ?? null;
+    let label: string | null = null;
+    if (parsed.transfer_to) {
+      const { data: department } = await supabase
+        .from('phone_departments')
+        .select('name, e164')
+        .eq('organization_id', call.organization_id)
+        .eq('active', true)
+        .ilike('name', parsed.transfer_to)
+        .maybeSingle();
+      if (department) {
+        target = department.e164;
+        label = department.name;
+      }
+    }
+
+    if (target) {
+      await supabase
+        .from('calls')
+        .update({
+          status: 'transferred',
+          transferred_to: target,
+          ended_reason: label ? `department:${label}` : 'agent_handoff',
+        })
+        .eq('id', call.id);
+      return twiml(say(parsed.reply, voice) + dial(target, number?.e164 ?? ''));
+    }
+
+    // The agent announced a transfer that cannot happen. Saying its line and
+    // hanging up would strand the caller mid-promise, so the call continues and
+    // the conversation is marked for a human.
     await supabase
-      .from('calls')
-      .update({ status: 'transferred', transferred_to: number.transfer_number, ended_reason: 'agent_handoff' })
-      .eq('id', call.id);
-    return twiml(say(parsed.reply, voice) + dial(number.transfer_number, number.e164));
+      .from('conversations')
+      .update({ status: 'escalated', escalated_at: new Date().toISOString() })
+      .eq('id', call.conversation_id);
+    return twiml(
+      gather({
+        action: nextAction,
+        language: voice.language,
+        voice: voice.voice,
+        prompt:
+          'Ich kann Sie im Moment leider nicht weiterverbinden. Ein Mitarbeiter meldet sich bei Ihnen. Kann ich sonst noch etwas für Sie tun?',
+      }) + hangup(),
+    );
   }
 
   if (parsed.action === 'hangup') {

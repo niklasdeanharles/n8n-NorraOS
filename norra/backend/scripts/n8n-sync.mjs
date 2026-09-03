@@ -197,6 +197,38 @@ function carryOverCredentials(repoNodes, liveNodes) {
   return { nodes: merged, preserved };
 }
 
+/**
+ * Fills in the workflow id a tool node refers to, by name.
+ *
+ * A `toolWorkflow` node points at a sub-workflow by instance id. That id does
+ * not exist until the sub-workflow has been imported once, so a new tool ships
+ * with an empty value and its name in `cachedResultName`. Resolving it here
+ * means nobody has to copy ids between the n8n UI and this repository -- and,
+ * more importantly, a tool whose sub-workflow is missing aborts the deploy
+ * instead of going live pointing at nothing.
+ */
+function resolveToolReferences(nodes, idsByName) {
+  const unresolved = [];
+  const filled = [];
+
+  const merged = (nodes ?? []).map((node) => {
+    if (node.type !== '@n8n/n8n-nodes-langchain.toolWorkflow') return node;
+    const ref = node.parameters?.workflowId;
+    if (!ref || typeof ref !== 'object' || ref.value) return node;
+
+    const target = ref.cachedResultName;
+    const id = target ? idsByName.get(target) : undefined;
+    if (!id) {
+      unresolved.push(`${node.name} -> ${target ?? '(kein Name hinterlegt)'}`);
+      return node;
+    }
+    filled.push(`${node.name} -> ${id}`);
+    return { ...node, parameters: { ...node.parameters, workflowId: { ...ref, value: id } } };
+  });
+
+  return { nodes: merged, unresolved, filled };
+}
+
 async function runDeploy({ dryRun }) {
   const repoFiles = await readRepoWorkflows();
   const claimed = repoFiles.filter((f) => f.workflow.norra?.workflowId);
@@ -209,6 +241,10 @@ async function runDeploy({ dryRun }) {
   // Every claimed id is resolved before anything is written. Failing halfway
   // through would leave the instance holding some new workflows and some old
   // ones, which is worse than not deploying at all.
+  // Sub-workflows are addressed by name in the repo and by id on the instance.
+  // One listing up front is what lets a tool node be written without an id.
+  const idsByName = new Map((await listWorkflows()).map((w) => [w.name, w.id]));
+
   const resolved = [];
   const missing = [];
   for (const { name, workflow } of claimed) {
@@ -228,8 +264,25 @@ async function runDeploy({ dryRun }) {
   }
 
   let deployed = 0;
+  // Same reason as the id check above: find every broken tool reference before
+  // writing anything, rather than deploying half a working agent.
+  const broken = [];
+  for (const { name, workflow } of resolved) {
+    const { unresolved } = resolveToolReferences(workflow.nodes, idsByName);
+    if (unresolved.length > 0) broken.push(`  ${name}: ${unresolved.join(', ')}`);
+  }
+  if (broken.length > 0) {
+    throw new Error(
+      'Deploy aborted before writing anything. These tool nodes point at ' +
+      'sub-workflows the instance does not have. Import them once (n8n: Workflows ' +
+      '-> Import from File), then run deploy again:\n' + broken.join('\n'),
+    );
+  }
+
   for (const { name, workflow, id, live } of resolved) {
-    const { nodes, preserved } = carryOverCredentials(workflow.nodes, live.nodes);
+    const { nodes: linked, filled } = resolveToolReferences(workflow.nodes, idsByName);
+    const { nodes, preserved } = carryOverCredentials(linked, live.nodes);
+    if (filled.length > 0) console.log(`             ${name}: Tool-Verweise aufgeloest -- ${filled.join(', ')}`);
     const payload = {};
     for (const field of WRITABLE_FIELDS) {
       if (workflow[field] !== undefined) payload[field] = workflow[field];

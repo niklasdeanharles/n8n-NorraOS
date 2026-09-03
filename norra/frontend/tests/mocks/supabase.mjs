@@ -20,6 +20,9 @@ const db = {
   agent_test_cases: [],
   agent_test_runs: [],
   audit_log: [],
+  contacts: [],
+  callbacks: [],
+  phone_departments: [],
 };
 
 /**
@@ -54,6 +57,9 @@ const DEFAULTS = {
   // still comes back as null in the row, never as a missing key.
   conversations: { status: 'open', channel: 'web', csat: null },
   tickets: { status: 'open', priority: 'normal' },
+  callbacks: { status: 'pending' },
+  phone_departments: { active: true },
+  contacts: { call_count: 0, display_name: null, note: null },
 };
 
 /**
@@ -68,6 +74,10 @@ const UNIQUE = {
   knowledge_base_documents: [['organization_id', 'checksum']],
   phone_numbers: [['e164']],
   calls: [['provider_call_id']],
+  contacts: [['organization_id', 'e164']],
+  // The real index is on lower(trim(name)); the mock compares raw values, which
+  // is enough for the route -- it never inserts a department.
+  phone_departments: [['organization_id', 'name']],
 };
 
 /** The row an insert would collide with, or undefined. */
@@ -94,6 +104,10 @@ function matches(row, filters) {
   return filters.every(([col, op, value]) => {
     if (op === 'eq') return String(row[col]) === value;
     if (op === 'in') return value.replace(/[()]/g, '').split(',').includes(String(row[col]));
+    // The department lookup matches case-insensitively: the agent says
+    // "Buchhaltung", the row may read "buchhaltung". Without this the mock
+    // matches nothing and the transfer branch is never exercised.
+    if (op === 'ilike') return String(row[col]).toLowerCase() === value.replace(/\*/g, '').toLowerCase();
     return true;
   });
 }
@@ -166,6 +180,29 @@ export function start(port) {
           authUser ?? { code: 401, error_code: 'session_missing', msg: 'Auth session missing!' },
         ),
       );
+    }
+
+    // `supabase.rpc(...)` posts here. Only the function the voice path calls.
+    if (url.pathname === '/rest/v1/rpc/touch_contact') {
+      let rpcRaw = '';
+      for await (const chunk of req) rpcRaw += chunk;
+      const body = rpcRaw ? JSON.parse(rpcRaw) : {};
+      const orgId = body.p_organization_id;
+      const e164 = body.p_e164;
+      const existing = db.contacts.find((c) => c.organization_id === orgId && c.e164 === e164);
+      if (existing) {
+        existing.call_count += 1;
+        existing.last_seen_at = new Date().toISOString();
+        res.writeHead(200, { 'content-type': 'application/json' });
+        return res.end(JSON.stringify(existing.id));
+      }
+      const created = withDefaults('contacts', {
+        id: uuid(), organization_id: orgId, e164, call_count: 1,
+        first_seen_at: new Date().toISOString(), last_seen_at: new Date().toISOString(),
+      });
+      db.contacts.push(created);
+      res.writeHead(200, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify(created.id));
     }
 
     const table = url.pathname.replace('/rest/v1/', '');

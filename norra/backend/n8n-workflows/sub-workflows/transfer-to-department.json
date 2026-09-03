@@ -1,0 +1,240 @@
+{
+  "name": "Norra – Tool: transfer_to_department",
+  "nodes": [
+    {
+      "name": "Transfer Requested",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "organization_id",
+              "type": "string"
+            },
+            {
+              "name": "conversation_id",
+              "type": "string"
+            },
+            {
+              "name": "agent_id",
+              "type": "string"
+            },
+            {
+              "name": "call_id",
+              "type": "string"
+            },
+            {
+              "name": "department",
+              "type": "string"
+            },
+            {
+              "name": "reason",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Find Department",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "phone_departments",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.organization_id }}"
+            },
+            {
+              "keyName": "active",
+              "condition": "eq",
+              "keyValue": "true"
+            },
+            {
+              "keyName": "name",
+              "condition": "ilike",
+              "keyValue": "={{ ($json.department ?? '').trim() }}"
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "name": "Log Tool Call",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "tool_calls_log",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "organization_id",
+              "fieldValue": "={{ $('Transfer Requested').item.json.organization_id }}"
+            },
+            {
+              "fieldId": "conversation_id",
+              "fieldValue": "={{ $('Transfer Requested').item.json.conversation_id }}"
+            },
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "={{ $('Transfer Requested').item.json.agent_id }}"
+            },
+            {
+              "fieldId": "tool_name",
+              "fieldValue": "transfer_to_department"
+            },
+            {
+              "fieldId": "n8n_workflow_id",
+              "fieldValue": "={{ $workflow.id }}"
+            },
+            {
+              "fieldId": "n8n_execution_id",
+              "fieldValue": "={{ $execution.id }}"
+            },
+            {
+              "fieldId": "input",
+              "fieldValue": "={{ JSON.stringify($('Transfer Requested').item.json) }}"
+            },
+            {
+              "fieldId": "output",
+              "fieldValue": "={{ JSON.stringify({ department: $('Find Department').item.json.name ?? null, matched: !!$('Find Department').item.json.e164 }) }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "={{ $('Find Department').item.json.e164 ? 'success' : 'error' }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Return To Agent",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "matched",
+              "name": "matched",
+              "value": "={{ !!$('Find Department').item.json.e164 }}",
+              "type": "boolean"
+            },
+            {
+              "id": "department",
+              "name": "department",
+              "value": "={{ $('Find Department').item.json.name ?? null }}",
+              "type": "string"
+            },
+            {
+              "id": "transfer_to",
+              "name": "transfer_to",
+              "value": "={{ $('Find Department').item.json.name ?? null }}",
+              "type": "string"
+            },
+            {
+              "id": "result",
+              "name": "result",
+              "value": "={{ $('Find Department').item.json.e164 ? 'Kuendige die Weiterleitung an ' + $('Find Department').item.json.name + ' an und sage nichts weiter -- die Verbindung wird direkt danach aufgebaut.' : 'Diese Abteilung gibt es nicht. Nenne dem Anrufer die verfuegbaren Abteilungen oder biete die Uebergabe an einen Menschen an.' }}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Sticky Note transfer",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -50,
+        -60
+      ],
+      "parameters": {
+        "content": "## transfer_to_department – Namen rein, Namen raus\nWeder Eingabe noch Rueckgabe enthalten je eine Rufnummer. Das Modell nennt einen Abteilungsnamen, dieser Workflow prueft, ob es ihn gibt, und gibt denselben Namen zurueck. Die Nummer schlaegt /api/voice/turn ein zweites Mal in phone_departments nach, unmittelbar vor dem Waehlen.\n\nDer Grund: waere die Nummer irgendwo im Kontext des Modells, koennte ein praeparierter Text sie ersetzen -- und der Anrufer landete bei einem Fremden auf Rechnung des Kunden.\n\nWozu das auf dem Telefon: ein Chat geht an das Postfach, das jemand oeffnet. Ein Anruf muss auf eine bestimmte Nummer -- und 'die eine Zentralnummer' ist nicht, wie ein Support-Team aufgebaut ist.",
+        "color": 4,
+        "width": 760,
+        "height": 320
+      }
+    }
+  ],
+  "connections": {
+    "Transfer Requested": {
+      "main": [
+        [
+          {
+            "node": "Find Department",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Department": {
+      "main": [
+        [
+          {
+            "node": "Log Tool Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Tool Call": {
+      "main": [
+        [
+          {
+            "node": "Return To Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "norra": {
+    "slug": "transfer-to-department"
+  },
+  "tags": [
+    "norra",
+    "norra:tool"
+  ]
+}

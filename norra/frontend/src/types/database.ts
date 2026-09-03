@@ -29,6 +29,7 @@ export type AfterHoursBehavior = 'agent' | 'voicemail' | 'transfer' | 'reject';
 export type CallStatus =
   | 'ringing' | 'in_progress' | 'completed' | 'failed' | 'no_answer' | 'busy' | 'transferred' | 'voicemail';
 export type CallDirection = 'inbound' | 'outbound';
+export type CallbackStatus = 'pending' | 'done' | 'cancelled';
 
 /** Keys whose column accepts NULL. Postgres lets those be omitted on insert. */
 type NullableKeys<Row> = { [K in keyof Row]-?: null extends Row[K] ? K : never }[keyof Row];
@@ -88,6 +89,8 @@ export type CallRow = {
   id: string;
   organization_id: string;
   phone_number_id: string | null;
+  /** The caller behind this row, once the number resolved. Null for chat and widget. */
+  contact_id: string | null;
   conversation_id: string | null;
   agent_id: string | null;
   direction: CallDirection;
@@ -142,6 +145,8 @@ export type ConversationRow = {
   id: string;
   organization_id: string;
   agent_id: string | null;
+  /** The caller behind this row, once the number resolved. Null for chat and widget. */
+  contact_id: string | null;
   channel: ConversationChannel;
   external_id: string | null;
   end_user_name: string | null;
@@ -307,6 +312,63 @@ export type ToolCallLogRow = {
   created_at: string;
 }
 
+/**
+ * A caller, recognised by their number.
+ *
+ * Created by the first call with nothing but `e164` filled in; everything a
+ * human knows about them arrives later. See `touch_contact` in the schema.
+ */
+export type ContactRow = {
+  id: string;
+  organization_id: string;
+  e164: string;
+  display_name: string | null;
+  email: string | null;
+  note: string | null;
+  first_seen_at: string;
+  last_seen_at: string;
+  call_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A promise to ring someone back. `requested_for` stays null unless the caller named a time. */
+export type CallbackRow = {
+  id: string;
+  organization_id: string;
+  conversation_id: string | null;
+  contact_id: string | null;
+  e164: string;
+  requested_for: string | null;
+  preference: string | null;
+  reason: string;
+  status: CallbackStatus;
+  assignee_id: string | null;
+  completed_at: string | null;
+  completed_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * A number the agent may transfer to, and the words it uses to choose.
+ *
+ * `description` is written for a model, not a human: the agent reads it to
+ * decide. `e164` never leaves the server — the agent names the department, the
+ * voice route looks the number up here.
+ */
+export type PhoneDepartmentRow = {
+  id: string;
+  organization_id: string;
+  name: string;
+  e164: string;
+  description: string;
+  active: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 /** A foreign key, in the shape PostgREST's select parser expects. */
 type Rel<Name extends string, Column extends string, Target extends string> = {
   foreignKeyName: Name;
@@ -356,6 +418,7 @@ export type Database = {
           OrgRel<'conversations'>,
           Rel<'conversations_agent_id_fkey', 'agent_id', 'agents'>,
           Rel<'conversations_assigned_user_id_fkey', 'assigned_user_id', 'users'>,
+          Rel<'conversations_contact_id_fkey', 'contact_id', 'contacts'>,
         ]
       >;
 
@@ -464,6 +527,34 @@ export type Database = {
           Rel<'calls_phone_number_id_fkey', 'phone_number_id', 'phone_numbers'>,
           Rel<'calls_conversation_id_fkey', 'conversation_id', 'conversations'>,
           Rel<'calls_agent_id_fkey', 'agent_id', 'agents'>,
+          Rel<'calls_contact_id_fkey', 'contact_id', 'contacts'>,
+        ]
+      >;
+
+      contacts: Table<
+        ContactRow,
+        'id' | 'created_at' | 'updated_at' | 'first_seen_at' | 'last_seen_at' | 'call_count',
+        [OrgRel<'contacts'>]
+      >;
+
+      callbacks: Table<
+        CallbackRow,
+        'id' | 'created_at' | 'updated_at' | 'status',
+        [
+          OrgRel<'callbacks'>,
+          Rel<'callbacks_conversation_id_fkey', 'conversation_id', 'conversations'>,
+          Rel<'callbacks_contact_id_fkey', 'contact_id', 'contacts'>,
+          Rel<'callbacks_assignee_id_fkey', 'assignee_id', 'users'>,
+          Rel<'callbacks_completed_by_fkey', 'completed_by', 'users'>,
+        ]
+      >;
+
+      phone_departments: Table<
+        PhoneDepartmentRow,
+        'id' | 'created_at' | 'updated_at' | 'active',
+        [
+          OrgRel<'phone_departments'>,
+          Rel<'phone_departments_created_by_fkey', 'created_by', 'users'>,
         ]
       >;
     };
@@ -482,6 +573,10 @@ export type Database = {
           metadata: Json;
           similarity: number;
         }>;
+      };
+      touch_contact: {
+        Args: { p_organization_id: string; p_e164: string };
+        Returns: string;
       };
     };
     Enums: {
@@ -503,6 +598,7 @@ export type Database = {
       phone_number_status: PhoneNumberStatus;
       after_hours_behavior: AfterHoursBehavior;
       call_status: CallStatus;
+      callback_status: CallbackStatus;
     };
     CompositeTypes: Record<never, never>;
   };
