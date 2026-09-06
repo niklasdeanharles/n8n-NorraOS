@@ -58,7 +58,28 @@ jobs:
         working-directory: norra/backend
         run: node scripts/check-wiring.mjs
 
+      # Ohne Secret kann der Sync nichts tun. Auf einem Pull Request ist
+      # das der Normalfall — ein Fork bekommt sie ohnehin nie —, und ein
+      # dauerhaft roter Check erzieht dazu, rote Checks zu übersehen.
+      # Auf master ist dasselbe Fehlen ein echter Fehler: dort *ist* der
+      # Deploy der Zweck des Jobs.
+      - name: Check for instance credentials
+        id: creds
+        env:
+          N8N_BASE_URL: ${{ secrets.N8N_BASE_URL }}
+        run: |
+          if [ -n "$N8N_BASE_URL" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::N8N_BASE_URL ist nicht gesetzt — Dry Run übersprungen."
+          else
+            echo "::error::N8N_BASE_URL fehlt. Ohne das Secret läuft der Deploy nie."
+            exit 1
+          fi
+
       - name: Dry run
+        if: steps.creds.outputs.configured == 'true'
         working-directory: norra/backend
         env:
           N8N_BASE_URL: ${{ secrets.N8N_BASE_URL }}
@@ -66,7 +87,7 @@ jobs:
         run: node scripts/n8n-sync.mjs deploy --dry-run
 
       - name: Deploy
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && steps.creds.outputs.configured == 'true'
         working-directory: norra/backend
         env:
           N8N_BASE_URL: ${{ secrets.N8N_BASE_URL }}
