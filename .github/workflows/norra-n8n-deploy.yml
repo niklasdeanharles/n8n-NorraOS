@@ -46,19 +46,13 @@ jobs:
         with:
           node-version: '22'
 
+      # Läuft als Skript statt als bash-Schleife im YAML: die alte
+      # Fassung suchte *.json flach, fand nach der Ordner-Umstellung
+      # nichts mehr — und ein leerer Glob ist in bash kein Fehler,
+      # sondern das Muster selbst. Die Prüfung prüfte nichts.
       - name: Validate workflow JSON
-        working-directory: norra/backend/n8n-workflows
-        run: |
-          set -euo pipefail
-          for file in *.json; do
-            node -e "
-              const wf = require('./$file');
-              if (!wf.name) throw new Error('$file has no name');
-              if (!Array.isArray(wf.nodes)) throw new Error('$file has no nodes array');
-              if (!wf.norra?.workflowId) throw new Error('$file has no norra.workflowId');
-            "
-            echo "ok  $file"
-          done
+        working-directory: norra/backend
+        run: node scripts/validate-workflows.mjs
 
       - name: Check app and workflows still agree
         working-directory: norra/backend
