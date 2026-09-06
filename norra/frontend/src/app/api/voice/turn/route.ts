@@ -111,6 +111,10 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), AGENT_TIMEOUT_MS);
+  // What the caller actually waits through, measured on our side of the line.
+  // The workflow records the same thing for chat; voice persists its own
+  // assistant message, so it has to measure its own.
+  const startedAt = Date.now();
   let parsed: z.infer<typeof agentReplySchema> | null = null;
   try {
     const upstream = await callN8nWebhook(
@@ -174,6 +178,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     conversation_id: call.conversation_id,
     role: 'assistant',
     content: parsed.reply,
+    latency_ms: Date.now() - startedAt,
   });
   await supabase
     .from('conversations')

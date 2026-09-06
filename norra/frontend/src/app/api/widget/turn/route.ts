@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { callN8nWebhook, N8N_WEBHOOKS } from '@/lib/n8n/client';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { mintWidgetToken, verifyWidgetToken } from '@/lib/widget/token';
+import { allowTurn } from '@/lib/widget/limits';
 
 /**
  * One streamed turn from a website visitor.
@@ -54,6 +55,17 @@ export async function POST(request: NextRequest): Promise<Response> {
   }
 
   const supabase = createServiceRoleClient();
+
+  // Keyed by the conversation in the token, so a valid token cannot be replayed
+  // into an unbounded number of Claude calls. Placed after verification -- an
+  // unsigned token names no conversation to count against -- and before
+  // anything is written or forwarded.
+  if (!(await allowTurn(supabase, claims.c))) {
+    return NextResponse.json(
+      { error: 'too many requests' },
+      { status: 429, headers: { 'retry-after': '60', 'access-control-allow-origin': '*' } },
+    );
+  }
 
   const { data: agent } = await supabase
     .from('agents')

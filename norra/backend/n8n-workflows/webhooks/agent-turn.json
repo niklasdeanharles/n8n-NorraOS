@@ -61,6 +61,12 @@
               "name": "history",
               "value": "={{ $json.body?.history ?? $json.history ?? [] }}",
               "type": "array"
+            },
+            {
+              "id": "started-at",
+              "name": "started_at",
+              "value": "={{ Date.now() }}",
+              "type": "number"
             }
           ]
         }
@@ -229,6 +235,10 @@
             {
               "fieldId": "n8n_execution_id",
               "fieldValue": "={{ $execution.id }}"
+            },
+            {
+              "fieldId": "latency_ms",
+              "fieldValue": "={{ Date.now() - $('Normalize Request').item.json.started_at }}"
             }
           ]
         }
@@ -684,6 +694,21 @@
             }
           ]
         }
+      }
+    },
+    {
+      "name": "Sticky Note tokens",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        880,
+        -240
+      ],
+      "parameters": {
+        "content": "## Warum hier nur die Latenz steht\nlatency_ms wird ab \"Normalize Request\" gemessen -- das ist genau die Zeit, die der Browser bzw. der Anrufer wartet.\n\ntokens_in und tokens_out bleiben leer, und zwar nicht aus Nachlaessigkeit: der Agent-Node gibt seinen Token-Verbrauch nirgends heraus. Seine Ausgabe ist $json.output (Text) und, wenn eingeschaltet, intermediateSteps. Kein dokumentiertes Feld traegt die usage-Angabe der Anthropic-Antwort.\n\nEin geratener Ausdruck waere hier das Schlimmste: er schreibt still null, und die Kostenspalte im Dashboard zeigt 0 statt \"unbekannt\". Wer die Zahlen braucht, ersetzt den Agent-Node durch einen direkten Anthropic-Aufruf und baut die Tool-Schleife selbst -- das ist ein Umbau des Turn-Pfads, keine Ergaenzung.",
+        "color": 3,
+        "width": 520,
+        "height": 280
       }
     }
   ],

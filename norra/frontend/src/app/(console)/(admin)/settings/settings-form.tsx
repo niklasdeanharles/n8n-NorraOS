@@ -10,7 +10,6 @@ type Organization = {
   escalation_email: string | null;
   timezone: string;
   locale: string;
-  retention_days: number | null;
 };
 
 const TIMEZONES = ['Europe/Berlin', 'Europe/Vienna', 'Europe/Zurich', 'Europe/London', 'UTC'];
@@ -72,30 +71,6 @@ export function SettingsForm({ organization, editable }: { organization: Organiz
             <span className="field-hint">
               Leer lassen heißt: das Ticket wird trotzdem angelegt, es geht nur keine Mail raus. Der Vorgang ist
               das Ticket, die Mail nur der Hinweis darauf.
-            </span>
-          </label>
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="card-head">
-          <h2>Daten</h2>
-        </div>
-        <div className="card-body">
-          <label>
-            Aufbewahrung in Tagen
-            <input
-              name="retentionDays"
-              type="number"
-              min={7}
-              max={3650}
-              defaultValue={organization.retention_days ?? ''}
-              placeholder="unbegrenzt"
-              disabled={!editable}
-            />
-            <span className="field-hint">
-              Leer heißt unbegrenzt. Die Untergrenze von sieben Tagen ist Absicht — eine Aufbewahrung von einem
-              Tag löscht genau die Konversation, über die sich gerade jemand beschwert.
             </span>
           </label>
         </div>

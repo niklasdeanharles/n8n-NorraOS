@@ -132,6 +132,20 @@ Hostinger VPS, self-hosted Community Edition: `https://n8n-fdhh.srv1817599.hstgr
 Die vier ohne ID sind neu und noch nicht auf der Instanz. Wie sie dorthin
 kommen, steht in `n8n-workflows/README.md`.
 
+### Der Mandantenfilter ist Pflicht, nicht Stil
+
+n8n verbindet sich mit `service_role`, und die Rolle ist `BYPASSRLS`. Row Level
+Security schützt den Weg über Next.js und sonst nichts. Ob Mandant A die Daten
+von B erreicht, entscheidet hier ein `organization_id`-Filter, den ein Mensch in
+einen Node getippt hat — und ein vergessener ist ein Datenleck, das kein
+Datenbanktest je bemerkt, weil aus Sicht von Postgres nichts falsch ist.
+
+`check-wiring.mjs` prüft das deshalb mechanisch: jede Supabase-Operation auf
+einer Tabelle mit `organization_id` muss sie filtern (Lesen, Ändern, Löschen)
+oder schreiben (Anlegen). Eine Tabelle ohne diese Spalte ist ausgenommen — sie
+kann nicht zwischen Mandanten lecken. `organizations` ist der einzige Sonderfall,
+und aus echtem Grund: dort **ist** `id` der Mandant.
+
 ### Was der Agent nie bestimmt
 
 Am Telefon gibt es keine Sitzung, keinen Login, keine Seite zum Nachschlagen.

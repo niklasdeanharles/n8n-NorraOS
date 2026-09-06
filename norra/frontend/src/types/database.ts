@@ -49,7 +49,6 @@ export type OrganizationRow = {
   escalation_email: string | null;
   timezone: string;
   locale: string;
-  retention_days: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -136,6 +135,8 @@ export type AgentRow = {
   tools: Json;
   escalation_rules: Json;
   channels: string[];
+  /** Origins allowed to mint a widget session for this agent. Empty = any. */
+  allowed_origins: string[];
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -407,7 +408,8 @@ export type Database = {
         | 'guardrails'
         | 'tools'
         | 'escalation_rules'
-        | 'channels',
+        | 'channels'
+        | 'allowed_origins',
         [OrgRel<'agents'>, Rel<'agents_created_by_fkey', 'created_by', 'users'>]
       >;
 
@@ -573,6 +575,10 @@ export type Database = {
           metadata: Json;
           similarity: number;
         }>;
+      };
+      take_rate_limit: {
+        Args: { p_bucket: string; p_limit: number; p_window_seconds: number };
+        Returns: boolean;
       };
       touch_contact: {
         Args: { p_organization_id: string; p_e164: string };

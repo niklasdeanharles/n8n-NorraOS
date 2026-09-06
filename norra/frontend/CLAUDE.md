@@ -69,6 +69,27 @@ Eine Regel, die nur eine Oberfläche rendert, gehört in deren Datei — nicht i
 `base.css`. Wächst etwas zum geteilten Baustein (wie der Tipp-Indikator
 `.typing`), wandert es nach `base.css`.
 
+### Die zwei Grenzen am Widget
+
+Das Widget ist die einzige Oberfläche, die Fremde erreichen — ohne Konto, ohne
+Sitzung, mit einer Agent-ID, die im Einbettungs-Skript auf der Kundenseite
+steht. Deshalb sind die Grenzen in `src/lib/widget/limits.ts` keine
+Verteidigung in der Tiefe, sondern *die* Tiefe:
+
+- **Zähler** in `rate_limits`, feste Fenster, atomar hochgezählt in
+  `take_rate_limit`. 10 Sitzungen pro Adresse und Minute, 15 Turns pro
+  Konversation und Minute, 120 pro Stunde. Adressen liegen dort nur als
+  gekürzter Hash — eine IP ist personenbezogen und wird bei jedem anonymen
+  Aufruf geschrieben.
+- **`agents.allowed_origins`**, geprüft beim Minten der Sitzung. Leer heißt
+  überall, damit Bestandsagenten nicht brechen. Eine fremde Domain bekommt
+  dasselbe 404 wie ein Agent, den es nicht gibt — ein eigener Fehler würde die
+  Agent-ID bestätigen.
+
+Wenn die Datenbank nicht antwortet, wird **abgewiesen**, nicht durchgelassen.
+Das ist die umgekehrte Reflexhandlung und hier richtig: ein Ausfall, der die
+Grenze aussetzt, ist ein Ausfall, der dem Kunden Geld kostet.
+
 ### Tools am Telefon
 
 Der Katalog in `src/lib/tools.ts` trägt seit den Telefon-Tools ein Feld

@@ -23,12 +23,6 @@ const schema = z.object({
     .refine((v) => v === '' || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v), 'E-Mail-Adresse ist nicht gültig.'),
   timezone: z.string().trim().min(1, 'Zeitzone fehlt.').max(64),
   locale: z.string().trim().regex(/^[a-z]{2}(-[A-Z]{2})?$/, 'Sprache im Format de oder de-DE angeben.'),
-  retentionDays: z
-    .string()
-    .trim()
-    .refine((v) => v === '' || /^\d+$/.test(v), 'Aufbewahrung in ganzen Tagen angeben.')
-    .transform((v) => (v === '' ? null : Number(v)))
-    .refine((v) => v === null || (v >= 7 && v <= 3650), 'Aufbewahrung zwischen 7 und 3650 Tagen.'),
 });
 
 export async function saveSettings(_prev: SettingsFormState, formData: FormData): Promise<SettingsFormState> {
@@ -37,7 +31,6 @@ export async function saveSettings(_prev: SettingsFormState, formData: FormData)
     escalationEmail: formData.get('escalationEmail') ?? '',
     timezone: formData.get('timezone'),
     locale: formData.get('locale'),
-    retentionDays: formData.get('retentionDays') ?? '',
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Eingabe ungültig.' };
 
@@ -56,7 +49,7 @@ export async function saveSettings(_prev: SettingsFormState, formData: FormData)
 
   const { data: before } = await supabase
     .from('organizations')
-    .select('name, escalation_email, timezone, locale, retention_days')
+    .select('name, escalation_email, timezone, locale')
     .eq('id', actor.organizationId)
     .single();
 
@@ -65,7 +58,6 @@ export async function saveSettings(_prev: SettingsFormState, formData: FormData)
     escalation_email: parsed.data.escalationEmail || null,
     timezone: parsed.data.timezone,
     locale: parsed.data.locale,
-    retention_days: parsed.data.retentionDays,
   };
 
   const { error } = await supabase.from('organizations').update(next).eq('id', actor.organizationId);

@@ -23,6 +23,7 @@ const db = {
   contacts: [],
   callbacks: [],
   phone_departments: [],
+  rate_limits: [],
 };
 
 /**
@@ -180,6 +181,23 @@ export function start(port) {
           authUser ?? { code: 401, error_code: 'session_missing', msg: 'Auth session missing!' },
         ),
       );
+    }
+
+    // Fixed windows, exactly like `take_rate_limit` in the migration: the
+    // route's 429 branch is unreachable from a test without it.
+    if (url.pathname === '/rest/v1/rpc/take_rate_limit') {
+      let raw = '';
+      for await (const chunk of req) raw += chunk;
+      const { p_bucket, p_limit, p_window_seconds } = raw ? JSON.parse(raw) : {};
+      const windowStart = Math.floor(Date.now() / 1000 / p_window_seconds) * p_window_seconds;
+      let row = db.rate_limits.find((r) => r.bucket === p_bucket && r.window_start === windowStart);
+      if (!row) {
+        row = { bucket: p_bucket, window_start: windowStart, count: 0 };
+        db.rate_limits.push(row);
+      }
+      row.count += 1;
+      res.writeHead(200, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify(row.count <= p_limit));
     }
 
     // `supabase.rpc(...)` posts here. Only the function the voice path calls.

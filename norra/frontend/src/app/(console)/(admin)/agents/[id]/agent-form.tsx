@@ -145,6 +145,34 @@ export function AgentForm({ agent, publicUrl }: { agent: AgentRow; publicUrl: st
       {channels.includes('web') ? (
         <div className="card">
           <div className="card-head">
+            <h3>Erlaubte Domains</h3>
+            <div className="small muted" style={{ marginTop: 3 }}>
+              Welche Websites diesen Agenten einbetten dürfen. Leer heißt jede — dann kann auch eine
+              fremde Seite ihn unter ihrem Namen antworten lassen.
+            </div>
+          </div>
+          <div className="card-body">
+            <label>
+              Eine Domain pro Zeile
+              <textarea
+                name="allowedOrigins"
+                rows={3}
+                defaultValue={(agent.allowed_origins ?? []).join('\n')}
+                placeholder={'https://kunde.de\nhttps://shop.kunde.de'}
+                spellCheck={false}
+              />
+              <span className="field-hint">
+                Nur Schema und Host, wie der Browser sie sendet — ohne Pfad und ohne Schrägstrich am
+                Ende. Höchstens 20 Einträge.
+              </span>
+            </label>
+          </div>
+        </div>
+      ) : null}
+
+      {channels.includes('web') ? (
+        <div className="card">
+          <div className="card-head">
             <h3>Einbetten</h3>
             <div className="small muted" style={{ marginTop: 3 }}>
               Eine Zeile für die eigene Website. Funktioniert erst, sobald der Agent live ist.

@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { mintWidgetToken } from '@/lib/widget/token';
+import { allowSession, originAllowed } from '@/lib/widget/limits';
 
 /**
  * Starts (or resumes) a widget conversation for one agent.
@@ -37,9 +38,19 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   const supabase = createServiceRoleClient();
 
+  // Before anything is read or written. Minting is the expensive half — it
+  // creates a conversation row and hands out a token good for many turns — so
+  // the ceiling belongs in front of it, not after.
+  if (!(await allowSession(supabase, request))) {
+    return NextResponse.json(
+      { error: 'too many requests' },
+      { status: 429, headers: { 'retry-after': '60' } },
+    );
+  }
+
   const { data: agent } = await supabase
     .from('agents')
-    .select('id, organization_id, name, status, channels')
+    .select('id, organization_id, name, status, channels, allowed_origins')
     .eq('id', parsed.data.agentId)
     .maybeSingle();
 
@@ -47,6 +58,12 @@ export async function POST(request: NextRequest): Promise<Response> {
   // web channel: an operator debugs this from the console, not from an error
   // message an anonymous visitor could use to enumerate agent ids.
   if (!agent || agent.status !== 'live' || !agent.channels.includes('web')) {
+    return NextResponse.json({ error: 'agent not available' }, { status: 404 });
+  }
+
+  // The same 404 as an agent that does not exist, on purpose: a distinct
+  // "wrong origin" would confirm the agent id to whoever is probing for one.
+  if (!originAllowed(agent.allowed_origins, request.headers.get('origin'))) {
     return NextResponse.json({ error: 'agent not available' }, { status: 404 });
   }
 

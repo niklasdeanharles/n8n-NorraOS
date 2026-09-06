@@ -94,6 +94,19 @@ async function readSchema() {
       for (const add of body.matchAll(/^\s*add\s+(\w+)\s+[a-z]/gim)) {
         if (!/^(column|constraint|primary|unique|check|foreign|exclude)$/i.test(add[1])) columns.add(add[1]);
       }
+      // A dropped column has to leave the inventory, or every later run reports
+      // it as a column nobody writes -- which is true and useless, because it no
+      // longer exists. Migrations are replayed in order, so a column added and
+      // later dropped ends up absent, exactly as in the database.
+      for (const drop of body.matchAll(/drop column (?:if exists )?(\w+)/gi)) {
+        columns.delete(drop[1]);
+        selfFilled.delete(`${table}.${drop[1]}`);
+      }
+    }
+
+    // `drop table` is the same argument one level up.
+    for (const match of sql.matchAll(/drop table (?:if exists )?public\.(\w+)/gi)) {
+      schema.delete(match[1]);
     }
   }
   return schema;
@@ -344,9 +357,14 @@ const RESERVED = {
   'calls.direction': 'only inbound calls exist; outbound would need its own route',
   'conversations.end_user_email': 'no channel asks a visitor for one yet; the widget is anonymous',
   'conversations.end_user_external_id': 'set once a channel carries a customer id (email, WhatsApp)',
-  'messages.tokens_in': 'per-message cost needs agent-turn to report usage',
+  // Checked against the node's own type definition, not assumed: the Agent
+  // node's output is `output` (text) plus `intermediateSteps` when enabled.
+  // Nothing carries the Anthropic response's usage block. Reading these needs
+  // the agent replaced by a direct Anthropic call with the tool loop rebuilt --
+  // a rewrite of the turn path, not a field. A guessed expression would write
+  // null and show the cost column a confident 0.
+  'messages.tokens_in': 'the Agent node exposes no token usage; see the sticky note in agent-turn.json',
   'messages.tokens_out': 'as above',
-  'messages.latency_ms': 'as above',
   'knowledge_base_documents.source_url': 'for crawled sources; today ingest takes pasted text',
   'knowledge_base_documents.storage_path': 'for file upload; not built',
   'knowledge_base_documents.mime_type': 'as above',
@@ -540,6 +558,79 @@ function checkToolReferences(workflows) {
   }
 }
 
+/**
+ * 7. Every Supabase node in a workflow must name the tenant.
+ *
+ * This is the check that guards the one place the database cannot. n8n connects
+ * as `service_role`, which is BYPASSRLS: row level security protects the
+ * Next.js path and nothing else. Over here, whether tenant A can reach tenant
+ * B's rows is decided by an `organization_id` filter a person typed into a
+ * node -- and a forgotten one is a data leak that no database test will ever
+ * notice, because from Postgres's side nothing is wrong.
+ *
+ * So the rule is mechanical: a read or a write touching a table that has an
+ * `organization_id` must constrain it, and a create must fill it.
+ *
+ * One table is exempt for a real reason rather than convenience: on
+ * `organizations`, `id` *is* the tenant, so filtering by id is the tenant
+ * filter. Every other table gets no exception.
+ */
+function checkTenantFilters(workflows, schema) {
+  const SUPABASE = 'n8n-nodes-base.supabase';
+
+  for (const { file, workflow } of workflows) {
+    for (const node of workflow.nodes ?? []) {
+      if (node.type !== SUPABASE) continue;
+
+      const table = node.parameters?.tableId;
+      if (typeof table !== 'string') {
+        problems.push(`${file}: Supabase node "${node.name}" names no table`);
+        continue;
+      }
+
+      const columns = schema.get(table);
+      if (!columns) {
+        problems.push(`${file}: Supabase node "${node.name}" reads table "${table}", which the schema does not have`);
+        continue;
+      }
+      // A table with no tenant column cannot leak between tenants -- the rate
+      // limit counters, for instance. Consulting the schema rather than keeping
+      // a list means a new table is covered the day it is added.
+      if (!columns.has('organization_id') && table !== 'organizations') continue;
+
+      const operation = node.parameters?.operation;
+      const filters = (node.parameters?.filters?.conditions ?? []).map((c) => c.keyName);
+      const written = (node.parameters?.fieldsUi?.fieldValues ?? []).map((f) => f.fieldId);
+
+      // On `organizations` the primary key is the tenant id.
+      const tenantKeys = table === 'organizations' ? ['id', 'organization_id'] : ['organization_id'];
+      const named = (list) => list.some((key) => tenantKeys.includes(key));
+
+      if (operation === 'create') {
+        if (!named(written)) {
+          problems.push(
+            `${file}: "${node.name}" inserts into ${table} without organization_id — ` +
+            'n8n runs as service_role and bypasses RLS, so nothing else will catch it',
+          );
+        }
+        continue;
+      }
+
+      if (operation === 'getAll' || operation === 'get' || operation === 'update' || operation === 'delete') {
+        if (!named(filters)) {
+          problems.push(
+            `${file}: "${node.name}" ${operation} on ${table} without an ${tenantKeys.join(' or ')} filter — ` +
+            'n8n runs as service_role and bypasses RLS, so nothing else will catch it',
+          );
+        }
+        continue;
+      }
+
+      problems.push(`${file}: Supabase node "${node.name}" uses operation "${operation}", which this check does not know`);
+    }
+  }
+}
+
 if (APP_PRESENT) {
   const clientSource = await readFile(CLIENT, 'utf8');
   checkWebhookPaths(workflows, clientSource);
@@ -549,6 +640,7 @@ checkColumns(workflows, schema);
 if (APP_PRESENT) await checkAppColumns(schema);
 await checkWriters(workflows, schema);
 checkToolReferences(workflows);
+checkTenantFilters(workflows, schema);
 
 console.log(`Schema: ${schema.size} tables, ${[...schema.values()].reduce((n, c) => n + c.size, 0)} columns`);
 console.log(`Workflows: ${workflows.length}`);

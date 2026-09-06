@@ -39,7 +39,7 @@ export default async function SettingsPage() {
   const [orgResult, actorResult] = await Promise.all([
     supabase
       .from('organizations')
-      .select('id, name, slug, escalation_email, timezone, locale, retention_days')
+      .select('id, name, slug, escalation_email, timezone, locale')
       .single(),
     supabase.auth.getUser(),
   ]);

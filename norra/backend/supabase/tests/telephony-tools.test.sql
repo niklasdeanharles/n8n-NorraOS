@@ -134,6 +134,73 @@ begin
   end;
 
   set local role postgres;
+
+  -- -------------------------------------------------------------------------
+  -- Rate limiting: the only guard on the one surface strangers reach
+  -- -------------------------------------------------------------------------
+  -- Exactness under load is the whole point: read-then-write would let two
+  -- requests in the same millisecond both see "2 of 3" and both proceed.
+  for i in 1..3 loop
+    if not public.take_rate_limit('test:bucket', 3, 60) then
+      raise exception 'call % was refused inside the limit', i;
+    end if;
+  end loop;
+  if public.take_rate_limit('test:bucket', 3, 60) then
+    raise exception 'the fourth call was allowed past a limit of three';
+  end if;
+
+  -- One busy caller must not shut out everyone else.
+  if not public.take_rate_limit('test:other', 3, 60) then
+    raise exception 'a separate bucket was affected by another one';
+  end if;
+
+  -- -------------------------------------------------------------------------
+  -- Where an agent may be embedded
+  -- -------------------------------------------------------------------------
+  -- A path or a wildcard never matches an Origin header, so accepting one
+  -- would lock the agent out of its own site while looking configured.
+  begin
+    insert into public.agents (organization_id, name, slug, allowed_origins)
+    values (v_org_a, 'Bad', 'bad', array['https://kunde.de/chat']);
+    raise exception 'an origin with a path was accepted';
+  exception when check_violation then
+    null;
+  end;
+
+  begin
+    insert into public.agents (organization_id, name, slug, allowed_origins)
+    values (v_org_a, 'Star', 'star', array['*']);
+    raise exception 'a wildcard origin was accepted';
+  exception when check_violation then
+    null;
+  end;
+
+  -- Empty stays legal: every agent that existed before this column keeps
+  -- working, and the restriction is opt-in.
+  insert into public.agents (organization_id, name, slug)
+  values (v_org_a, 'Open', 'open');
+
+  set local role authenticated;
+  perform set_config('request.jwt.claim.sub', v_ada::text, true);
+
+  -- take_rate_limit is security definer. Reachable from a browser session it
+  -- would become a way to burn any tenant's window.
+  begin
+    perform public.take_rate_limit('x', 1, 60);
+    raise exception 'take_rate_limit was callable as authenticated';
+  exception when insufficient_privilege then
+    null;
+  end;
+
+  -- And the counts themselves are nobody's business.
+  begin
+    perform count(*) from public.rate_limits;
+    raise exception 'rate_limits was readable as authenticated';
+  exception when insufficient_privilege then
+    null;
+  end;
+
+  set local role postgres;
   raise notice 'telephony tool rules hold';
 end;
 $$;

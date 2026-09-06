@@ -52,6 +52,21 @@ export async function saveAgent(_prev: AgentFormState, formData: FormData): Prom
   }
 
   const enabledTools = formData.getAll('tools').filter((t): t is string => typeof t === 'string');
+  // One per line, as typed. Normalised here rather than in the database so the
+  // person who typed a trailing slash gets told, instead of a constraint firing
+  // on something they cannot see.
+  const allowedOrigins = String(formData.get('allowedOrigins') ?? '')
+    .split('\n')
+    .map((line) => line.trim().replace(/\/+$/, ''))
+    .filter(Boolean);
+  if (allowedOrigins.length > 20) {
+    return { error: 'Höchstens 20 Domains.' };
+  }
+  const badOrigin = allowedOrigins.find((origin) => !/^https?:\/\/[A-Za-z0-9.-]+(:\d{1,5})?$/.test(origin));
+  if (badOrigin) {
+    return { error: `„${badOrigin}” ist keine Domain in der Form https://kunde.de — ohne Pfad, ohne Schrägstrich am Ende.` };
+  }
+
   const channels = formData.getAll('channels').filter((c): c is string => typeof c === 'string');
   if (channels.length === 0) {
     return { error: 'Mindestens ein Kanal muss aktiv sein — sonst nimmt der Agent nirgends Kontakt an.' };
@@ -80,7 +95,7 @@ export async function saveAgent(_prev: AgentFormState, formData: FormData): Prom
   // Read the current values first: the trail records what changed, not the row.
   const { data: before } = await supabase
     .from('agents')
-    .select('name, status, model, temperature, max_tokens, system_prompt, channels')
+    .select('name, status, model, temperature, max_tokens, system_prompt, channels, allowed_origins')
     .eq('id', parsed.data.id)
     .single();
 
@@ -100,6 +115,7 @@ export async function saveAgent(_prev: AgentFormState, formData: FormData): Prom
       },
       tools: toolRows,
       channels,
+      allowed_origins: allowedOrigins,
       escalation_rules: {
         on_keywords: toList(formData.get('escalationKeywords')),
         on_low_confidence: formData.get('escalateOnLowConfidence') === 'on',
@@ -123,6 +139,13 @@ export async function saveAgent(_prev: AgentFormState, formData: FormData): Prom
     const previousChannels = (before.channels ?? []).slice().sort().join(',');
     const nextChannels = channels.slice().sort().join(',');
     if (previousChannels !== nextChannels) changes.channels = { from: before.channels, to: channels };
+    // Worth an audit entry on its own: widening this is what lets a stranger's
+    // site embed the agent, and narrowing it is what breaks a customer's page.
+    const previousOrigins = (before.allowed_origins ?? []).slice().sort().join(',');
+    const nextOrigins = allowedOrigins.slice().sort().join(',');
+    if (previousOrigins !== nextOrigins) {
+      changes.allowed_origins = { from: before.allowed_origins, to: allowedOrigins };
+    }
   }
 
   await recordAudit(supabase, {

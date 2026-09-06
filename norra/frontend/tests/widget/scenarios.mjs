@@ -13,12 +13,22 @@ import { createHmac } from 'node:crypto';
 
 const APP = process.env.APP_URL ?? 'http://127.0.0.1:3999';
 
-async function post(path, body) {
+async function post(path, body, headers = {}) {
   return await fetch(`${APP}${path}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    // x-forwarded-for ist das, was die Plattform vorne anhaengt; die Route
+    // liest den linkesten Eintrag. Ohne ihn teilen sich alle Szenarien einen
+    // Zaehler und das dritte faellt ueber das zweite.
+    headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.1', ...headers },
     body: JSON.stringify(body),
   });
+}
+
+let addressCounter = 0;
+/** Eine Adresse, die noch kein Szenario verbraucht hat. */
+function freshAddress() {
+  addressCounter += 1;
+  return `198.51.100.${addressCounter}`;
 }
 
 // The widget API validates these as real UUIDs (unlike the Twilio form
@@ -33,6 +43,7 @@ function seed(agentOverrides = {}) {
       channels: ['web'], ...agentOverrides,
     }],
     conversations: [], messages: [], organizations: [{ id: ORG, name: 'Lumen Energie' }],
+    rate_limits: [],
   });
 }
 
@@ -198,6 +209,90 @@ await scenario('Eine Bewertung mit manipuliertem Token wird abgelehnt', async ()
   const res = await post('/api/feedback', { token: `${body}.${'C'.repeat(43)}`, rating: 5 });
   check('401', res.status === 401, `bekam ${res.status}`);
   check('csat bleibt leer', store.conversations[0]?.csat == null);
+});
+
+// ---------------------------------------------------------------------------
+// Domain-Bindung
+// ---------------------------------------------------------------------------
+
+await scenario('Ohne Domain-Liste darf jede Seite einbetten', async () => {
+  seed();
+  const res = await post('/api/widget/session', { agentId: AGENT },
+    { origin: 'https://irgendwer.de', 'x-forwarded-for': freshAddress() });
+  check('200', res.status === 200, `bekam ${res.status}`);
+});
+
+await scenario('Mit Domain-Liste kommt nur die eingetragene Seite durch', async () => {
+  seed({ allowed_origins: ['https://kunde.de'] });
+  const ok = await post('/api/widget/session', { agentId: AGENT },
+    { origin: 'https://kunde.de', 'x-forwarded-for': freshAddress() });
+  check('eigene Domain: 200', ok.status === 200, `bekam ${ok.status}`);
+
+  const fremd = await post('/api/widget/session', { agentId: AGENT },
+    { origin: 'https://fremde-seite.de', 'x-forwarded-for': freshAddress() });
+  // Dasselbe 404 wie ein Agent, den es nicht gibt: ein eigener Fehler wuerde
+  // dem Sondierenden bestaetigen, dass die Agent-ID stimmt.
+  check('fremde Domain: 404', fremd.status === 404, `bekam ${fremd.status}`);
+  check('keine Konversation angelegt', store.conversations.length === 1, `sind ${store.conversations.length}`);
+});
+
+await scenario('Eine Subdomain ist nicht dieselbe Domain', async () => {
+  seed({ allowed_origins: ['https://kunde.de'] });
+  const res = await post('/api/widget/session', { agentId: AGENT },
+    { origin: 'https://shop.kunde.de', 'x-forwarded-for': freshAddress() });
+  check('404', res.status === 404, `bekam ${res.status}`);
+});
+
+await scenario('Ohne Origin-Header kommt eine beschränkte Domain nicht durch', async () => {
+  seed({ allowed_origins: ['https://kunde.de'] });
+  // Ein Browser sendet Origin bei jedem Cross-Origin-POST. Fehlt er, ist der
+  // Aufrufer kein Browser -- und bei einem beschraenkten Agenten kein Gast.
+  const res = await post('/api/widget/session', { agentId: AGENT }, { 'x-forwarded-for': freshAddress() });
+  check('404', res.status === 404, `bekam ${res.status}`);
+});
+
+// ---------------------------------------------------------------------------
+// Grenzen
+// ---------------------------------------------------------------------------
+
+await scenario('Zu viele Sitzungen von einer Adresse werden abgewiesen', async () => {
+  seed();
+  const address = freshAddress();
+  const codes = [];
+  for (let i = 0; i < 12; i += 1) {
+    const res = await post('/api/widget/session', { agentId: AGENT }, { 'x-forwarded-for': address });
+    codes.push(res.status);
+  }
+  check('die ersten zehn kommen durch', codes.slice(0, 10).every((c) => c === 200), codes.join(','));
+  check('danach 429', codes.slice(10).every((c) => c === 429), codes.join(','));
+  check('nur zehn Konversationen angelegt', store.conversations.length === 10, `sind ${store.conversations.length}`);
+});
+
+await scenario('Eine andere Adresse ist von der Grenze unberührt', async () => {
+  seed();
+  const busy = freshAddress();
+  for (let i = 0; i < 11; i += 1) await post('/api/widget/session', { agentId: AGENT }, { 'x-forwarded-for': busy });
+  const other = await post('/api/widget/session', { agentId: AGENT }, { 'x-forwarded-for': freshAddress() });
+  check('200', other.status === 200, `bekam ${other.status}`);
+});
+
+await scenario('Zu viele Turns auf einem Token werden abgewiesen', async () => {
+  seed();
+  n8n = await startN8n(54322, 'Kurz.');
+  const session = await (await post('/api/widget/session', { agentId: AGENT },
+    { 'x-forwarded-for': freshAddress() })).json();
+
+  const codes = [];
+  for (let i = 0; i < 17; i += 1) {
+    const res = await post('/api/widget/turn', { token: session.token, message: `Frage ${i}` });
+    codes.push(res.status);
+    if (res.body) await res.text();
+  }
+  check('die ersten fünfzehn kommen durch', codes.slice(0, 15).every((c) => c === 200), codes.join(','));
+  check('danach 429', codes.slice(15).every((c) => c === 429), codes.join(','));
+  // Der Punkt der Uebung: was nicht durchkommt, kostet auch nichts.
+  check('n8n wurde nur fünfzehnmal gerufen', n8n.seen.length === 15, `waren ${n8n.seen.length}`);
+  await n8n.stop();
 });
 
 console.log(`\n${results.length} Szenarien, ${failures} Fehler`);
