@@ -1,0 +1,118 @@
+name: 'Norra: n8n Deploy'
+
+# Pushes committed workflow definitions back to the n8n instance. Only fires on
+# changes under norra/backend/n8n-workflows, so n8n's own repository changes never
+# trigger a deploy.
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - norra/backend/n8n-workflows/**
+      - norra/backend/scripts/**
+      - norra/backend/supabase/migrations/**
+      - norra/frontend/src/lib/n8n/**
+      - norra/frontend/src/app/api/**
+      - .github/workflows/norra-n8n-deploy.yml
+  pull_request:
+    paths:
+      - norra/backend/n8n-workflows/**
+      - norra/backend/scripts/**
+      - norra/backend/supabase/migrations/**
+      - norra/frontend/src/lib/n8n/**
+      - norra/frontend/src/app/api/**
+      - .github/workflows/norra-n8n-deploy.yml
+  workflow_dispatch:
+
+concurrency:
+  # Never let two deploys race the same instance.
+  group: norra-n8n-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Push workflows
+    runs-on: ubuntu-latest
+    # A pull request only ever gets the dry run below, so a fork cannot reach
+    # the live instance.
+    environment: ${{ github.event_name == 'push' && 'production' || '' }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: '22'
+
+      # Läuft als Skript statt als bash-Schleife im YAML: die alte
+      # Fassung suchte *.json flach, fand nach der Ordner-Umstellung
+      # nichts mehr — und ein leerer Glob ist in bash kein Fehler,
+      # sondern das Muster selbst. Die Prüfung prüfte nichts.
+      - name: Validate workflow JSON
+        working-directory: norra/backend
+        run: node scripts/validate-workflows.mjs
+
+      - name: Check app and workflows still agree
+        working-directory: norra/backend
+        run: node scripts/check-wiring.mjs
+
+      # Ohne Secret kann der Sync nichts tun. Auf einem Pull Request ist
+      # das der Normalfall — ein Fork bekommt sie ohnehin nie —, und ein
+      # dauerhaft roter Check erzieht dazu, rote Checks zu übersehen.
+      # Auf master ist dasselbe Fehlen ein echter Fehler: dort *ist* der
+      # Deploy der Zweck des Jobs.
+      - name: Check for instance credentials
+        id: creds
+        env:
+          N8N_BASE_URL: ${{ secrets.N8N_BASE_URL }}
+        run: |
+          if [ -n "$N8N_BASE_URL" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::N8N_BASE_URL ist nicht gesetzt — Dry Run übersprungen."
+          else
+            echo "::error::N8N_BASE_URL fehlt. Ohne das Secret läuft der Deploy nie."
+            exit 1
+          fi
+
+      - name: Dry run
+        if: steps.creds.outputs.configured == 'true'
+        working-directory: norra/backend
+        env:
+          N8N_BASE_URL: ${{ secrets.N8N_BASE_URL }}
+          N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
+        run: node scripts/n8n-sync.mjs deploy --dry-run
+
+      - name: Deploy
+        if: github.event_name != 'pull_request' && steps.creds.outputs.configured == 'true'
+        working-directory: norra/backend
+        env:
+          N8N_BASE_URL: ${{ secrets.N8N_BASE_URL }}
+          N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
+        run: node scripts/n8n-sync.mjs deploy
+
+      # Berichtet, was zwischen der Instanz und dem ersten echten Anruf noch
+      # steht. Absichtlich ohne Abbruch: was hier fehlt -- eine Credential
+      # anlegen, einen Workflow aktivieren -- kann nur ein Mensch tun, und ein
+      # Check, der bis dahin dauerhaft rot steht, erzieht dazu, rote Checks zu
+      # übersehen. Das Ergebnis landet in der Job-Zusammenfassung.
+      #
+      # Nicht mit --create-missing: der Deploy schriebe die neuen IDs in die
+      # Dateien, und die Änderung ginge mit dem Runner verloren. Anlegen bleibt
+      # ein bewusster Schritt am eigenen Rechner, dessen Ergebnis committet wird.
+      - name: Startbereitschaft berichten
+        if: steps.creds.outputs.configured == 'true'
+        continue-on-error: true
+        working-directory: norra/backend
+        env:
+          N8N_BASE_URL: ${{ secrets.N8N_BASE_URL }}
+          N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
+        run: |
+          {
+            echo '```'
+            node scripts/preflight.mjs || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

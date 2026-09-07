@@ -1,0 +1,119 @@
+name: 'DB Migrate'
+
+# Rolls the Supabase migrations out on push to main, after verifying them
+# against a throwaway Postgres first.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - supabase/**
+      - .github/workflows/db-migrate.yml
+  pull_request:
+    paths:
+      - supabase/**
+      - .github/workflows/db-migrate.yml
+  workflow_dispatch:
+
+concurrency:
+  # Never let two migration runs race against the same database.
+  group: norra-db-migrate-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  SUPABASE_CLI_VERSION: 2.116.0
+
+jobs:
+  verify:
+    name: Verify migrations
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # pgvector on top of the Postgres major version Supabase runs.
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: norra_verify
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGPASSWORD: postgres
+      PGHOST: localhost
+      PGUSER: postgres
+      PGDATABASE: norra_verify
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install psql
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Apply migrations in order
+        working-directory: supabase
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 -q -f tests/bootstrap.local.sql
+          for file in migrations/*.sql; do
+            echo "--> $file"
+            psql -v ON_ERROR_STOP=1 -q -f "$file"
+          done
+
+      - name: Run tenancy tests
+        working-directory: supabase
+        run: psql -v ON_ERROR_STOP=1 -f tests/tenancy.test.sql
+
+      - name: Run governance tests
+        working-directory: supabase
+        run: psql -v ON_ERROR_STOP=1 -f tests/governance.test.sql
+
+      - name: Run telephony tests
+        working-directory: supabase
+        run: psql -v ON_ERROR_STOP=1 -f tests/phone.test.sql
+
+      - name: Re-apply from scratch
+        # A migration that only works against an already-migrated database is a
+        # migration that will fail on a fresh environment.
+        working-directory: supabase
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 -q -c 'drop database if exists norra_replay' -d postgres
+          psql -v ON_ERROR_STOP=1 -q -c 'create database norra_replay' -d postgres
+          psql -v ON_ERROR_STOP=1 -q -d norra_replay -f tests/bootstrap.local.sql
+          for file in migrations/*.sql; do
+            psql -v ON_ERROR_STOP=1 -q -d norra_replay -f "$file"
+          done
+
+  deploy:
+    name: Push to Supabase
+    needs: verify
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Supabase CLI
+        run: npm install --global "supabase@${SUPABASE_CLI_VERSION}"
+
+      - name: Link project
+        working-directory: .
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: supabase link --project-ref "${{ secrets.SUPABASE_PROJECT_ID }}"
+
+      - name: Push migrations
+        working-directory: .
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: supabase db push

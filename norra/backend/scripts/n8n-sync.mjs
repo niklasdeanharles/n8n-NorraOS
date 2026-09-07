@@ -1,0 +1,391 @@
+#!/usr/bin/env node
+/**
+ * Syncs Norra's n8n workflows between the instance and this repository.
+ *
+ *   node scripts/n8n-sync.mjs export [--dry-run]
+ *   node scripts/n8n-sync.mjs deploy [--dry-run] [--create-missing]
+ *
+ * n8n's native Git environments are Enterprise-only, so this covers the same
+ * ground over the public REST API.
+ *
+ * Two safety rules hold this together:
+ *
+ *   export only looks at workflows whose name starts with NAME_PREFIX. The
+ *   instance hosts unrelated workflows and none of them belong in this repo.
+ *
+ *   deploy only writes to ids a repo file explicitly claims in its `norra`
+ *   block. It never deletes, so a bad file can at worst damage a workflow the
+ *   repo already owns. It creates only with --create-missing, and only for a
+ *   file that claims no id at all.
+ *
+ * Requires N8N_BASE_URL and N8N_API_KEY.
+ */
+
+import { readFile, writeFile, readdir, mkdir } from 'node:fs/promises';
+import path from 'node:path';
+import process from 'node:process';
+
+const WORKFLOW_DIR = path.resolve(import.meta.dirname, '../n8n-workflows');
+// The en dash matters: the instance also hosts "Norra OS 1", "Norra AI Phone
+// Agent" and "Norra Sales-Team", none of which belong in this repository. A
+// looser prefix would sweep them into the backup.
+const NAME_PREFIX = 'Norra \u2013 ';
+
+/** The only fields the n8n public API accepts on PUT. Anything else is a 400. */
+const WRITABLE_FIELDS = ['name', 'nodes', 'connections', 'settings'];
+
+/**
+ * Fields the API returns that change on their own between reads. Keeping them
+ * would make every backup run produce a diff and bury real changes.
+ */
+const VOLATILE_FIELDS = [
+  'id', 'active', 'createdAt', 'updatedAt', 'versionId', 'activeVersionId',
+  'triggerCount', 'tags', 'pinData', 'shared', 'isArchived', 'scopes',
+  'canExecute', 'homeProject', 'sharedWithProjects', 'parentFolderId',
+];
+
+function requireEnv(name) {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} is not set. Both N8N_BASE_URL and N8N_API_KEY are required.`);
+  }
+  return value;
+}
+
+async function api(pathname, init = {}) {
+  const base = requireEnv('N8N_BASE_URL').replace(/\/+$/, '');
+  const response = await fetch(`${base}/api/v1${pathname}`, {
+    ...init,
+    headers: {
+      'X-N8N-API-KEY': requireEnv('N8N_API_KEY'),
+      'content-type': 'application/json',
+      ...init.headers,
+    },
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`${init.method ?? 'GET'} ${pathname} failed: ${response.status} ${body.slice(0, 400)}`);
+  }
+  return await response.json();
+}
+
+async function listWorkflows() {
+  const collected = [];
+  let cursor;
+  do {
+    const query = new URLSearchParams({ limit: '100' });
+    if (cursor) query.set('cursor', cursor);
+    const page = await api(`/workflows?${query}`);
+    collected.push(...(page.data ?? []));
+    cursor = page.nextCursor ?? undefined;
+  } while (cursor);
+  return collected;
+}
+
+function slugify(name) {
+  return (
+    name
+      .normalize('NFKD')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'workflow'
+  );
+}
+
+/** Strips volatile fields so an unchanged workflow round-trips to an identical file. */
+function normalize(workflow, bookkeeping) {
+  const clean = { ...workflow };
+  for (const field of VOLATILE_FIELDS) delete clean[field];
+  // Ordered so a diff opens on the name rather than a wall of nodes.
+  return {
+    name: clean.name,
+    nodes: clean.nodes ?? [],
+    connections: clean.connections ?? {},
+    settings: clean.settings ?? {},
+    ...(clean.meta ? { meta: clean.meta } : {}),
+    norra: bookkeeping,
+  };
+}
+
+/**
+ * Workflows are filed one folder deep by what starts them: `webhooks/` for the
+ * ones n8n exposes over HTTP, `sub-workflows/` for the ones another workflow
+ * calls. `name` carries that folder, so it stays the file's identity.
+ */
+async function readRepoWorkflows() {
+  const files = [];
+  for (const dir of (await readdir(WORKFLOW_DIR, { withFileTypes: true })).filter((e) => e.isDirectory())) {
+    for (const entry of await readdir(path.join(WORKFLOW_DIR, dir.name))) {
+      if (!entry.endsWith('.json')) continue;
+      const name = `${dir.name}/${entry}`;
+      const file = path.join(WORKFLOW_DIR, name);
+      files.push({ file, name, workflow: JSON.parse(await readFile(file, 'utf8')) });
+    }
+  }
+  return files;
+}
+
+/**
+ * Where a workflow the repo has never seen belongs. A webhook node means the
+ * outside world calls it; anything else is started by another workflow.
+ */
+function folderFor(workflow) {
+  const webhook = (workflow.nodes ?? []).some((node) => node.type === 'n8n-nodes-base.webhook');
+  return webhook ? 'webhooks' : 'sub-workflows';
+}
+
+async function runExport({ dryRun }) {
+  const repoFiles = await readRepoWorkflows();
+  // Existing files own their filename, so a rename upstream does not orphan them.
+  const filenameById = new Map(
+    repoFiles
+      .filter((f) => f.workflow.norra?.workflowId)
+      .map((f) => [f.workflow.norra.workflowId, f.name]),
+  );
+
+  const summaries = (await listWorkflows()).filter((w) => (w.name ?? '').startsWith(NAME_PREFIX));
+  console.log(`Found ${summaries.length} workflow(s) named "${NAME_PREFIX}…" on the instance.`);
+
+  let written = 0;
+  for (const summary of summaries) {
+    const full = await api(`/workflows/${summary.id}`);
+    const filename = filenameById.get(summary.id) ?? `${folderFor(full)}/${slugify(summary.name)}.json`;
+    const slug = path.basename(filename, '.json');
+    const normalized = normalize(full, { workflowId: summary.id, slug });
+    const serialized = `${JSON.stringify(normalized, null, 2)}\n`;
+
+    const target = path.join(WORKFLOW_DIR, filename);
+    let previous = null;
+    try {
+      previous = await readFile(target, 'utf8');
+    } catch {
+      // New workflow; there is nothing to compare against.
+    }
+
+    if (previous === serialized) {
+      console.log(`  unchanged  ${filename}`);
+      continue;
+    }
+    console.log(`  ${previous === null ? 'new      ' : 'changed  '}  ${filename}  (${summary.name})`);
+    if (!dryRun) {
+      await mkdir(path.dirname(target), { recursive: true });
+      await writeFile(target, serialized);
+    }
+    written += 1;
+  }
+
+  console.log(dryRun ? `\n${written} file(s) would change.` : `\n${written} file(s) written.`);
+}
+
+/**
+ * Credential references live on the instance, not in the repo. A file that
+ * omits them must not strip them from the running workflow, so they are carried
+ * over from whatever is live.
+ */
+function carryOverCredentials(repoNodes, liveNodes) {
+  const liveByName = new Map((liveNodes ?? []).map((node) => [node.name, node]));
+  const preserved = [];
+
+  const merged = (repoNodes ?? []).map((node) => {
+    if (node.credentials) return node;
+    const live = liveByName.get(node.name);
+    if (!live?.credentials) return node;
+    preserved.push(node.name);
+    return { ...node, credentials: live.credentials };
+  });
+
+  return { nodes: merged, preserved };
+}
+
+/**
+ * Fills in the workflow id a tool node refers to, by name.
+ *
+ * A `toolWorkflow` node points at a sub-workflow by instance id. That id does
+ * not exist until the sub-workflow has been imported once, so a new tool ships
+ * with an empty value and its name in `cachedResultName`. Resolving it here
+ * means nobody has to copy ids between the n8n UI and this repository -- and,
+ * more importantly, a tool whose sub-workflow is missing aborts the deploy
+ * instead of going live pointing at nothing.
+ */
+function resolveToolReferences(nodes, idsByName) {
+  const unresolved = [];
+  const filled = [];
+
+  const merged = (nodes ?? []).map((node) => {
+    if (node.type !== '@n8n/n8n-nodes-langchain.toolWorkflow') return node;
+    const ref = node.parameters?.workflowId;
+    if (!ref || typeof ref !== 'object' || ref.value) return node;
+
+    const target = ref.cachedResultName;
+    const id = target ? idsByName.get(target) : undefined;
+    if (!id) {
+      unresolved.push(`${node.name} -> ${target ?? '(kein Name hinterlegt)'}`);
+      return node;
+    }
+    filled.push(`${node.name} -> ${id}`);
+    return { ...node, parameters: { ...node.parameters, workflowId: { ...ref, value: id } } };
+  });
+
+  return { nodes: merged, unresolved, filled };
+}
+
+/**
+ * Gives a repo file that claims no id one to claim, and writes it back.
+ *
+ * A new workflow is a chicken and egg: the file cannot carry an instance id
+ * before the instance has it, and the instance cannot have it before someone
+ * uploads the file. Until now that gap was closed by hand in the n8n UI --
+ * exactly the kind of step that leaves no trace in Git.
+ *
+ * A live workflow of the same name is adopted rather than duplicated. That is
+ * the common case after someone did import the file by hand once, and creating
+ * a second copy would leave two workflows answering to one name, of which the
+ * tool nodes would pick whichever the listing returned first.
+ */
+async function claimUnclaimed(files, dryRun) {
+  const liveByName = new Map((await listWorkflows()).map((w) => [w.name, w]));
+  // Namen, die es nach einem echten Lauf gaebe. Im Probelauf entsteht nichts,
+  // also wuerde die Tool-Pruefung weiter unten genau die Sub-Workflows als
+  // fehlend melden, die dieser Lauf gerade anlegen wuerde -- ein Abbruch, der
+  // dem Nutzer das Gegenteil dessen sagt, was der Befehl tut.
+  const planned = new Set();
+
+  for (const file of files) {
+    const existing = liveByName.get(file.workflow.name);
+    let id;
+
+    if (existing) {
+      id = existing.id;
+      console.log(
+        `  ${dryRun ? 'would adopt' : 'adopted   '} ${file.name} -> ${id}  ` +
+        '(gleichnamiger Workflow lag schon auf der Instanz)',
+      );
+    } else if (dryRun) {
+      console.log(`  would create ${file.name}  (${file.workflow.name})`);
+      planned.add(file.workflow.name);
+      continue;
+    } else {
+      const payload = {};
+      for (const field of WRITABLE_FIELDS) {
+        if (file.workflow[field] !== undefined) payload[field] = file.workflow[field];
+      }
+      // A brand new workflow has nothing to resolve tool references against
+      // yet; the deploy pass right after this one fills them in.
+      ({ id } = await api('/workflows', { method: 'POST', body: JSON.stringify(payload) }));
+      console.log(`  created    ${file.name} -> ${id}`);
+    }
+
+    // The id only counts once the file carries it. Without the write-back the
+    // next run would create the workflow a second time.
+    file.workflow.norra = { ...(file.workflow.norra ?? {}), workflowId: id };
+    if (!dryRun) {
+      await writeFile(file.file, `${JSON.stringify(file.workflow, null, 2)}\n`);
+    }
+  }
+
+  return planned;
+}
+
+async function runDeploy({ dryRun, createMissing }) {
+  const repoFiles = await readRepoWorkflows();
+  const unclaimed = repoFiles.filter((f) => !f.workflow.norra?.workflowId);
+
+  let planned = new Set();
+  if (createMissing && unclaimed.length > 0) {
+    planned = await claimUnclaimed(unclaimed, dryRun);
+  } else {
+    for (const file of unclaimed) {
+      console.warn(`  skipped    ${file.name}  (kein norra.workflowId -- anlegen mit --create-missing)`);
+    }
+  }
+
+  const claimed = repoFiles.filter((f) => f.workflow.norra?.workflowId);
+
+  // Every claimed id is resolved before anything is written. Failing halfway
+  // through would leave the instance holding some new workflows and some old
+  // ones, which is worse than not deploying at all.
+  // Sub-workflows are addressed by name in the repo and by id on the instance.
+  // One listing up front is what lets a tool node be written without an id.
+  const idsByName = new Map((await listWorkflows()).map((w) => [w.name, w.id]));
+  // Nur im Probelauf: was der echte Lauf anlegen wuerde, zaehlt hier als da.
+  for (const name of planned) idsByName.set(name, '(wird angelegt)');
+
+  const resolved = [];
+  const missing = [];
+  for (const { name, workflow } of claimed) {
+    const id = workflow.norra.workflowId;
+    try {
+      resolved.push({ name, workflow, id, live: await api(`/workflows/${id}`) });
+    } catch (error) {
+      missing.push(`  ${name} claims ${id}: ${error.message}`);
+    }
+  }
+
+  if (missing.length > 0) {
+    throw new Error(
+      'Deploy aborted before writing anything. These ids must already exist on ' +
+      'the instance; an id in a repo file is never invented. Clear the stale ' +
+      'norra.workflowId and rerun with --create-missing to have the workflow ' +
+      `laid down fresh:\n${missing.join('\n')}`,
+    );
+  }
+
+  let deployed = 0;
+  // Same reason as the id check above: find every broken tool reference before
+  // writing anything, rather than deploying half a working agent.
+  const broken = [];
+  for (const { name, workflow } of resolved) {
+    const { unresolved } = resolveToolReferences(workflow.nodes, idsByName);
+    if (unresolved.length > 0) broken.push(`  ${name}: ${unresolved.join(', ')}`);
+  }
+  if (broken.length > 0) {
+    throw new Error(
+      'Deploy aborted before writing anything. These tool nodes point at ' +
+      'sub-workflows the instance does not have. Run deploy --create-missing ' +
+      'once to lay them down, then deploy again:\n' + broken.join('\n'),
+    );
+  }
+
+  for (const { name, workflow, id, live } of resolved) {
+    const { nodes: linked, filled } = resolveToolReferences(workflow.nodes, idsByName);
+    const { nodes, preserved } = carryOverCredentials(linked, live.nodes);
+    if (filled.length > 0) console.log(`             ${name}: Tool-Verweise aufgeloest -- ${filled.join(', ')}`);
+    const payload = {};
+    for (const field of WRITABLE_FIELDS) {
+      if (workflow[field] !== undefined) payload[field] = workflow[field];
+    }
+    payload.nodes = nodes;
+
+    if (preserved.length > 0) {
+      console.log(`  ${name}: kept live credentials for ${preserved.join(', ')}`);
+    }
+
+    if (dryRun) {
+      console.log(`  would push ${name} -> ${id} (${live.name})`);
+      continue;
+    }
+
+    await api(`/workflows/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+    console.log(`  pushed     ${name} -> ${id} (${live.name})`);
+    deployed += 1;
+  }
+
+  console.log(dryRun ? '\nDry run; nothing was written.' : `\n${deployed} workflow(s) pushed.`);
+}
+
+const [command, ...rest] = process.argv.slice(2);
+const dryRun = rest.includes('--dry-run');
+const createMissing = rest.includes('--create-missing');
+
+try {
+  if (command === 'export') await runExport({ dryRun });
+  else if (command === 'deploy') await runDeploy({ dryRun, createMissing });
+  else {
+    console.error('Usage: n8n-sync.mjs <export|deploy> [--dry-run] [--create-missing]');
+    process.exit(2);
+  }
+} catch (error) {
+  console.error(`\n${error.message}`);
+  process.exit(1);
+}

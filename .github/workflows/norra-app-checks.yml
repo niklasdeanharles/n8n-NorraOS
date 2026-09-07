@@ -1,0 +1,89 @@
+name: 'Norra: App Checks'
+
+# Type check, lint, build, wiring and the phone path. Scoped by paths so it
+# never fires on n8n's own changes.
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - norra/frontend/**
+      - norra/backend/scripts/**
+      - norra/frontend/tests/**
+      - norra/backend/n8n-workflows/**
+      - norra/backend/supabase/migrations/**
+      - .github/workflows/norra-app-checks.yml
+  pull_request:
+    paths:
+      - norra/frontend/**
+      - norra/backend/scripts/**
+      - norra/frontend/tests/**
+      - norra/backend/n8n-workflows/**
+      - norra/backend/supabase/migrations/**
+      - .github/workflows/norra-app-checks.yml
+  workflow_dispatch:
+
+concurrency:
+  group: norra-app-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Type check, lint, wiring, phone path
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: norra/frontend/package-lock.json
+
+      - name: Install
+        working-directory: norra/frontend
+        run: npm ci
+
+      - name: Type check
+        working-directory: norra/frontend
+        run: npm run typecheck
+
+      - name: Lint
+        working-directory: norra/frontend
+        run: npm run lint
+
+      - name: Check wiring
+        working-directory: norra/backend
+        run: node scripts/check-wiring.mjs
+
+      # Builds the app against in-memory stand-ins and drives real signed
+      # webhooks through it. This is the check that catches a call path broken
+      # by something outside the routes -- middleware, a header, a status code.
+      - name: Phone path end to end
+        working-directory: norra/frontend
+        run: node tests/voice/run.mjs
+
+      # Same shape, for the embeddable web widget: mints a session, posts
+      # turns, and spends half its scenarios trying to break the signed token
+      # a tampered, forged, or merely expired one all have to fail the same way.
+      - name: Widget path end to end
+        working-directory: norra/frontend
+        run: node tests/widget/run.mjs
+
+      # Runs the agent's own test cases through the real turn path as a
+      # signed-in admin. Catches an assertion that stops asserting -- which is
+      # exactly how `expect_tool` went green for every agent.
+      - name: Simulation end to end
+        working-directory: norra/frontend
+        run: node tests/simulate/run.mjs
+
+      # The two authenticated console routes. Covers what the mock can prove --
+      # validation, persistence order, history, failure branches. Tenant
+      # isolation is proven against a real Postgres in the backend's SQL suite,
+      # because the mock has no RLS and would pass either way.
+      - name: Console routes end to end
+        working-directory: norra/frontend
+        run: node tests/console/run.mjs

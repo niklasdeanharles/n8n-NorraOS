@@ -1,0 +1,13 @@
+node_modules/
+.next/
+.vercel/
+.env
+.env.local
+.env*.local
+*.tsbuildinfo
+
+# n8n's root .gitignore excludes **/package-lock.json because that monorepo
+# is pnpm-only. This app is a standalone npm project outside that workspace, so
+# its lockfile has to be tracked -- otherwise Vercel resolves different versions
+# than the ones verified here. Harmless when this folder is its own repository.
+!package-lock.json
