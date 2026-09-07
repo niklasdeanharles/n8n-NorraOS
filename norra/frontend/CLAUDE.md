@@ -69,6 +69,75 @@ Eine Regel, die nur eine Oberfläche rendert, gehört in deren Datei — nicht i
 `base.css`. Wächst etwas zum geteilten Baustein (wie der Tipp-Indikator
 `.typing`), wandert es nach `base.css`.
 
+### Die beiden Apple-Skills: welche gilt, welche nicht
+
+Unter `.claude/skills/` liegen zwei installierte Design-Skills. Sie sind reine
+Prosa, kein Code — und sie sind unterschiedlich viel wert.
+
+**`apple-ui-designer`** (aus `heyman333/atelier-ui`) ist brauchbar: Prinzipien
+für iOS-Oberflächen, sauber begründet. Sie ist im Widget umgesetzt.
+
+**`apple-ui-skills`** (aus `ihlamury/design-skills`) ist es **nicht** — nicht
+als Geschmacksfrage, sondern nachrechenbar. Sie verlangt selbst
+*„MUST maintain text contrast ratio of at least 4.5:1"* und liefert dann eine
+Palette, die auf ihrem eigenen `surface-base` (`#FFFFFF`) daran scheitert:
+
+| Token | Farbe | Kontrast auf Weiß | |
+|---|---|---|---|
+| `text-primary` (Fließtext!) | `#808080` | 3.95:1 | verfehlt |
+| `text-secondary` | `#6D89B5` | 3.56:1 | verfehlt |
+| `text-tertiary` | `#90C5F1` | 1.84:1 | verfehlt |
+| `border-default` | `#B5C7D8` | 1.73:1 | verfehlt |
+| `accent` | `#155BD0` | 6.11:1 | ok |
+
+Dazu widerspricht sie sich an mehreren Stellen: *„MUST use 4px grid"* neben
+einer Skala mit 13px und 34px; *„MUST design for 1920px base viewport"* neben
+der Mobile-first-Skill; `surface-raised: #0858DC` — kräftiges Blau für Karten
+und Modals — ist nicht Apples Sprache. Die Tabellenspalten `Count` und
+`(used 18x)` verraten, was sie ist: der maschinelle Abzug **einer** Webseite,
+mit „Apple" beschriftet. Wer ihr folgt, macht Norra unzugänglicher, nicht
+apple-artiger.
+
+Sie bleibt liegen, weil sie installiert wurde. Angewendet wird sie nicht.
+
+### Wo die brauchbare Skill gilt
+
+`apple-ui-designer` ist Gestaltungsanweisung für **iOS-Apps**: mobile-first,
+Bottom Sheets, Safe Area, gestengetrieben, „avoid dense information". Sie passt
+auf genau eine der beiden Oberflächen hier.
+
+| Oberfläche | Gilt? | Warum |
+|---|---|---|
+| `widget/` | **ja** | Kleine vertikale Nachrichtenliste, läuft auf dem Telefon im iframe. Genau das, wofür die Skill geschrieben ist. |
+| `(console)/` | **nein** | Ein Bedienwerkzeug am Schreibtisch: Tabellen mit Konversationen, Charts, Formulare mit zwanzig Feldern. „Vermeide dichte Information" und „Bottom Sheets" würden es schlechter machen, nicht besser. |
+
+Zwei Stellen, an denen die Skill dem bestehenden System widerspricht — dort
+gewinnt das System:
+
+- **Schrift.** Die Skill will SF Pro. Norra hat Familjen Grotesk und Instrument
+  Sans, und das Widget soll aussehen wie Norra, nicht wie eine fremde App auf
+  der Seite des Kunden.
+- **Akzentfarbe.** Die Skill will Systemblau. Norras Waldgrün bleibt — die Skill
+  selbst sagt „accent colors used sparingly", nicht „nimm unseren".
+
+Was übrig bleibt, ist das Wertvolle daran und steht in `styles/widget.css`:
+
+- **Rahmen weg.** Die Blasen hatten Kante *und* Fläche. Die Skill nennt genau
+  das — „clear separators or spacing (not both)". Die Fläche allein trägt.
+- **Berührungsflächen.** Die CSAT-Knöpfe waren 24px, unter jeder Empfehlung.
+  Jetzt 34px.
+- **`100dvh` statt `100vh`.** Auf dem Telefon fährt die Adressleiste ein und
+  aus; `vh` rechnet mit der ausgefahrenen Höhe, und das Eingabefeld lag unter
+  dem Rand.
+- **`font-size: 16px` im Textfeld.** Darunter zoomt iOS beim Fokus hinein und
+  kommt nicht von selbst zurück.
+- **`env(safe-area-inset-*)`** an Kopf und Eingabe, `overscroll-behavior:
+  contain` im Verlauf — sonst scrollt die Seite des Kunden mit.
+- **Translucency** hinter `@supports`, damit ohne `backdrop-filter` der
+  Vollton bleibt und der Text in jedem Fall lesbar ist.
+- **`:active { scale(.92) }`** statt Hover-Effekten: auf dem Telefon gibt es
+  keinen Zeiger, und der Finger verdeckt die Stelle, an der etwas passiert.
+
 ### Die zwei Grenzen am Widget
 
 Das Widget ist die einzige Oberfläche, die Fremde erreichen — ohne Konto, ohne
