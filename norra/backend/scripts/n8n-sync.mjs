@@ -3,7 +3,7 @@
  * Syncs Norra's n8n workflows between the instance and this repository.
  *
  *   node scripts/n8n-sync.mjs export [--dry-run]
- *   node scripts/n8n-sync.mjs deploy [--dry-run]
+ *   node scripts/n8n-sync.mjs deploy [--dry-run] [--create-missing]
  *
  * n8n's native Git environments are Enterprise-only, so this covers the same
  * ground over the public REST API.
@@ -14,8 +14,9 @@
  *   instance hosts unrelated workflows and none of them belong in this repo.
  *
  *   deploy only writes to ids a repo file explicitly claims in its `norra`
- *   block. It never creates and never deletes, so a bad file can at worst
- *   damage a workflow the repo already owns.
+ *   block. It never deletes, so a bad file can at worst damage a workflow the
+ *   repo already owns. It creates only with --create-missing, and only for a
+ *   file that claims no id at all.
  *
  * Requires N8N_BASE_URL and N8N_API_KEY.
  */
@@ -229,14 +230,77 @@ function resolveToolReferences(nodes, idsByName) {
   return { nodes: merged, unresolved, filled };
 }
 
-async function runDeploy({ dryRun }) {
+/**
+ * Gives a repo file that claims no id one to claim, and writes it back.
+ *
+ * A new workflow is a chicken and egg: the file cannot carry an instance id
+ * before the instance has it, and the instance cannot have it before someone
+ * uploads the file. Until now that gap was closed by hand in the n8n UI --
+ * exactly the kind of step that leaves no trace in Git.
+ *
+ * A live workflow of the same name is adopted rather than duplicated. That is
+ * the common case after someone did import the file by hand once, and creating
+ * a second copy would leave two workflows answering to one name, of which the
+ * tool nodes would pick whichever the listing returned first.
+ */
+async function claimUnclaimed(files, dryRun) {
+  const liveByName = new Map((await listWorkflows()).map((w) => [w.name, w]));
+  // Namen, die es nach einem echten Lauf gaebe. Im Probelauf entsteht nichts,
+  // also wuerde die Tool-Pruefung weiter unten genau die Sub-Workflows als
+  // fehlend melden, die dieser Lauf gerade anlegen wuerde -- ein Abbruch, der
+  // dem Nutzer das Gegenteil dessen sagt, was der Befehl tut.
+  const planned = new Set();
+
+  for (const file of files) {
+    const existing = liveByName.get(file.workflow.name);
+    let id;
+
+    if (existing) {
+      id = existing.id;
+      console.log(
+        `  ${dryRun ? 'would adopt' : 'adopted   '} ${file.name} -> ${id}  ` +
+        '(gleichnamiger Workflow lag schon auf der Instanz)',
+      );
+    } else if (dryRun) {
+      console.log(`  would create ${file.name}  (${file.workflow.name})`);
+      planned.add(file.workflow.name);
+      continue;
+    } else {
+      const payload = {};
+      for (const field of WRITABLE_FIELDS) {
+        if (file.workflow[field] !== undefined) payload[field] = file.workflow[field];
+      }
+      // A brand new workflow has nothing to resolve tool references against
+      // yet; the deploy pass right after this one fills them in.
+      ({ id } = await api('/workflows', { method: 'POST', body: JSON.stringify(payload) }));
+      console.log(`  created    ${file.name} -> ${id}`);
+    }
+
+    // The id only counts once the file carries it. Without the write-back the
+    // next run would create the workflow a second time.
+    file.workflow.norra = { ...(file.workflow.norra ?? {}), workflowId: id };
+    if (!dryRun) {
+      await writeFile(file.file, `${JSON.stringify(file.workflow, null, 2)}\n`);
+    }
+  }
+
+  return planned;
+}
+
+async function runDeploy({ dryRun, createMissing }) {
   const repoFiles = await readRepoWorkflows();
-  const claimed = repoFiles.filter((f) => f.workflow.norra?.workflowId);
   const unclaimed = repoFiles.filter((f) => !f.workflow.norra?.workflowId);
 
-  for (const file of unclaimed) {
-    console.warn(`  skipped    ${file.name}  (no norra.workflowId -- deploy never creates workflows)`);
+  let planned = new Set();
+  if (createMissing && unclaimed.length > 0) {
+    planned = await claimUnclaimed(unclaimed, dryRun);
+  } else {
+    for (const file of unclaimed) {
+      console.warn(`  skipped    ${file.name}  (kein norra.workflowId -- anlegen mit --create-missing)`);
+    }
   }
+
+  const claimed = repoFiles.filter((f) => f.workflow.norra?.workflowId);
 
   // Every claimed id is resolved before anything is written. Failing halfway
   // through would leave the instance holding some new workflows and some old
@@ -244,6 +308,8 @@ async function runDeploy({ dryRun }) {
   // Sub-workflows are addressed by name in the repo and by id on the instance.
   // One listing up front is what lets a tool node be written without an id.
   const idsByName = new Map((await listWorkflows()).map((w) => [w.name, w.id]));
+  // Nur im Probelauf: was der echte Lauf anlegen wuerde, zaehlt hier als da.
+  for (const name of planned) idsByName.set(name, '(wird angelegt)');
 
   const resolved = [];
   const missing = [];
@@ -258,8 +324,10 @@ async function runDeploy({ dryRun }) {
 
   if (missing.length > 0) {
     throw new Error(
-      'Deploy aborted before writing anything. Deploy never creates workflows, ' +
-      `so these ids must already exist on the instance:\n${missing.join('\n')}`,
+      'Deploy aborted before writing anything. These ids must already exist on ' +
+      'the instance; an id in a repo file is never invented. Clear the stale ' +
+      'norra.workflowId and rerun with --create-missing to have the workflow ' +
+      `laid down fresh:\n${missing.join('\n')}`,
     );
   }
 
@@ -274,8 +342,8 @@ async function runDeploy({ dryRun }) {
   if (broken.length > 0) {
     throw new Error(
       'Deploy aborted before writing anything. These tool nodes point at ' +
-      'sub-workflows the instance does not have. Import them once (n8n: Workflows ' +
-      '-> Import from File), then run deploy again:\n' + broken.join('\n'),
+      'sub-workflows the instance does not have. Run deploy --create-missing ' +
+      'once to lay them down, then deploy again:\n' + broken.join('\n'),
     );
   }
 
@@ -308,12 +376,13 @@ async function runDeploy({ dryRun }) {
 
 const [command, ...rest] = process.argv.slice(2);
 const dryRun = rest.includes('--dry-run');
+const createMissing = rest.includes('--create-missing');
 
 try {
   if (command === 'export') await runExport({ dryRun });
-  else if (command === 'deploy') await runDeploy({ dryRun });
+  else if (command === 'deploy') await runDeploy({ dryRun, createMissing });
   else {
-    console.error('Usage: n8n-sync.mjs <export|deploy> [--dry-run]');
+    console.error('Usage: n8n-sync.mjs <export|deploy> [--dry-run] [--create-missing]');
     process.exit(2);
   }
 } catch (error) {

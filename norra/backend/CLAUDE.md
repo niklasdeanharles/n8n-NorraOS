@@ -355,13 +355,64 @@ Drei Eigenschaften, auf die man sich verlassen kann:
 1. **Export fasst nur `Norra – …` an.** Auf der Instanz liegen fremde Workflows
    (Sales-Team, Jarvis-Template, …). Der Namenspräfix-Filter ist die Grenze;
    ohne ihn würde ein Backup sie ins Repo ziehen.
-2. **Deploy legt nichts an und löscht nichts.** Geschrieben wird ausschließlich
-   auf IDs, die eine Repo-Datei in ihrem `norra`-Block beansprucht. Alle IDs
-   werden vorab aufgelöst — schlägt eine fehl, wird **gar nichts** geschrieben,
-   statt einen halb deployten Stand zu hinterlassen.
+2. **Deploy löscht nichts und legt nur auf Ansage an.** Geschrieben wird
+   ausschließlich auf IDs, die eine Repo-Datei in ihrem `norra`-Block
+   beansprucht. Alle IDs werden vorab aufgelöst — schlägt eine fehl, wird **gar
+   nichts** geschrieben, statt einen halb deployten Stand zu hinterlassen. Neue
+   Workflows entstehen nur mit `--create-missing` (siehe unten).
 3. **Credentials überleben einen Deploy.** Die Repo-Dateien enthalten keine
    Credential-Verweise. Deploy übernimmt sie deshalb pro Node aus der laufenden
    Fassung — sonst würde jeder Deploy die Verknüpfungen abreißen.
+
+### Einen neuen Workflow das erste Mal auf die Instanz bringen
+
+Ein neuer Workflow ist ein Henne-Ei-Problem: die Datei kann keine Instanz-ID
+tragen, bevor die Instanz sie hat, und die Instanz hat sie nicht, bevor jemand
+die Datei hochlädt. Bisher wurde diese Lücke von Hand im n8n-Editor geschlossen
+— genau der Schritt, der in Git keine Spur hinterlässt.
+
+```bash
+node scripts/n8n-sync.mjs deploy --create-missing --dry-run   # erst ansehen
+node scripts/n8n-sync.mjs deploy --create-missing             # dann anlegen
+```
+
+Zwei Dinge machen das ungefährlich:
+
+- **Gleichnamiges wird adoptiert, nicht verdoppelt.** Liegt auf der Instanz
+  schon ein Workflow desselben Namens, übernimmt die Datei dessen ID, statt
+  eine zweite Kopie anzulegen. Zwei Workflows unter einem Namen wären der
+  schlimmere Fehler: die Tool-Nodes griffen sich, was das Listing zuerst
+  liefert. Nebeneffekt: ein zweiter Lauf ist folgenlos.
+- **Die ID wird in die Repo-Datei zurückgeschrieben** — als einzige geänderte
+  Zeile. Erst damit gilt sie; ohne den Rückschreib-Schritt legte der nächste
+  Lauf denselben Workflow noch einmal an. **Diese Änderung gehört committet.**
+
+Deshalb läuft `--create-missing` bewusst *nicht* in der CI: dort ginge der
+Rückschreib-Schritt mit dem Runner verloren.
+
+### Was zwischen Repo und erstem echten Anruf steht
+
+Drei Dinge an Norra entstehen nicht durch Code, sondern durch Klicks in n8n:
+eine Credential wird angelegt, an einen Node gehängt, ein Workflow wird
+aktiviert. Genau die kann dieses Repository nicht garantieren — und genau die
+fallen erst auf, wenn ein Kunde in der Leitung ist und der Agent schweigt.
+
+```bash
+node scripts/preflight.mjs      # nur lesend; Exit 1, solange etwas blockiert
+```
+
+Es meldet, nach Workflow gruppiert: fehlende Workflows, inaktive Webhooks
+(ein inaktiver Webhook antwortet mit 404), Nodes ohne die Credential, die ihr
+Typ verlangt, offene Tool-Verweise und Abweichungen zwischen Repo und Instanz.
+Welcher Node welche Credential braucht, steht als Tabelle im Skript und ist
+gegen die Typdefinitionen der Nodes geprüft, nicht geraten. Ein Node-Typ, der
+in keiner der beiden Listen steht, wird gemeldet — sonst wäre ein neu
+hinzugefügter Node ohne Credential genau der Fall, den die Prüfung nicht sieht.
+
+Im Deploy-Job läuft dasselbe Skript nach dem Push und schreibt seinen Bericht
+in die Job-Zusammenfassung, **ohne** den Job scheitern zu lassen: was dort
+fehlt, kann nur ein Mensch tun, und ein Check, der bis dahin dauerhaft rot
+steht, erzieht dazu, rote Checks zu übersehen.
 
 Volatile Felder (`updatedAt`, `versionId`, `id`, …) werden beim Export
 entfernt, damit ein unveränderter Workflow keinen Diff erzeugt und ein echter
@@ -401,8 +452,10 @@ done
 ```bash
 supabase db push                             # Migrationen ausrollen (macht sonst die Action)
 node scripts/check-wiring.mjs                # Verdrahtung prüfen
+node scripts/preflight.mjs                   # was fehlt der Instanz noch
 node scripts/n8n-sync.mjs export --dry-run   # was würde sich in git ändern
 node scripts/n8n-sync.mjs deploy --dry-run   # was würde auf die Instanz gehen
+node scripts/n8n-sync.mjs deploy --create-missing --dry-run  # inkl. neuer Workflows
 ```
 
 Nach einer Schema-Änderung gehört der Typ in `norra-frontend` nachgezogen:

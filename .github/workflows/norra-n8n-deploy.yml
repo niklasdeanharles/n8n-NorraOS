@@ -93,3 +93,26 @@ jobs:
           N8N_BASE_URL: ${{ secrets.N8N_BASE_URL }}
           N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
         run: node scripts/n8n-sync.mjs deploy
+
+      # Berichtet, was zwischen der Instanz und dem ersten echten Anruf noch
+      # steht. Absichtlich ohne Abbruch: was hier fehlt -- eine Credential
+      # anlegen, einen Workflow aktivieren -- kann nur ein Mensch tun, und ein
+      # Check, der bis dahin dauerhaft rot steht, erzieht dazu, rote Checks zu
+      # übersehen. Das Ergebnis landet in der Job-Zusammenfassung.
+      #
+      # Nicht mit --create-missing: der Deploy schriebe die neuen IDs in die
+      # Dateien, und die Änderung ginge mit dem Runner verloren. Anlegen bleibt
+      # ein bewusster Schritt am eigenen Rechner, dessen Ergebnis committet wird.
+      - name: Startbereitschaft berichten
+        if: steps.creds.outputs.configured == 'true'
+        continue-on-error: true
+        working-directory: norra/backend
+        env:
+          N8N_BASE_URL: ${{ secrets.N8N_BASE_URL }}
+          N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
+        run: |
+          {
+            echo '```'
+            node scripts/preflight.mjs || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
