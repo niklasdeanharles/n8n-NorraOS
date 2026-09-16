@@ -120,6 +120,7 @@ Hostinger VPS, self-hosted Community Edition: `https://n8n-fdhh.srv1817599.hstgr
 | Agent Turn | `webhooks/agent-turn.json` | `yTH3YQeR5qdNVxSI` | `POST /webhook/norra/agent-turn` | Zentraler Turn: Config laden, RAG, Streaming |
 | Voice Turn | `webhooks/voice-turn.json` | `wc4s77ROyul5LR5X` | `POST /webhook/norra/voice-turn` | Ein gesprochener Turn, ohne Streaming |
 | KB Ingest | `webhooks/kb-ingest.json` | `Q3XhlP6eet9eqnm0` | `POST /webhook/norra/kb-ingest` | Dokument chunken, einbetten, speichern |
+| Call Wrapup | `webhooks/call-wrapup.json` | — | `POST /webhook/norra/call-wrapup` | Nach dem Auflegen: Variablen ziehen, zusammenfassen, Follow-up |
 | Tool: lookup_record | `sub-workflows/lookup-record.json` | `KHHKDV5CoyiDxuCO` | Sub-Workflow | Datensatz beim Kunden nachschlagen, read-only |
 | Tool: escalate_to_human | `sub-workflows/escalate-to-human.json` | `pw6OzhBSG2oxagNt` | Sub-Workflow | Ticket anlegen, Konversation eskalieren |
 | Tool: request_action | `sub-workflows/request-action.json` | `LwyJZr8WFsjd0L9v` | Sub-Workflow | Folgenreiche Aktion zur **Freigabe** einreichen |
@@ -267,7 +268,7 @@ Jedes weitere Tool mit realer Konsequenz gehört denselben Weg: Zeile in
 `approvals`, Rückgabewert sagt dem Agenten ausdrücklich, dass nichts ausgeführt
 wurde.
 
-Von den elf Workflows liegen sieben auf der Instanz, **keiner ist aktiviert**,
+Von den zwölf Workflows liegen sieben auf der Instanz, **keiner ist aktiviert**,
 und **kein Node trägt bisher eine Credential** — auch nicht die Supabase- und
 OpenAI-Nodes, von denen man das annehmen könnte. Drei Credentials fehlen auf
 der Instanz ganz:
@@ -277,6 +278,7 @@ der Instanz ganz:
 | Anthropic | `anthropicApi` | Claude Model in `agent-turn` und `voice-turn` |
 | Norra Webhook Secret | `httpHeaderAuth` | alle drei Webhook-Nodes und `lookup_record` |
 | Twilio | `twilioApi` | `send_sms` |
+| Gmail | OAuth2 **oder** Service-Account | `notify-escalation`, `call-wrapup` |
 
 Die Header-Auth-Credential muss Header-Name `x-norra-secret` und als Wert
 denselben String tragen wie `N8N_WEBHOOK_SECRET` in Vercel — sonst weist der
@@ -285,6 +287,51 @@ Webhook den Proxy ab.
 Eine angelegte Credential, die an keinem Node hängt, ist wirkungslos und sieht
 in der Credential-Liste trotzdem aus wie erledigt. `preflight.mjs` prüft
 deshalb nicht, ob es sie *gibt*, sondern ob sie am Node *hängt*.
+
+### Was ein Telefonat hinterlässt
+
+Ein Chat endet mit einem Transkript, und das reicht: wer nachlesen will, liest
+nach. Am Telefon reicht es nicht — dort ist das Transkript das Protokoll einer
+Tonspur, und die Bestellnummer, um die es ging, steht irgendwo mittendrin.
+
+Drei Dinge schließen die Lücke, alle drei in `agents.voice_config`:
+
+| Schlüssel | Wirkt wo | Wozu |
+|---|---|---|
+| `keyterms` | `<Gather hints=…>` bei **jedem** Zug | Die Wörter, an denen sich eine Telefonleitung verhört: Produktnamen, Fachbegriffe, Eigennamen |
+| `extract` | `call-wrapup` nach dem Auflegen | Was strukturiert vorliegen soll, als `{name, prompt}` |
+| `followup` | `call-wrapup` | Eine Adresse, die eine Zusammenfassung bekommt |
+
+**Das Extraktionsschema ist nicht fest.** Es entsteht im Node `Plan Wrapup` zur
+Laufzeit aus `voice_config.extract`. Eine feste Attributliste wäre ein Workflow
+pro Kunde gewesen — und genau die Sorte Vervielfältigung, die das Leitprinzip
+verhindern soll.
+
+**`skipped` ist kein Fehler, sondern eine Auskunft.** `calls.wrapup_status`
+unterscheidet vier Zustände, weil ein leeres `extracted_variables` sonst
+dreierlei heißen könnte: noch nicht gelaufen, nichts gefunden, gescheitert. Ein
+Agent ohne Extraktionsfelder und ohne Follow-up hat nichts nachzubereiten; das
+sagt `skipped`, und `/api/voice/status` setzt es bei einem Anruf ohne einen
+einzigen Zug sofort.
+
+**Die Route feuert und wartet nicht.** Twilio wiederholt den Statuscallback,
+wenn er langsam antwortet — jede Wiederholung wäre eine zweite Nachbereitung
+desselben Gesprächs. Scheitert der Aufruf, bleibt die Zeile auf `pending` und
+ist damit auffindbar, statt still als erledigt zu gelten.
+
+### Einen Telefonassistenten bauen lassen
+
+`norra/.claude/skills/norra-voice-agent/` baut aus einer Beschreibung und
+optional einer Website einen fertigen Agenten: Intake, System-Prompt, Tools,
+Telefon-Feinschliff, Anlegen als Entwurf, Testen ohne eine einzige
+Telefonminute.
+
+Die Skill schreibt über PostgREST mit dem Service-Role-Key und fasst **keine**
+Secrets an. Ihre Beispiel-Payloads sind Anleitung *und* Vorlage, deshalb prüft
+`check-wiring.mjs` jeden darin genannten Spaltennamen gegen das Schema — eine
+Anleitung, die auf einen alten Feldnamen zeigt, scheitert sonst erst beim
+Nutzer, und zwar mit einer PostgREST-Meldung, die nicht sagt, dass die
+Anleitung schuld ist.
 
 ### Tool-Regeln
 

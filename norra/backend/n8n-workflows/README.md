@@ -31,6 +31,7 @@ Workflows automatisch anwendet):
 | `agent-turn.json` | `norra/agent-turn` | `yTH3YQeR5qdNVxSI` | angelegt, **nicht aktiviert** |
 | `voice-turn.json` | `norra/voice-turn` | `wc4s77ROyul5LR5X` | angelegt, **nicht aktiviert** |
 | `kb-ingest.json` | `norra/kb-ingest` | `Q3XhlP6eet9eqnm0` | angelegt, **nicht aktiviert** |
+| `call-wrapup.json` | `norra/call-wrapup` | **noch keine** | Nachbereitung nach dem Auflegen |
 
 ### `sub-workflows/` — vom Agent bzw. von einem Workflow aufgerufen
 

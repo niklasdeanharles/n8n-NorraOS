@@ -540,6 +540,106 @@ async function checkWriters(workflows, schema) {
   notes.push(`${checked} columns checked for a writer`);
 }
 
+/**
+ * 8. Die Skill-Referenzen nennen nur Spalten, die es gibt.
+ *
+ * `norra/.claude/skills/norra-voice-agent/` zeigt Beispiel-Payloads gegen
+ * PostgREST. Sie sind Anleitung *und* Vorlage: was dort steht, wird kopiert.
+ * Ein Feldname, der beim Schreiben der Skill geraten wurde oder seit einer
+ * Migration nicht mehr stimmt, scheitert erst beim Nutzer -- und zwar mit
+ * einer PostgREST-Meldung, die nicht sagt, dass die Anleitung schuld ist.
+ *
+ * Geprüft wird, was mechanisch zuzuordnen ist: ein JSON-Block direkt hinter
+ * einer `rest/v1/<tabelle>`-URL. Prosa bleibt Prosa.
+ */
+async function checkSkillExamples(schema) {
+  const root = path.join(ROOT, '..', '.claude', 'skills');
+  let files;
+  try {
+    files = (await readdir(root, { recursive: true }))
+      .filter((name) => name.endsWith('.md'))
+      .map((name) => path.join(root, name));
+  } catch {
+    return; // Keine Skills abgelegt -- nichts zu prüfen.
+  }
+
+  let checked = 0;
+  for (const file of files) {
+    const source = await readFile(file, 'utf8');
+    const label = path.relative(path.join(ROOT, '..'), file);
+
+    for (const match of source.matchAll(/rest\/v1\/(\w+)/g)) {
+      const table = match[1];
+      const columns = schema.get(table);
+      if (!columns) {
+        problems.push(`${label}: table '${table}' is not in the schema`);
+        continue;
+      }
+      // Ab der URL vorwärts bis zur nächsten -- was dazwischen liegt, gehört
+      // zu dieser Tabelle. Erst den Anfang der JSON-Struktur suchen, dann
+      // ausbalanciert bis zum Ende: eine Anleitung schreibt ihre Payloads mal
+      // als Heredoc, mal in einfachen Anführungszeichen hinter `-d`, und ein
+      // Prüfer, der nur eine der beiden Formen kennt, winkt die andere durch.
+      const rest = source.slice(match.index + match[0].length);
+      const next = rest.search(/rest\/v1\//);
+      const slice = next >= 0 ? rest.slice(0, next) : rest;
+      for (const key of topLevelKeys(slice)) {
+        checked += 1;
+        if (!columns.has(key)) problems.push(`${label}: ${table}.${key} is not in the schema`);
+      }
+    }
+  }
+  notes.push(`${checked} skill example fields checked`);
+}
+
+/**
+ * Schlüssel der obersten Ebene der ersten JSON-Struktur in `text`.
+ *
+ * Ohne JSON.parse, weil die Beispiele Platzhalter wie `<org>` und Shell-
+ * Variablen enthalten und damit kein gültiges JSON sind. Ein Array von
+ * Objekten zählt als dieselbe Ebene wie ein einzelnes Objekt -- beide sind
+ * derselbe Insert, einmal mehrfach.
+ */
+function topLevelKeys(text) {
+  const begin = text.search(/[{[]/);
+  if (begin < 0) return [];
+
+  const keys = [];
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let stringStart = -1;
+  // Ein Array direkt um die Objekte herum zählt nicht als eigene Ebene.
+  let arrayWrapper = text[begin] === '[' ? 1 : 0;
+
+  for (let i = begin; i < text.length; i += 1) {
+    const char = text[i];
+    if (escaped) { escaped = false; continue; }
+    if (char === '\\') { escaped = true; continue; }
+
+    if (char === '"') {
+      if (inString) {
+        if (depth - arrayWrapper === 1 && /^\s*:/.test(text.slice(i + 1))) {
+          keys.push(text.slice(stringStart, i));
+        }
+        stringStart = -1;
+      } else {
+        stringStart = i + 1;
+      }
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+
+    if (char === '{' || char === '[') depth += 1;
+    else if (char === '}' || char === ']') {
+      depth -= 1;
+      if (depth === 0) break; // Struktur zu Ende; alles Weitere ist Prosa.
+    }
+  }
+  return keys;
+}
+
 /** Every .ts/.tsx under a directory, skipping build output. */
 async function sourceFiles(dir, found = []) {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -663,6 +763,7 @@ if (APP_PRESENT) await checkAppColumns(schema);
 await checkWriters(workflows, schema);
 checkToolReferences(workflows);
 checkTenantFilters(workflows, schema);
+await checkSkillExamples(schema);
 
 console.log(`Schema: ${schema.size} tables, ${[...schema.values()].reduce((n, c) => n + c.size, 0)} columns`);
 console.log(`Workflows: ${workflows.length}`);
