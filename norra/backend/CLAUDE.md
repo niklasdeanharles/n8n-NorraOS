@@ -180,10 +180,13 @@ Die Instanz hostet auch fremde Workflows. Die von Norra tragen deshalb Tags:
 
 | Tag | Workflows |
 |---|---|
-| `norra` | alle sieben |
+| `norra` | alle sieben, die auf der Instanz liegen |
 | `norra:core` | `agent-turn`, `voice-turn`, `kb-ingest` |
 | `norra:tool` | `lookup_record`, `escalate_to_human`, `request_action` |
 | `norra:notify` | `notify-escalation` |
+
+Die vier Telefon-Tools tragen noch keine Tags, weil sie noch nicht auf der
+Instanz liegen; sie gehören nach dem Anlegen unter `norra` und `norra:tool`.
 
 Der Export filtert weiterhin über den Namenspräfix `Norra – `, nicht über Tags —
 ein vergessener Tag würde einen Workflow sonst still aus dem Backup fallen lassen.
@@ -264,18 +267,24 @@ Jedes weitere Tool mit realer Konsequenz gehört denselben Weg: Zeile in
 `approvals`, Rückgabewert sagt dem Agenten ausdrücklich, dass nichts ausgeführt
 wurde.
 
-Alle sieben Workflows sind **angelegt, aber nicht aktiviert**. Vor der
-Aktivierung fehlen zwei Credentials, die es auf der Instanz noch nicht gibt:
+Von den elf Workflows liegen sieben auf der Instanz, **keiner ist aktiviert**,
+und **kein Node trägt bisher eine Credential** — auch nicht die Supabase- und
+OpenAI-Nodes, von denen man das annehmen könnte. Drei Credentials fehlen auf
+der Instanz ganz:
 
 | Credential | Typ | Gebraucht von |
 |---|---|---|
 | Anthropic | `anthropicApi` | Claude Model in `agent-turn` und `voice-turn` |
-| Norra Webhook Secret | `httpHeaderAuth` | alle drei Webhook-Nodes |
+| Norra Webhook Secret | `httpHeaderAuth` | alle drei Webhook-Nodes und `lookup_record` |
+| Twilio | `twilioApi` | `send_sms` |
 
 Die Header-Auth-Credential muss Header-Name `x-norra-secret` und als Wert
 denselben String tragen wie `N8N_WEBHOOK_SECRET` in Vercel — sonst weist der
-Webhook den Proxy ab. Supabase- und OpenAI-Credentials hat n8n beim Anlegen
-automatisch zugeordnet.
+Webhook den Proxy ab.
+
+Eine angelegte Credential, die an keinem Node hängt, ist wirkungslos und sieht
+in der Credential-Liste trotzdem aus wie erledigt. `preflight.mjs` prüft
+deshalb nicht, ob es sie *gibt*, sondern ob sie am Node *hängt*.
 
 ### Tool-Regeln
 

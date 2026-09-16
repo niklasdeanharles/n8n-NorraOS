@@ -65,13 +65,23 @@ ankäme.
 
 ### Neue Sub-Workflows in Betrieb nehmen
 
-Der Deploy-Job legt bewusst nichts an. Die vier neuen Dateien haben deshalb noch
-keine `norra.workflowId`:
+Der Deploy-Job in der CI legt bewusst nichts an. Die vier neuen Dateien haben
+deshalb noch keine `norra.workflowId`. Lokal schließt `--create-missing` die
+Lücke:
 
-1. In n8n: **Workflows → Import from File**, je eine Datei.
-2. `node scripts/n8n-sync.mjs export` holt sie mitsamt ihrer neuen ID zurück.
-3. Beim nächsten Deploy löst der Sync die Tool-Verweise im Voice-Agenten
-   automatisch am Namen auf — IDs müssen nirgends von Hand eingetragen werden.
+```bash
+node scripts/n8n-sync.mjs deploy --create-missing --dry-run   # erst ansehen
+node scripts/n8n-sync.mjs deploy --create-missing             # dann anlegen
+```
+
+Ein Workflow gleichen Namens auf der Instanz wird adoptiert statt verdoppelt,
+und die neue ID wird in die Repo-Datei zurückgeschrieben — **diese Änderung
+gehört committet**, sonst legt der nächste Lauf denselben Workflow noch einmal
+an. Genau wegen dieses Rückschreib-Schritts läuft `--create-missing` nicht in
+der CI, wo er mit dem Runner verloren ginge.
+
+Die Tool-Verweise im Voice-Agenten löst der Sync beim Deploy am Namen auf —
+IDs müssen nirgends von Hand eingetragen werden.
 
 Fehlt einer der vier auf der Instanz, bricht `deploy` ab und nennt ihn beim
 Namen, statt einen Agenten mit einem Tool live zu schalten, das ins Leere zeigt.
