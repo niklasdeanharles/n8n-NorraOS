@@ -1,5 +1,6 @@
 import type { NextRequest } from 'next/server';
 import { verifyWebhook } from '@/lib/voice/session';
+import { N8N_WEBHOOKS, callN8nWebhook } from '@/lib/n8n/client';
 import type { CallStatus } from '@/types/database';
 
 /**
@@ -31,7 +32,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   const { data: call } = await supabase
     .from('calls')
-    .select('id, conversation_id, status, turn_count')
+    .select('id, organization_id, conversation_id, status, turn_count')
     .eq('provider_call_id', providerCallId)
     .maybeSingle();
 
@@ -68,6 +69,28 @@ export async function POST(request: NextRequest): Promise<Response> {
       // A human who took the call over, or an escalation, outranks this.
       .in('status', ['open', 'pending']);
   }
+
+  // Die Nachbereitung läuft in n8n und darf dauern -- der Anrufer hat längst
+  // aufgelegt. Twilio wartet trotzdem nicht darauf: dieser Callback wird
+  // wiederholt, wenn er nicht schnell antwortet, und jede Wiederholung wäre
+  // eine zweite Nachbereitung desselben Gesprächs.
+  //
+  // Ein Gespräch ohne einen einzigen Zug hat nichts nachzubereiten. Es gleich
+  // hier auf `skipped` zu setzen ist ehrlicher, als es auf `pending` stehen zu
+  // lassen, wo es aussähe wie eine Nachbereitung, die nie ankam.
+  if (call.turn_count === 0) {
+    await supabase.from('calls').update({ wrapup_status: 'skipped' }).eq('id', call.id);
+    return new Response(null, { status: 204 });
+  }
+
+  void callN8nWebhook(N8N_WEBHOOKS.callWrapup, {
+    organization_id: call.organization_id,
+    call_id: call.id,
+  }).catch(() => {
+    // Ein Fehlschlag hier ist kein Grund, den Statuscallback scheitern zu
+    // lassen: der Anruf selbst ist korrekt abgeschlossen. Die Zeile bleibt auf
+    // `pending` und ist damit auffindbar, statt still als erledigt zu gelten.
+  });
 
   return new Response(null, { status: 204 });
 }

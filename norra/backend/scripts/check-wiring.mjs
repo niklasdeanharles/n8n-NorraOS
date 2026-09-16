@@ -322,6 +322,28 @@ async function checkAppColumns(schema) {
 
       for (const column of named) {
         checked += 1;
+        // An embedded select -- `agent:agents(voice_config)` -- names a related
+        // table, not a column of this one. The columns inside it are checked
+        // against *that* table rather than dropped: a typo in there fails at
+        // runtime exactly like a typo in a plain column name.
+        const embedded = column.match(/^(?:\w+:)?(\w+)\(([^()]*)\)$/);
+        if (embedded) {
+          const [, related, inner] = embedded;
+          const relatedColumns = schema.get(related);
+          if (!relatedColumns) {
+            problems.push(`${file}: embedded table '${related}' is not in the schema`);
+            continue;
+          }
+          for (const name of inner.split(',').map((entry) => entry.trim()).filter(Boolean)) {
+            checked += 1;
+            if (!/^\w+$/.test(name)) {
+              problems.push(`${file}: could not read the column name '${name}' on ${related}`);
+            } else if (!relatedColumns.has(name)) {
+              problems.push(`${file}: ${related}.${name} is not in the schema`);
+            }
+          }
+          continue;
+        }
         if (!/^\w+$/.test(column)) {
           problems.push(`${file}: could not read the column name '${column}' on ${table}`);
           continue;

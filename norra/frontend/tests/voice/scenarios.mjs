@@ -366,6 +366,36 @@ await scenario('Aufgelegt ohne ein Wort zählt nicht als gelöst', async () => {
   await post('/api/voice/incoming', { To: NUMBER, From: '+49176', CallSid: 'CA14' });
   await post('/api/voice/status', { CallSid: 'CA14', CallStatus: 'completed', CallDuration: '3' });
   check('Konversation closed, nicht resolved', store.conversations[0].status === 'closed', store.conversations[0].status);
+  // Ein Gespräch ohne einen einzigen Zug hat nichts nachzubereiten. Auf
+  // `pending` stehen zu bleiben sähe aus wie eine Nachbereitung, die nie ankam.
+  check('Nachbereitung als skipped vermerkt', store.calls[0].wrapup_status === 'skipped', store.calls[0].wrapup_status);
+});
+
+await scenario('Nach dem Auflegen wird die Nachbereitung angestoßen', async () => {
+  seed();
+  n8n = await startN8n(54322, { reply: 'Gern geschehen.', action: 'continue' });
+  await post('/api/voice/incoming', { To: NUMBER, From: '+49176', CallSid: 'CA15' });
+  const callId = store.calls[0].id;
+  await post(`/api/voice/turn?call=${callId}`, { CallSid: 'CA15', SpeechResult: 'Danke' });
+  const before = n8n.seen.length;
+  await post('/api/voice/status', { CallSid: 'CA15', CallStatus: 'completed', CallDuration: '31' });
+
+  // Die Route feuert und wartet nicht -- Twilio wiederholt den Callback, wenn
+  // er zu lange braucht, und jede Wiederholung wäre eine zweite Nachbereitung.
+  // Deshalb hier kurz warten statt zu erwarten, dass es schon passiert ist.
+  const deadline = Date.now() + 2000;
+  while (n8n.seen.length === before && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+
+  const wrapup = n8n.seen.find((entry) => entry.path === '/webhook/norra/call-wrapup');
+  check('Wrapup-Webhook gerufen', Boolean(wrapup), n8n.seen.map((e) => e.path).join(', '));
+  check('mit dem Header-Auth-Secret', wrapup?.secret === '0123456789abcdef0123');
+  // Der Workflow liest beide aus dem Body und filtert damit jede Abfrage. Ohne
+  // die Organisations-ID liefe die Nachbereitung ohne Mandantenfilter.
+  check('Anruf-ID im Body', wrapup?.body?.call_id === callId, JSON.stringify(wrapup?.body));
+  check('Organisations-ID im Body', wrapup?.body?.organization_id === ORG, JSON.stringify(wrapup?.body));
+  await n8n.stop();
 });
 
 console.log(`\n${results.length} Szenarien, ${failures} Fehler`);

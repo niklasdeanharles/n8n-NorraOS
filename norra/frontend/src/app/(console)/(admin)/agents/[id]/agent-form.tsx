@@ -21,6 +21,11 @@ const CHANNELS = [
 
 type Guardrails = { allowed_topics?: string[]; forbidden_topics?: string[]; refusal_message?: string | null };
 type EscalationRules = { on_keywords?: string[]; on_low_confidence?: boolean };
+type VoiceConfig = {
+  keyterms?: string[];
+  extract?: Array<{ name: string; prompt: string }>;
+  followup?: { target: 'email'; address: string };
+};
 
 function asObject<T>(value: unknown): T {
   return (typeof value === 'object' && value !== null && !Array.isArray(value) ? value : {}) as T;
@@ -32,6 +37,11 @@ export function AgentForm({ agent, publicUrl }: { agent: AgentRow; publicUrl: st
 
   const guardrails = asObject<Guardrails>(agent.guardrails);
   const escalation = asObject<EscalationRules>(agent.escalation_rules);
+  const voice = asObject<VoiceConfig>(agent.voice_config);
+  // `name: Beschreibung` pro Zeile — dieselbe Form, in der das Feld eingelesen
+  // wird. Ein Editor, der anders zurückgibt als er anzeigt, verliert beim
+  // zweiten Speichern still Einträge.
+  const extractLines = (voice.extract ?? []).map((field) => `${field.name}: ${field.prompt}`).join('\n');
   // The stored shape is [{ slug, enabled, config }] — the same rows agent-turn
   // reads per turn. Keep slug -> config here so the form can round-trip it.
   const configured = new Map<string, { url?: string }>();
@@ -141,6 +151,65 @@ export function AgentForm({ agent, publicUrl }: { agent: AgentRow; publicUrl: st
           ))}
         </div>
       </div>
+
+      {channels.includes('voice') ? (
+        <div className="card">
+          <div className="card-head">
+            <h3>Am Telefon</h3>
+            <div className="small muted" style={{ marginTop: 3 }}>
+              Drei Einstellungen, die es nur am Telefon gibt: was die Spracherkennung kennen soll,
+              was aus dem Gespräch herausgezogen wird und wer danach eine Zusammenfassung bekommt.
+            </div>
+          </div>
+          <div className="card-body">
+            <label>
+              Begriffe für die Spracherkennung
+              <textarea
+                name="voiceKeyterms"
+                rows={3}
+                defaultValue={(voice.keyterms ?? []).join('\n')}
+                placeholder={'Wärmepumpe\nAbschlagszahlung\nZählerstand'}
+                spellCheck={false}
+              />
+              <span className="field-hint">
+                Ein Begriff pro Zeile, höchstens 50. Produktnamen, Fachbegriffe, Eigennamen — genau
+                die Wörter, an denen sich eine Telefonleitung verhört. Kein Komma im Begriff.
+              </span>
+            </label>
+
+            <label>
+              Was aus dem Gespräch gezogen wird
+              <textarea
+                name="voiceExtract"
+                rows={4}
+                defaultValue={extractLines}
+                placeholder={'order_id: Die Bestellnummer, falls genannt.\nanliegen: Das Anliegen in drei Wörtern.'}
+                spellCheck={false}
+              />
+              <span className="field-hint">
+                Ein Feld pro Zeile als <code>name: Beschreibung</code>. Der Name wird zum Schlüssel in
+                der Auswertung, also klein und mit Unterstrichen. Die Beschreibung sagt dem Modell,
+                wonach es sucht — je konkreter, desto weniger rät es.
+              </span>
+            </label>
+
+            <label>
+              Zusammenfassung nach dem Anruf an
+              <input
+                type="email"
+                name="voiceFollowup"
+                defaultValue={voice.followup?.address ?? ''}
+                placeholder="team@kunde.de"
+                spellCheck={false}
+              />
+              <span className="field-hint">
+                Leer lassen heißt: keine Mail. Die Nachbereitung läuft nach dem Auflegen und kostet
+                den Anrufer keine Wartezeit.
+              </span>
+            </label>
+          </div>
+        </div>
+      ) : null}
 
       {channels.includes('web') ? (
         <div className="card">
