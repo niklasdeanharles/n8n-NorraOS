@@ -500,8 +500,8 @@ das, was `db-migrate.yml` in CI tut:
 cd supabase
 psql -v ON_ERROR_STOP=1 -f tests/bootstrap.local.sql
 for f in migrations/*.sql; do psql -v ON_ERROR_STOP=1 -q -f "$f"; done
-for t in tenancy governance phone; do
-  psql -v ON_ERROR_STOP=1 -f "tests/$t.test.sql"   # jeder muss "all checks passed" melden
+for f in tests/*.test.sql; do
+  psql -v ON_ERROR_STOP=1 -f "$f"   # jede muss ihre Bestätigung melden
 done
 ```
 

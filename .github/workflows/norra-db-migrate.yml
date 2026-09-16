@@ -68,17 +68,24 @@ jobs:
             psql -v ON_ERROR_STOP=1 -q -f "$file"
           done
 
-      - name: Run tenancy tests
+      # Jede Suite, die daliegt -- nicht eine Liste, die jemand nachpflegen muss.
+      # Die Liste war bereits veraltet: `telephony-tools.test.sql` lag seit den
+      # Telefon-Tools im Repository und lief in CI nie. Eine Testsuite, die
+      # niemand ausführt, ist schlechter als keine: sie sieht aus wie Deckung.
+      - name: Run schema guarantee suites
         working-directory: norra/backend/supabase
-        run: psql -v ON_ERROR_STOP=1 -f tests/tenancy.test.sql
-
-      - name: Run governance tests
-        working-directory: norra/backend/supabase
-        run: psql -v ON_ERROR_STOP=1 -f tests/governance.test.sql
-
-      - name: Run telephony tests
-        working-directory: norra/backend/supabase
-        run: psql -v ON_ERROR_STOP=1 -f tests/phone.test.sql
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          suites=(tests/*.test.sql)
+          if [ ${#suites[@]} -eq 0 ]; then
+            echo "Keine Testsuiten gefunden -- das ist der Fehler, nicht das Ergebnis." >&2
+            exit 1
+          fi
+          for file in "${suites[@]}"; do
+            echo "--> $file"
+            psql -v ON_ERROR_STOP=1 -f "$file"
+          done
 
       - name: Re-apply from scratch
         # A migration that only works against an already-migrated database is a

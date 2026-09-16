@@ -61,7 +61,7 @@ es gibt keine Drift.
 cd frontend
 npm ci
 npm run typecheck && npm run lint
-node tests/voice/run.mjs     # 16 Szenarien: Anruf → Turn → Weiterleitung → Status
+node tests/voice/run.mjs     # 26 Szenarien: Anruf → Turn → Weiterleitung → Status → Nachbereitung
 node tests/widget/run.mjs    # 13 Szenarien: Session → Turn → Token-Angriffe → Bewertung
 node tests/simulate/run.mjs  # 12 Szenarien: Testfälle als angemeldeter Admin
 node tests/console/run.mjs   # 17 Szenarien: Agent-Turn und Wissens-Ingest
@@ -71,7 +71,7 @@ node tests/console/run.mjs   # 17 Szenarien: Agent-Turn und Wissens-Ingest
 cd backend/supabase
 psql -v ON_ERROR_STOP=1 -f tests/bootstrap.local.sql
 for f in migrations/*.sql; do psql -v ON_ERROR_STOP=1 -q -f "$f"; done
-for t in tenancy governance phone; do psql -v ON_ERROR_STOP=1 -f "tests/$t.test.sql"; done
+for f in tests/*.test.sql; do psql -v ON_ERROR_STOP=1 -f "$f"; done
 ```
 
 Die Details stehen in `backend/CLAUDE.md` und `frontend/CLAUDE.md`.

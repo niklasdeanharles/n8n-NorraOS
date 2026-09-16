@@ -462,7 +462,7 @@ Die vier End-to-End-Suiten bauen die App selbst und fahren sie gegen
 In-Memory-Stand-ins hoch:
 
 ```bash
-node tests/voice/run.mjs      # 16 Szenarien vom eingehenden Anruf bis zum Status-Callback
+node tests/voice/run.mjs      # 26 Szenarien vom eingehenden Anruf bis zur Nachbereitung
 node tests/widget/run.mjs     # 13 Szenarien von der Session bis zur Bewertung
 node tests/simulate/run.mjs   # 12 Szenarien der Testfall-Simulation, als angemeldeter Admin
 node tests/console/run.mjs    # 17 Szenarien der Konsolen-Routen (Agent-Turn, Wissens-Ingest)

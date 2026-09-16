@@ -9,8 +9,8 @@ Agent *weiß* und *entscheidet*; die Oberfläche liegt im Repository
 | Ordner | Inhalt |
 |---|---|
 | `supabase/migrations/` | 17 Migrationen: Schema, RLS, Vektor-Suche, Telefonie |
-| `supabase/tests/` | Vier ausführbare Testsuiten: Mandantentrennung, Governance, Telefonie, Telefon-Tools |
-| `n8n-workflows/` | 11 Workflow-JSONs: `webhooks/` (was das Backend ruft), `sub-workflows/` (was ein Workflow ruft) |
+| `supabase/tests/` | Fünf ausführbare Testsuiten: Mandantentrennung, Governance, Telefonie, Telefon-Tools, Stimm-Konfiguration |
+| `n8n-workflows/` | 12 Workflow-JSONs: `webhooks/` (was das Backend ruft), `sub-workflows/` (was ein Workflow ruft) |
 | `scripts/` | `n8n-sync.mjs` (Git ↔ n8n), `check-wiring.mjs` (Drift-Prüfung), `preflight.mjs` (Startbereitschaft) |
 | `docs/` | Betriebsnotizen |
 
@@ -21,7 +21,7 @@ Agent *weiß* und *entscheidet*; die Oberfläche liegt im Repository
 cd supabase
 psql -v ON_ERROR_STOP=1 -f tests/bootstrap.local.sql
 for f in migrations/*.sql; do psql -v ON_ERROR_STOP=1 -q -f "$f"; done
-for t in tenancy governance phone telephony-tools; do psql -v ON_ERROR_STOP=1 -f "tests/$t.test.sql"; done
+for f in tests/*.test.sql; do psql -v ON_ERROR_STOP=1 -f "$f"; done
 ```
 
 ```bash
