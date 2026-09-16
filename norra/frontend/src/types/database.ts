@@ -30,6 +30,8 @@ export type CallStatus =
   | 'ringing' | 'in_progress' | 'completed' | 'failed' | 'no_answer' | 'busy' | 'transferred' | 'voicemail';
 export type CallDirection = 'inbound' | 'outbound';
 export type CallbackStatus = 'pending' | 'done' | 'cancelled';
+/** Nachbereitung eines Anrufs. `skipped` heißt: der Agent hatte nichts zu extrahieren. */
+export type WrapupStatus = 'pending' | 'skipped' | 'done' | 'failed';
 
 /** Keys whose column accepts NULL. Postgres lets those be omitted on insert. */
 type NullableKeys<Row> = { [K in keyof Row]-?: null extends Row[K] ? K : never }[keyof Row];
@@ -105,6 +107,11 @@ export type CallRow = {
   recording_url: string | null;
   transferred_to: string | null;
   ended_reason: string | null;
+  /** Nach Gesprächsende gezogen, Schlüssel = agents.voice_config.extract[].name. */
+  extracted_variables: Json;
+  summary: string | null;
+  /** pending | skipped | done | failed — trennt "nichts gefunden" von "nicht gelaufen". */
+  wrapup_status: WrapupStatus;
   created_at: string;
   updated_at: string;
 }
@@ -137,6 +144,8 @@ export type AgentRow = {
   channels: string[];
   /** Origins allowed to mint a widget session for this agent. Empty = any. */
   allowed_origins: string[];
+  /** {keyterms, extract, followup} — Telefon-Feinschliff. Leer = aus. */
+  voice_config: Json;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -409,7 +418,8 @@ export type Database = {
         | 'tools'
         | 'escalation_rules'
         | 'channels'
-        | 'allowed_origins',
+        | 'allowed_origins'
+        | 'voice_config',
         [OrgRel<'agents'>, Rel<'agents_created_by_fkey', 'created_by', 'users'>]
       >;
 
@@ -523,7 +533,8 @@ export type Database = {
 
       calls: Table<
         CallRow,
-        'id' | 'created_at' | 'updated_at' | 'direction' | 'status' | 'started_at' | 'turn_count',
+        | 'id' | 'created_at' | 'updated_at' | 'direction' | 'status' | 'started_at'
+        | 'turn_count' | 'extracted_variables' | 'wrapup_status',
         [
           OrgRel<'calls'>,
           Rel<'calls_phone_number_id_fkey', 'phone_number_id', 'phone_numbers'>,

@@ -2,6 +2,7 @@ import type { NextRequest } from 'next/server';
 import { parseBusinessHours, isOpen } from '@/lib/voice/hours';
 import { callbackUrl, verifyWebhook } from '@/lib/voice/session';
 import { dial, gather, hangup, record, reject, say, twiml } from '@/lib/voice/twilio';
+import { hintsFrom } from '@/lib/voice/keyterms';
 
 /**
  * A call arrives.
@@ -32,7 +33,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     .from('phone_numbers')
     .select(`id, organization_id, agent_id, greeting, voice, language, status, transfer_number,
              voicemail_message, max_call_seconds, recording_enabled, business_hours, timezone,
-             after_hours, e164`)
+             after_hours, e164, agent:agents(voice_config)`)
     .eq('e164', to)
     .maybeSingle();
 
@@ -136,6 +137,9 @@ export async function POST(request: NextRequest): Promise<Response> {
       language: number.language,
       voice: number.voice,
       prompt: greeting,
+      // Schon beim Begrüßungs-Gather, nicht erst ab dem zweiten Zug: der erste
+      // Satz eines Anrufers trägt meistens genau das Wort, um das es geht.
+      hints: hintsFrom(number.agent?.voice_config),
     }) +
       // Reached only if the caller says nothing at all.
       say('Ich habe leider nichts verstanden. Auf Wiederhören.', voice) +

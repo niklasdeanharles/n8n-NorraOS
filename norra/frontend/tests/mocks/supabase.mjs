@@ -140,6 +140,38 @@ function ordered(rows, spec) {
   });
 }
 
+/**
+ * Löst eingebettete To-One-Selects auf: `agent:agents(voice_config)`.
+ *
+ * PostgREST hängt die verknüpfte Zeile unter dem Alias an. Ohne das hier bekäme
+ * die Route `undefined` statt des Agenten und liefe trotzdem durch -- die Stelle
+ * fiele also nicht als Fehler auf, sondern als stillschweigend fehlendes
+ * Feature. Genau die Sorte Lücke, die dieser Mock zu schließen hat.
+ *
+ * Bewusst nur To-One über `<singular>_id`: mehr braucht keine Route, und ein
+ * Mock, der mehr kann als er beweisen muss, wird selbst zur Fehlerquelle.
+ */
+function embed(row, select) {
+  if (!row || !select) return row;
+  const result = { ...row };
+  for (const match of select.matchAll(/(?:(\w+):)?(\w+)\(([^()]*)\)/g)) {
+    const [, alias, target, columns] = match;
+    const key = alias ?? target;
+    const foreignKey = `${target.replace(/s$/, '')}_id`;
+    const id = row[foreignKey];
+    const related = id ? (db[target] ?? []).find((r) => r.id === id) : undefined;
+    if (!related) {
+      result[key] = null;
+      continue;
+    }
+    const wanted = columns.split(',').map((c) => c.trim()).filter(Boolean);
+    result[key] = wanted.length === 0
+      ? related
+      : Object.fromEntries(wanted.map((c) => [c, related[c] ?? null]));
+  }
+  return result;
+}
+
 function parseFilters(url) {
   const filters = [];
   for (const [key, raw] of url.searchParams) {
@@ -272,6 +304,8 @@ export function start(port) {
       found = ordered(found, url.searchParams.get('order'));
       const limit = url.searchParams.get('limit');
       if (limit) found = found.slice(0, Number(limit));
+      const select = url.searchParams.get('select');
+      if (select && select.includes('(')) found = found.map((row) => embed(row, select));
       return send(200, found);
     }
 

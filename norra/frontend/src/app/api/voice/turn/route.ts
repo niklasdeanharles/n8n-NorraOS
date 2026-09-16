@@ -4,6 +4,7 @@ import { callN8nWebhook, N8N_WEBHOOKS } from '@/lib/n8n/client';
 import type { createServiceRoleClient } from '@/lib/supabase/server';
 import { callbackUrl, verifyWebhook } from '@/lib/voice/session';
 import { dial, gather, hangup, say, twiml } from '@/lib/voice/twilio';
+import { hintsFrom } from '@/lib/voice/keyterms';
 
 /**
  * One spoken turn.
@@ -50,7 +51,9 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   const { data: call } = await supabase
     .from('calls')
-    .select('id, organization_id, conversation_id, agent_id, started_at, turn_count, phone_number_id')
+    .select(
+      'id, organization_id, conversation_id, agent_id, started_at, turn_count, phone_number_id, agent:agents(voice_config)',
+    )
     .eq('id', callId)
     .maybeSingle();
 
@@ -62,7 +65,14 @@ export async function POST(request: NextRequest): Promise<Response> {
     .eq('id', call.phone_number_id ?? '')
     .maybeSingle();
 
-  const voice = { voice: number?.voice ?? 'alice', language: number?.language ?? 'de-DE' };
+  const voice = {
+    voice: number?.voice ?? 'alice',
+    language: number?.language ?? 'de-DE',
+    // Teil des Stimm-Objekts und nicht Argument jedes einzelnen Aufrufs: diese
+    // Route hat vier Gather-Stellen, und eine vergessene waere ein Zug, in dem
+    // sich die Erkennung wieder verhoert.
+    hints: hintsFrom(call.agent?.voice_config),
+  };
   const nextAction = callbackUrl('/api/voice/turn', { call: call.id });
 
   // A loop on a phone line bills by the minute. The ceiling is configuration,
@@ -86,8 +96,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     return twiml(
       gather({
         action: callbackUrl('/api/voice/turn', { call: call.id, silent: '1' }),
-        language: voice.language,
-        voice: voice.voice,
+        ...voice,
         prompt: 'Entschuldigung, das habe ich nicht verstanden. Können Sie das bitte wiederholen?',
       }) + hangup(),
     );
@@ -166,8 +175,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     return twiml(
       gather({
         action: nextAction,
-        language: voice.language,
-        voice: voice.voice,
+        ...voice,
         prompt: 'Das dauert gerade länger als gewohnt. Können Sie Ihre Frage bitte noch einmal stellen?',
       }) + hangup(),
     );
@@ -227,8 +235,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     return twiml(
       gather({
         action: nextAction,
-        language: voice.language,
-        voice: voice.voice,
+        ...voice,
         prompt:
           'Ich kann Sie im Moment leider nicht weiterverbinden. Ein Mitarbeiter meldet sich bei Ihnen. Kann ich sonst noch etwas für Sie tun?',
       }) + hangup(),
@@ -241,7 +248,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   }
 
   return twiml(
-    gather({ action: nextAction, language: voice.language, voice: voice.voice, prompt: parsed.reply }) +
+    gather({ action: nextAction, ...voice, prompt: parsed.reply }) +
       say('Falls Sie noch etwas brauchen, rufen Sie uns gerne wieder an. Auf Wiederhören.', voice) +
       hangup(),
   );

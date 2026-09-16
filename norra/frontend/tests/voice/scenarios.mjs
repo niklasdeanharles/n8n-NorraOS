@@ -44,13 +44,17 @@ const AGENT = 'agent-1';
 const NUMBER = '+4930123456789';
 
 function seed(overrides = {}) {
+  // Die Stimm-Konfiguration hängt am Agenten, alles übrige an der Nummer. Ohne
+  // das Auseinandernehmen landete sie in beiden Zeilen, und der Test bewiese
+  // nicht mehr, von wo die Route sie tatsächlich liest.
+  const { voice_config: voiceConfig = {}, ...numberOverrides } = overrides;
   reset({
     phone_numbers: [{
       id: 'pn-1', organization_id: ORG, e164: NUMBER, label: 'Zentrale', provider: 'twilio',
       agent_id: AGENT, greeting: 'Guten Tag, hier ist Lumen Energie.', voice: 'Polly.Vicki-Neural',
       language: 'de-DE', transfer_number: '+4930999888777', voicemail_message: null,
       max_call_seconds: 600, recording_enabled: false, business_hours: {}, timezone: 'Europe/Berlin',
-      after_hours: 'agent', status: 'active', last_call_at: null, ...overrides,
+      after_hours: 'agent', status: 'active', last_call_at: null, ...numberOverrides,
     }],
     conversations: [], calls: [], messages: [], tickets: [], contacts: [], callbacks: [],
     phone_departments: [
@@ -59,7 +63,10 @@ function seed(overrides = {}) {
       { id: 'dep-2', organization_id: ORG, name: 'Technik', e164: '+493022222222',
         description: 'Stoerungen', active: false },
     ],
-    agents: [{ id: AGENT, organization_id: ORG, name: 'Erstkontakt', status: 'live' }],
+    agents: [{
+      id: AGENT, organization_id: ORG, name: 'Erstkontakt', status: 'live',
+      voice_config: voiceConfig,
+    }],
     organizations: [{ id: ORG, name: 'Lumen Energie' }],
   });
 }
@@ -113,10 +120,31 @@ await scenario('Eingehender Anruf begrüßt und legt Konversation an', async () 
   check('last_call_at gesetzt', store.phone_numbers[0].last_call_at !== null);
 });
 
+// Setzt bewusst auf dem Zustand des vorigen Szenarios auf und ruft deshalb
+// kein seed(). Ein Szenario dazwischen bricht es.
 await scenario('Wiederholtes Webhook legt nichts doppelt an', async () => {
   await post('/api/voice/incoming', { To: NUMBER, From: '+4917612345678', CallSid: 'CA2' });
   check('weiterhin eine Konversation', store.conversations.length === 1, `sind ${store.conversations.length}`);
   check('weiterhin ein Call', store.calls.length === 1, `sind ${store.calls.length}`);
+});
+
+await scenario('Keyterms des Agenten gehen als hints in den Gather', async () => {
+  seed({ voice_config: { keyterms: ['Wärmepumpe', 'Abschlagszahlung', 'Zählerstand'] } });
+  const res = await post('/api/voice/incoming', { To: NUMBER, From: '+4917612345678', CallSid: 'CA-hints' });
+  const xml = await res.text();
+  const gather = xml.match(/<Gather[^>]*>/)?.[0] ?? '';
+  check('hints am Gather', /hints="/.test(gather), gather);
+  // Der Umlaut muss durchkommen: genau die Wörter, an denen sich die Erkennung
+  // verhört, tragen ihn. Eine kaputte Kodierung wäre hier ein stiller Ausfall.
+  check('Umlaut bleibt erhalten', gather.includes('Wärmepumpe'), gather);
+  check('alle drei Begriffe', /hints="[^"]*Abschlagszahlung[^"]*Zählerstand/.test(gather), gather);
+});
+
+await scenario('Ohne Keyterms steht kein leeres hints im Gather', async () => {
+  seed();
+  const res = await post('/api/voice/incoming', { To: NUMBER, From: '+4917612345678', CallSid: 'CA-nohints' });
+  const gather = (await res.text()).match(/<Gather[^>]*>/)?.[0] ?? '';
+  check('kein hints-Attribut', !gather.includes('hints='), gather);
 });
 
 await scenario('Unbekannte Nummer wird höflich abgewiesen', async () => {
