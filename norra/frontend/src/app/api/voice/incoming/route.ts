@@ -1,5 +1,5 @@
 import type { NextRequest } from 'next/server';
-import { parseBusinessHours, isOpen } from '@/lib/voice/hours';
+import { parseBusinessHours, isOpen, closureFor, localDate } from '@/lib/voice/hours';
 import { callbackUrl, verifyWebhook } from '@/lib/voice/session';
 import { dial, gather, hangup, record, reject, say, twiml } from '@/lib/voice/twilio';
 import { hintsFrom } from '@/lib/voice/keyterms';
@@ -49,7 +49,26 @@ export async function POST(request: NextRequest): Promise<Response> {
   }
 
   const voice = { voice: number.voice, language: number.language };
-  const open = isOpen(parseBusinessHours(number.business_hours), number.timezone);
+
+  /**
+   * Schließtage stehen über den Öffnungszeiten.
+   *
+   * `business_hours` kennt nur die Woche. Am ersten Weihnachtstag steht dort
+   * „Donnerstag, acht bis achtzehn" und stimmt trotzdem nicht. Deshalb wird
+   * zuerst gefragt, ob heute überhaupt einer ist — und erst dann, wie spät.
+   *
+   * Nur die Zeilen, die heute noch gelten können: `ends_on >= heute` schneidet
+   * die Weihnachtsferien der letzten fünf Jahre weg, bevor sie über die Leitung
+   * gehen.
+   */
+  const { data: closures } = await supabase
+    .from('closure_days')
+    .select('starts_on, ends_on, label, message, phone_number_id')
+    .eq('organization_id', number.organization_id)
+    .gte('ends_on', localDate(number.timezone));
+  const closure = closureFor(closures ?? [], number.id, number.timezone);
+
+  const open = closure === null && isOpen(parseBusinessHours(number.business_hours), number.timezone);
 
   /**
    * Der Hinweis vor dem Mitschnitt.
@@ -68,11 +87,32 @@ export async function POST(request: NextRequest): Promise<Response> {
       ? say(number.recording_notice, voice)
       : '';
 
+  /**
+   * Die Ansage des Schließtags, wenn einer hinterlegt ist.
+   *
+   * Sie ersetzt nicht das Verhalten, sie geht ihm voraus: „wir haben
+   * Betriebsferien bis zum sechsten Januar" plus Anrufbeantworter ist eine
+   * Auskunft, „außerhalb unserer Öffnungszeiten" plus Anrufbeantworter ist
+   * keine.
+   */
+  const closureLine = closure?.message?.trim() ? say(closure.message, voice) : '';
+
+  // An einem Schließtag mit `after_hours: 'agent'` läuft der Agent weiter --
+  // er soll ja sagen können, wann wieder offen ist. Ohne Agent hinter der
+  // Leitung greift, was für Feierabend eingestellt ist.
   if (!open && number.after_hours !== 'agent') {
-    if (number.after_hours === 'reject') return twiml(reject());
+    if (number.after_hours === 'reject') return twiml(closureLine + reject());
     if (number.after_hours === 'transfer' && number.transfer_number) {
       return twiml(
-        say('Ich verbinde Sie mit einem Mitarbeiter.', voice) + dial(number.transfer_number, number.e164),
+        closureLine +
+          say('Ich verbinde Sie mit einem Mitarbeiter.', voice) +
+          dial({
+            number: number.transfer_number,
+            callerId: number.e164,
+            // Kein Rückfall: außerhalb der Zeiten steht hinter dieser Nummer
+            // kein Agent, der eine Nachricht aufnehmen könnte.
+            timeout: 25,
+          }),
       );
     }
     // Voicemail. The recording is picked up by the recording callback.
@@ -81,6 +121,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     // Band, und zwar ohne dass jemand mithört, der ihn darauf hinweisen könnte.
     return twiml(
       notice +
+        closureLine +
         say(number.voicemail_message || 'Wir sind gerade nicht erreichbar. Bitte hinterlassen Sie eine Nachricht.', voice) +
         record({ action: callbackUrl('/api/voice/recording'), maxLength: 180 }),
     );
@@ -151,9 +192,33 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   await supabase.from('phone_numbers').update({ last_call_at: new Date().toISOString() }).eq('id', number.id);
 
+  /**
+   * Der Agent muss wissen, dass heute zu ist.
+   *
+   * Hier läuft er trotz Schließtag — `after_hours: 'agent'` heißt ja, dass er
+   * auch außerhalb der Zeiten antworten soll. Ohne diese Zeile sagt er
+   * fröhlich „wir haben bis achtzehn Uhr geöffnet", weil in seinen
+   * Öffnungszeiten Donnerstag steht. Die Notiz geht als `system` in die
+   * Historie, die jeder Zug mitlädt.
+   *
+   * Nicht als gesprochener Satz und nicht in den System-Prompt: der Prompt
+   * gehört dem Betreiber und wird nicht pro Anruf umgeschrieben.
+   */
+  if (closure) {
+    await supabase.from('messages').insert({
+      organization_id: number.organization_id,
+      conversation_id: conversation.id,
+      role: 'system',
+      content:
+        `Hinweis: Heute ist geschlossen (${closure.label}, bis einschließlich ${closure.ends_on}). ` +
+        'Sage keine Öffnung für heute zu und nenne stattdessen den ersten Tag danach.',
+    });
+  }
+
   const greeting = number.greeting.trim() || DEFAULT_GREETING;
   return twiml(
     notice +
+    closureLine +
     gather({
       action: callbackUrl('/api/voice/turn', { call: call.id }),
       language: number.language,

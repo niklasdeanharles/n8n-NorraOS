@@ -189,7 +189,12 @@ export async function POST(request: NextRequest): Promise<Response> {
         .eq('id', call.conversation_id);
       return twiml(
         say('Einen Moment, ich verbinde Sie mit einem Mitarbeiter.', voice) +
-          dial(number.transfer_number, number.e164),
+          dial({
+            number: number.transfer_number,
+            callerId: number.e164,
+            afterUrl: callbackUrl('/api/voice/after-transfer', { call: call.id }),
+            timeout: 25,
+          }),
       );
     }
     return twiml(
@@ -266,13 +271,17 @@ export async function POST(request: NextRequest): Promise<Response> {
         .eq('id', call.id);
       return twiml(
         say(parsed.reply, voice) +
-          dial(
-            target,
-            number?.e164 ?? '',
+          dial({
+            number: target,
+            callerId: number?.e164 ?? '',
             // Ohne Briefing kein Umweg: dann wird direkt verbunden, statt dem
             // Mitarbeiter eine leere Ansage vorzuspielen.
-            parsed.briefing ? callbackUrl('/api/voice/briefing', { call: call.id }) : undefined,
-          ),
+            briefingUrl: parsed.briefing ? callbackUrl('/api/voice/briefing', { call: call.id }) : undefined,
+            // Der Rückfall. Ein Rezeptionist, der niemanden erreicht, legt
+            // nicht auf — er bietet an, etwas auszurichten.
+            afterUrl: callbackUrl('/api/voice/after-transfer', { call: call.id }),
+            timeout: 25,
+          }),
       );
     }
 

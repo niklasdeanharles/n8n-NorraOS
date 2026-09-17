@@ -49,7 +49,7 @@ function seed(overrides = {}) {
   // Die Stimm-Konfiguration hängt am Agenten, alles übrige an der Nummer. Ohne
   // das Auseinandernehmen landete sie in beiden Zeilen, und der Test bewiese
   // nicht mehr, von wo die Route sie tatsächlich liest.
-  const { voice_config: voiceConfig = {}, campaign_status: _status, ...numberOverrides } = overrides;
+  const { voice_config: voiceConfig = {}, campaign_status: _status, closure_days: _closures, ...numberOverrides } = overrides;
   reset({
     phone_numbers: [{
       id: 'pn-1', organization_id: ORG, e164: NUMBER, label: 'Zentrale', provider: 'twilio',
@@ -83,6 +83,7 @@ function seed(overrides = {}) {
         accepts_transfers: false, accepts_messages: true, active: true },
     ],
     messages_for_staff: [],
+    closure_days: overrides.closure_days ?? [],
     phone_departments: [
       { id: 'dep-1', organization_id: ORG, name: 'Buchhaltung', e164: '+493011111111',
         description: 'Rechnungen und Mahnungen', active: true },
@@ -194,7 +195,12 @@ await scenario('Außerhalb der Zeiten: Weiterleitung', async () => {
   seed({ business_hours: { mon: [['03:00', '03:01']] }, after_hours: 'transfer' });
   const res = await post('/api/voice/incoming', { To: NUMBER, From: '+49176', CallSid: 'CA5' });
   const xml = await res.text();
-  check('Dial an die Weiterleitung', xml.includes('<Dial callerId="+4930123456789">+4930999888777</Dial>'), xml.slice(0, 200));
+  check('Dial an die Weiterleitung', /<Dial[^>]*callerId="\+4930123456789"[^>]*>\+4930999888777<\/Dial>/.test(xml), xml.slice(0, 250));
+  check('mit Zeitlimit', /<Dial[^>]*timeout="25"/.test(xml), xml.slice(0, 250));
+  // Kein Rückfall, und das ist Absicht: außerhalb der Zeiten steht hinter
+  // dieser Nummer kein Agent, der eine Nachricht aufnehmen könnte. Ihn
+  // trotzdem anzubieten hieße, etwas zu versprechen, das niemand einlöst.
+  check('ohne Rückfall-URL', !xml.includes('/api/voice/after-transfer'), xml.slice(0, 250));
 });
 
 await scenario('Außerhalb der Zeiten: Anruf abweisen', async () => {
@@ -245,7 +251,10 @@ await scenario('Agent eskaliert: Anruf geht an den Menschen', async () => {
   await post('/api/voice/incoming', { To: NUMBER, From: '+49176', CallSid: 'CA9' });
   const callId = store.calls[0].id;
   const xml = await (await post(`/api/voice/turn?call=${callId}`, { CallSid: 'CA9', SpeechResult: 'Ich will einen Menschen sprechen.' })).text();
-  check('Dial an die Weiterleitung', xml.includes('<Dial callerId="+4930123456789">+4930999888777</Dial>'));
+  check('Dial an die Weiterleitung', /<Dial[^>]*callerId="\+4930123456789"[^>]*>\+4930999888777<\/Dial>/.test(xml), xml.slice(0, 250));
+  // Hier schon: hinter dieser Weiterleitung läuft das Gespräch weiter, wenn
+  // niemand abnimmt.
+  check('mit Rückfall-URL', /<Dial[^>]*action="[^"]*\/api\/voice\/after-transfer\?call=/.test(xml), xml.slice(0, 250));
   check('Call als transferred markiert', store.calls[0].status === 'transferred');
   await n8n.stop();
 });
@@ -552,6 +561,165 @@ await scenario('Wer keine Anrufe annimmt, wird nicht durchgestellt', async () =>
   // scheitern fällt die Route auf die Zentrale zurück.
   check('nicht an eine erfundene Nummer', !xml.includes('staff-2'), xml.slice(0, 200));
   check('stattdessen die Zentrale', xml.includes('+4930999888777'), xml.slice(0, 200));
+  await n8n.stop();
+});
+
+await scenario('Ein Durchstellen bekommt ein Zeitlimit und einen Rückfall', async () => {
+  seed();
+  n8n = await startN8n(54322, {
+    reply: 'Ich verbinde Sie mit Frau Vogel.',
+    action: 'transfer',
+    transfer_to_person: 'Frau Vogel',
+  });
+  await post('/api/voice/incoming', { To: NUMBER, From: '+4915112345678', CallSid: 'CA-timeout' });
+  const callId = store.calls[0].id;
+  const xml = await (await post(`/api/voice/turn?call=${callId}`, { CallSid: 'CA-timeout', SpeechResult: 'Zu Frau Vogel' })).text();
+  check('Dial mit Rückfall-URL', /<Dial[^>]*action="[^"]*\/api\/voice\/after-transfer\?call=/.test(xml), xml.slice(0, 400));
+  check('Dial mit Zeitlimit', /<Dial[^>]*timeout="25"/.test(xml), xml.slice(0, 400));
+  await n8n.stop();
+});
+
+/**
+ * Der Unterschied zwischen einer Telefonanlage und einem Empfang.
+ *
+ * Ohne diese Route hört der Anrufer das Freizeichen aufhören und danach nichts
+ * mehr. Ein Mensch am Empfang sagt an dieser Stelle, dass niemand rangeht, und
+ * bietet an, etwas auszurichten.
+ */
+await scenario('Nimmt niemand ab, wird eine Nachricht angeboten', async () => {
+  const callId = store.calls[0].id;
+  const before = store.messages.length;
+  const xml = await (await post(`/api/voice/after-transfer?call=${callId}`, {
+    CallSid: 'CA-timeout',
+    DialCallStatus: 'no-answer',
+  })).text();
+
+  check('der Anrufer wird nicht abgeschnitten', xml.includes('nicht erreichbar'), xml.slice(0, 300));
+  check('und darf antworten', xml.includes('<Gather'), xml.slice(0, 300));
+  check('zurück in den Gesprächsfaden', /action="[^"]*\/api\/voice\/turn\?call=/.test(xml), xml.slice(0, 300));
+  // Die Zeile behauptete „weitergeleitet", als noch niemand wissen konnte, ob
+  // jemand abhebt. Jetzt weiß es jemand.
+  check('nicht mehr als weitergeleitet geführt', store.calls[0].status === 'in_progress', store.calls[0].status);
+  check('kein Ziel mehr vermerkt', store.calls[0].transferred_to === null, String(store.calls[0].transferred_to));
+  check('kein Grund mehr vermerkt', store.calls[0].ended_reason === null, String(store.calls[0].ended_reason));
+  // Ohne diese Zeile fragte der Agent im nächsten Zug womöglich ein zweites
+  // Mal, ob er verbinden soll.
+  check('der Agent erfährt davon', store.messages.length === before + 1, `${before} -> ${store.messages.length}`);
+  check('und zwar wörtlich', (store.messages.at(-1)?.content ?? '').includes('nicht erreichbar'), store.messages.at(-1)?.content);
+});
+
+await scenario('Kam das Gespräch zustande, wird nichts zurückgenommen', async () => {
+  seed();
+  n8n = await startN8n(54322, {
+    reply: 'Ich verbinde Sie mit Frau Vogel.',
+    action: 'transfer',
+    transfer_to_person: 'Frau Vogel',
+  });
+  await post('/api/voice/incoming', { To: NUMBER, From: '+4915112345678', CallSid: 'CA-ok' });
+  const callId = store.calls[0].id;
+  await post(`/api/voice/turn?call=${callId}`, { CallSid: 'CA-ok', SpeechResult: 'Zu Frau Vogel' });
+  const before = store.messages.length;
+
+  const xml = await (await post(`/api/voice/after-transfer?call=${callId}`, {
+    CallSid: 'CA-ok',
+    DialCallStatus: 'completed',
+  })).text();
+
+  check('der Anruf endet', xml.includes('<Hangup'), xml.slice(0, 200));
+  check('kein zweites Angebot', !xml.includes('<Gather'), xml.slice(0, 200));
+  check('bleibt weitergeleitet', store.calls[0].status === 'transferred', store.calls[0].status);
+  check('das Ziel bleibt vermerkt', store.calls[0].transferred_to === '+4930111222333', String(store.calls[0].transferred_to));
+  check('nichts in die Historie geschrieben', store.messages.length === before, `${before} -> ${store.messages.length}`);
+  await n8n.stop();
+});
+
+// ------------------------------------------------------------- Schliesstage
+
+await scenario('An einem Schließtag sagt die Leitung nicht „geöffnet"', async () => {
+  seed({
+    // Öffnungszeiten, die *jetzt* gelten wuerden -- sonst bewiese das Szenario
+    // nur, dass ausserhalb der Zeiten geschlossen ist.
+    business_hours: { mon: [['00:00', '23:59']], tue: [['00:00', '23:59']], wed: [['00:00', '23:59']],
+                      thu: [['00:00', '23:59']], fri: [['00:00', '23:59']], sat: [['00:00', '23:59']],
+                      sun: [['00:00', '23:59']] },
+    after_hours: 'voicemail',
+    voicemail_message: 'Bitte hinterlassen Sie eine Nachricht.',
+    closure_days: [{
+      id: 'cl-1', organization_id: ORG, phone_number_id: null,
+      starts_on: '2000-01-01', ends_on: '2999-12-31',
+      label: 'Betriebsferien', message: 'Wir haben Betriebsferien bis zum sechsten Januar.',
+    }],
+  });
+  const xml = await (await post('/api/voice/incoming', { To: NUMBER, From: '+49176', CallSid: 'CA-clos' })).text();
+  check('die Ansage des Schließtags kommt', xml.includes('Betriebsferien bis zum sechsten Januar'), xml.slice(0, 300));
+  check('vor der Anrufbeantworter-Ansage',
+    xml.indexOf('Betriebsferien') < xml.indexOf('Bitte hinterlassen Sie'), xml.slice(0, 400));
+  check('kein Gespräch begonnen', !xml.includes('<Gather'), xml.slice(0, 300));
+});
+
+/**
+ * Die Gegenprobe. Ohne sie bewiese das Szenario oben nur, dass irgendetwas
+ * geschlossen hat -- die Öffnungszeiten stehen dort schliesslich auf
+ * „durchgehend", aber das sieht man dem TwiML nicht an.
+ */
+await scenario('Ohne Schließtag nimmt dieselbe Leitung ganz normal ab', async () => {
+  seed({
+    business_hours: { mon: [['00:00', '23:59']], tue: [['00:00', '23:59']], wed: [['00:00', '23:59']],
+                      thu: [['00:00', '23:59']], fri: [['00:00', '23:59']], sat: [['00:00', '23:59']],
+                      sun: [['00:00', '23:59']] },
+    after_hours: 'voicemail',
+    voicemail_message: 'Bitte hinterlassen Sie eine Nachricht.',
+    closure_days: [],
+  });
+  const xml = await (await post('/api/voice/incoming', { To: NUMBER, From: '+49176', CallSid: 'CA-open' })).text();
+  check('begrüßt statt abzuwimmeln', xml.includes('Guten Tag, hier ist Lumen Energie.'), xml.slice(0, 300));
+  check('und lässt sprechen', xml.includes('<Gather'), xml.slice(0, 300));
+});
+
+await scenario('Ein abgelaufener Schließtag greift nicht mehr', async () => {
+  seed({
+    business_hours: {},
+    closure_days: [{
+      id: 'cl-alt', organization_id: ORG, phone_number_id: null,
+      starts_on: '2020-12-24', ends_on: '2021-01-06', label: 'Betriebsferien 2020', message: 'Längst vorbei.',
+    }],
+  });
+  const xml = await (await post('/api/voice/incoming', { To: NUMBER, From: '+49176', CallSid: 'CA-alt' })).text();
+  check('keine alte Ansage', !xml.includes('Längst vorbei'), xml.slice(0, 300));
+  check('normal begrüßt', xml.includes('Guten Tag, hier ist Lumen Energie.'), xml.slice(0, 300));
+});
+
+/**
+ * Der Fall, in dem der Agent trotzdem antwortet: `after_hours: 'agent'`.
+ *
+ * Er ist der heikle. Der Anrufer hört einen Assistenten, der vollkommen
+ * arbeitsfähig wirkt -- und der aus seinen Öffnungszeiten herausliest, dass
+ * heute Donnerstag und damit offen ist. Ohne die Notiz in der Historie sagt er
+ * „wir haben bis achtzehn Uhr geöffnet" am ersten Weihnachtstag.
+ */
+await scenario('Antwortet der Agent trotzdem, erfährt er vom Schließtag', async () => {
+  seed({
+    after_hours: 'agent',
+    closure_days: [{
+      id: 'cl-2', organization_id: ORG, phone_number_id: null,
+      starts_on: '2000-01-01', ends_on: '2999-12-31', label: 'Tag der Deutschen Einheit', message: null,
+    }],
+  });
+  const xml = await (await post('/api/voice/incoming', { To: NUMBER, From: '+49176', CallSid: 'CA-clos-agent' })).text();
+  check('der Agent nimmt ab', xml.includes('<Gather'), xml.slice(0, 300));
+
+  const note = store.messages.find((message) => message.role === 'system');
+  check('eine Notiz in der Historie', Boolean(note), JSON.stringify(store.messages));
+  check('mit dem Anlass', (note?.content ?? '').includes('Tag der Deutschen Einheit'), note?.content);
+  check('und dem letzten Tag', (note?.content ?? '').includes('2999-12-31'), note?.content);
+
+  // Die Notiz muss beim naechsten Zug auch tatsaechlich bei n8n ankommen --
+  // in der Historie zu stehen nuetzt nichts, wenn sie unterwegs herausfaellt.
+  n8n = await startN8n(54322, { reply: 'Heute ist geschlossen.', action: 'continue' });
+  const callId = store.calls[0].id;
+  await post(`/api/voice/turn?call=${callId}`, { CallSid: 'CA-clos-agent', SpeechResult: 'Haben Sie offen?' });
+  const sent = n8n.seen[0]?.body?.history ?? [];
+  check('n8n bekommt die Notiz', sent.some((m) => m.role === 'system' && m.content.includes('Tag der Deutschen Einheit')), JSON.stringify(sent));
   await n8n.stop();
 });
 

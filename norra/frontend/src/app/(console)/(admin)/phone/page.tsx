@@ -6,6 +6,7 @@ import { relativeTime } from '@/lib/format';
 import { AddNumberForm } from './add-number-form';
 import { SetupGuide } from './setup-guide';
 import { Departments } from './departments';
+import { Closures } from './closures';
 import { Callbacks } from './callbacks';
 
 export const dynamic = 'force-dynamic';
@@ -25,7 +26,7 @@ const STATUS_LABEL: Record<string, string> = {
 export default async function PhonePage() {
   const supabase = await createClient();
 
-  const [numbersResult, callsResult, agentsResult, departmentsResult, callbacksResult, meResult] =
+  const [numbersResult, callsResult, agentsResult, departmentsResult, closuresResult, callbacksResult, meResult] =
     await Promise.all([
     supabase
       .from('phone_numbers')
@@ -41,6 +42,12 @@ export default async function PhonePage() {
       .from('phone_departments')
       .select('id, name, e164, description, active')
       .order('name'),
+    supabase
+      .from('closure_days')
+      // Aufsteigend: der nächste Schließtag steht oben, und das ist der, um den
+      // es meistens geht.
+      .select('id, label, starts_on, ends_on, message')
+      .order('starts_on'),
     supabase
       .from('callbacks')
       .select('id, e164, reason, preference, requested_for, created_at')
@@ -136,6 +143,8 @@ export default async function PhonePage() {
         <SetupGuide numbers={numbers.map((n) => ({ id: n.id, e164: n.e164, status: n.status }))} />
 
         <Departments departments={departmentsResult.data ?? []} canEdit={me?.role === 'admin'} />
+
+        <Closures closures={closuresResult.data ?? []} canEdit={me?.role === 'admin'} />
 
         <Callbacks callbacks={callbacksResult.data ?? []} />
 

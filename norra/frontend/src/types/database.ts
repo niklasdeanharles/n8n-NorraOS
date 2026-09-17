@@ -473,6 +473,26 @@ export type PhoneDepartmentRow = {
   updated_at: string;
 }
 
+/**
+ * Ein Tag oder Zeitraum, an dem geschlossen ist.
+ *
+ * `phone_number_id = null` heißt: alle Leitungen dieser Organisation. Der
+ * Normalfall — an Weihnachten ist das ganze Haus zu, nicht eine Durchwahl.
+ */
+export type ClosureDayRow = {
+  id: string;
+  organization_id: string;
+  phone_number_id: string | null;
+  starts_on: string;
+  ends_on: string;
+  label: string;
+  /** Leer heißt: es gilt, was unter `after_hours` für die Nummer eingestellt ist. */
+  message: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 /** A foreign key, in the shape PostgREST's select parser expects. */
 type Rel<Name extends string, Column extends string, Target extends string> = {
   foreignKeyName: Name;
@@ -696,6 +716,16 @@ export type Database = {
           Rel<'callbacks_contact_id_fkey', 'contact_id', 'contacts'>,
           Rel<'callbacks_assignee_id_fkey', 'assignee_id', 'users'>,
           Rel<'callbacks_completed_by_fkey', 'completed_by', 'users'>,
+        ]
+      >;
+
+      closure_days: Table<
+        ClosureDayRow,
+        'id' | 'created_at' | 'updated_at',
+        [
+          OrgRel<'closure_days'>,
+          Rel<'closure_days_phone_number_id_fkey', 'phone_number_id', 'phone_numbers'>,
+          Rel<'closure_days_created_by_fkey', 'created_by', 'users'>,
         ]
       >;
 

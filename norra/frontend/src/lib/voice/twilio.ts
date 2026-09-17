@@ -133,8 +133,26 @@ export function gather(args: {
   );
 }
 
-export function dial(number: string, callerId?: string, briefingUrl?: string): string {
-  const attrs = callerId ? ` callerId="${xml(callerId)}"` : '';
+export function dial(args: {
+  number: string;
+  callerId?: string;
+  /** TwiML nur für die angerufene Seite, vor dem Zusammenschalten. */
+  briefingUrl?: string;
+  /**
+   * Wohin Twilio postet, wenn das Gespräch vorbei ist **oder** nie zustande
+   * kam. Ohne das endet ein unbeantwortetes Durchstellen im Nichts: der
+   * Anrufer hört das Freizeichen aufhören und dann gar nichts mehr.
+   */
+  afterUrl?: string;
+  /** Sekunden klingeln lassen. Twilios Vorgabe ist 30 und damit zu lang. */
+  timeout?: number;
+}): string {
+  const attrs =
+    (args.callerId ? ` callerId="${xml(args.callerId)}"` : '') +
+    (args.afterUrl ? ` action="${xml(args.afterUrl)}" method="POST"` : '') +
+    (args.timeout ? ` timeout="${args.timeout}"` : '');
+  const number = args.number;
+  const briefingUrl = args.briefingUrl;
   // Mit `briefingUrl` wird aus dem Durchstellen eine Übergabe: Twilio holt das
   // TwiML von dieser URL und spielt es **nur der angerufenen Seite** vor,
   // bevor die Leitungen zusammengeschaltet werden. Der Anrufer hört davon

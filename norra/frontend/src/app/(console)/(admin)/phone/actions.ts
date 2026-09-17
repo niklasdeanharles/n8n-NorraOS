@@ -335,3 +335,106 @@ export async function completeCallback(_prev: PhoneFormState, formData: FormData
   revalidatePath('/phone');
   return { error: null, ok: 'Als erledigt vermerkt.' };
 }
+
+// --------------------------------------------------------------- Schließtage
+
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+const closureSchema = z
+  .object({
+    label: z.string().trim().min(1, 'Anlass fehlt.').max(120),
+    starts_on: z.string().regex(DATE, 'Anfangsdatum fehlt.'),
+    ends_on: z.string().regex(DATE, 'Enddatum fehlt.'),
+    // Leer heißt: es gilt, was unter `after_hours` für die Nummer steht. Das
+    // ist ein gültiger Wunsch und keine vergessene Eingabe, also kein Fehler.
+    message: z.string().trim().max(500).optional().transform((v) => (v ? v : null)),
+  })
+  .refine((v) => v.ends_on >= v.starts_on, {
+    message: 'Das Ende liegt vor dem Anfang.',
+    path: ['ends_on'],
+  })
+  .refine((v) => v.message === null || v.message.length >= 5, {
+    message: 'Eine Ansage aus zwei Zeichen ist keine — entweder ganz weglassen oder ausschreiben.',
+    path: ['message'],
+  });
+
+/**
+ * Ein Tag, an dem niemand da ist.
+ *
+ * Die Prüfung steht hier *und* als Check-Constraint in der Datenbank. Das ist
+ * keine Doppelung aus Versehen: das Formular kann eine verständliche Meldung
+ * geben, die Datenbank kann es nicht — dafür kommt an ihr niemand vorbei.
+ */
+export async function addClosure(_prev: PhoneFormState, formData: FormData): Promise<PhoneFormState> {
+  const parsed = closureSchema.safeParse({
+    label: formData.get('label'),
+    starts_on: formData.get('starts_on'),
+    ends_on: formData.get('ends_on'),
+    message: formData.get('message') ?? '',
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Eingabe ungültig.' };
+
+  const supabase = await createClient();
+  const actor = await currentActor(supabase);
+  if (!actor) return { error: 'Nicht angemeldet.' };
+  if (actor.role !== 'admin') return { error: 'Nur Admins können Schließtage eintragen.' };
+
+  const { error } = await supabase.from('closure_days').insert({
+    organization_id: actor.organizationId,
+    // Immer für alle Leitungen. Eine einzelne Nummer an Weihnachten offen zu
+    // lassen ist ein Sonderfall, den bisher niemand gebraucht hat — die Spalte
+    // ist da, das Formular bleibt einfach.
+    phone_number_id: null,
+    label: parsed.data.label,
+    starts_on: parsed.data.starts_on,
+    ends_on: parsed.data.ends_on,
+    message: parsed.data.message,
+    created_by: actor.id,
+  });
+  if (error) return { error: error.message };
+
+  await recordAudit(supabase, {
+    organizationId: actor.organizationId,
+    actorId: actor.id,
+    actorLabel: actor.label,
+    action: 'create',
+    entityType: 'closure_day',
+    entityId: parsed.data.label,
+    entityLabel: `${parsed.data.label} (${parsed.data.starts_on} bis ${parsed.data.ends_on})`,
+  });
+
+  revalidatePath('/phone');
+  return { error: null, ok: `„${parsed.data.label}” eingetragen. Ab diesem Tag nimmt keine Leitung mehr an.` };
+}
+
+export async function removeClosure(_prev: PhoneFormState, formData: FormData): Promise<PhoneFormState> {
+  const id = z.string().uuid().safeParse(formData.get('id'));
+  if (!id.success) return { error: 'Unbekannter Schließtag.' };
+
+  const supabase = await createClient();
+  const actor = await currentActor(supabase);
+  if (!actor) return { error: 'Nicht angemeldet.' };
+  if (actor.role !== 'admin') return { error: 'Nur Admins können Schließtage entfernen.' };
+
+  const { data: before } = await supabase
+    .from('closure_days')
+    .select('label, starts_on, ends_on')
+    .eq('id', id.data)
+    .maybeSingle();
+
+  const { error } = await supabase.from('closure_days').delete().eq('id', id.data);
+  if (error) return { error: error.message };
+
+  await recordAudit(supabase, {
+    organizationId: actor.organizationId,
+    actorId: actor.id,
+    actorLabel: actor.label,
+    action: 'delete',
+    entityType: 'closure_day',
+    entityId: id.data,
+    entityLabel: before ? `${before.label} (${before.starts_on} bis ${before.ends_on})` : id.data,
+  });
+
+  revalidatePath('/phone');
+  return { error: null, ok: 'Entfernt. Die Leitungen nehmen an diesen Tagen wieder an.' };
+}

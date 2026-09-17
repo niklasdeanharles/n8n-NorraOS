@@ -447,6 +447,51 @@ Drei Dinge daran sind nicht offensichtlich:
    strafbar (§ 201 StGB), und eine Einwilligung setzt voraus, dass jemand
    vorher Bescheid weiß. Erzwungen wird das im Schema, nicht in der Route.
 
+**Und wenn niemand abhebt?** Ein `<Dial>` ohne `action` ist eine Einbahnstraße:
+der Anrufer hört das Freizeichen aufhören und danach nichts mehr. Genau das
+unterscheidet eine Telefonanlage von einem Empfang. Deshalb trägt jedes
+Durchstellen aus einem laufenden Gespräch ein `timeout` und eine Rückfall-URL
+(`/api/voice/after-transfer`). Sie tut dreierlei:
+
+1. **Nimmt die Zeile zurück.** `status: 'transferred'` wurde gesetzt, als
+   niemand wissen konnte, ob jemand abhebt. Eine Zeile, die „weitergeleitet"
+   behauptet, obwohl es nicht dazu kam, ist später in der Auswertung eine Lüge,
+   die keiner mehr nachprüft.
+2. **Sagt es dem Anrufer** und bietet an, etwas auszurichten — zurück in
+   denselben Gesprächsfaden, nicht in ein neues Menü.
+3. **Sagt es dem Agenten**, als Zeile in der Historie. Ohne sie führte er das
+   Gespräch fort, als wäre nie durchgestellt worden, und fragte womöglich ein
+   zweites Mal, ob er verbinden soll.
+
+Die Weiterleitung *außerhalb* der Öffnungszeiten bekommt bewusst **keinen**
+Rückfall: dort steht kein Agent dahinter, der eine Nachricht aufnehmen könnte.
+Ihn trotzdem anzubieten hieße, etwas zu versprechen, das niemand einlöst.
+
+### Schließtage
+
+`business_hours` kennt nur die Woche. Am ersten Weihnachtstag steht dort
+„Donnerstag, acht bis achtzehn" und stimmt trotzdem nicht. `closure_days` steht
+deshalb **über** den Öffnungszeiten: erst wird gefragt, ob heute überhaupt einer
+ist, dann wie spät es ist.
+
+Bewusst **keine mitgelieferte Feiertagsliste.** Feiertage sind pro Bundesland
+verschieden, sie ändern sich, und Betriebsferien stehen in keinem Kalender. Eine
+Liste, die für die Hälfte der Kunden falsch ist, ohne dass sie es merken, wäre
+schlechter als ein leeres Formular. Eingetragen wird im Screen *Telefon*, einmal
+im Jahr.
+
+Zwei Feinheiten:
+
+- **Das Datum kommt aus `Intl`, nicht aus `toISOString()`.** Letzteres rechnet in
+  UTC; ein Anruf um 00:30 Berliner Zeit am 25. Dezember fiele dort auf den 24.,
+  und der Schließtag griffe nicht. `localDate()` in `lib/voice/hours.ts` nutzt
+  `en-CA`, das `YYYY-MM-DD` ohne Zusammenstückeln liefert.
+- **Steht `after_hours` auf `agent`, antwortet er trotzdem** — er soll ja sagen
+  können, wann wieder offen ist. Damit er nicht „wir haben bis achtzehn Uhr
+  geöffnet" sagt, schreibt `/api/voice/incoming` eine `system`-Notiz in die
+  Konversation. Nicht in den System-Prompt: der gehört dem Betreiber und wird
+  nicht pro Anruf umgeschrieben.
+
 Am Rand, aber aus demselben Geist: `gather()` nimmt **Sprache und Tastenfeld**
 an, und zwar als Vorgabe — `speechOnly` muss man ausdrücklich verlangen. Wer im
 Großraumbüro oder im Zug sitzt, kann oft gar nicht sprechen, und eine
@@ -539,8 +584,8 @@ Die vier End-to-End-Suiten bauen die App selbst und fahren sie gegen
 In-Memory-Stand-ins hoch:
 
 ```bash
-node tests/voice/run.mjs      # 37 Szenarien vom eingehenden Anruf bis zur Nachbereitung
-node tests/widget/run.mjs     # 13 Szenarien von der Session bis zur Bewertung
+node tests/voice/run.mjs      # 44 Szenarien vom eingehenden Anruf bis zur Nachbereitung
+node tests/widget/run.mjs     # 20 Szenarien von der Session bis zur Bewertung
 node tests/simulate/run.mjs   # 12 Szenarien der Testfall-Simulation, als angemeldeter Admin
 node tests/console/run.mjs    # 20 Szenarien der Konsolen-Routen (Agent-Turn, Wissens-Ingest, Betrieb)
 ```

@@ -85,3 +85,57 @@ export function describeHours(hours: BusinessHours): string {
     .map((day) => `${DAY_LABELS[day].slice(0, 2)} ${(hours[day] ?? []).map(([f, t]) => `${f}–${t}`).join(', ')}`)
     .join(' · ');
 }
+
+/**
+ * Das Datum in der Zeitzone der Nummer, als `YYYY-MM-DD`.
+ *
+ * Nicht `toISOString().slice(0, 10)`: das rechnet in UTC. Ein Anruf um 00:30
+ * Berliner Zeit am 25. Dezember fiele dort auf den 24. — und ein Schließtag,
+ * der auf den 25. eingetragen ist, griffe nicht. `en-CA` liefert genau dieses
+ * Format ohne eigenes Zusammenstückeln.
+ */
+export function localDate(timezone: string, at: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(at);
+}
+
+/** Nur die Felder, die die Auswertung braucht — nicht die ganze Zeile. */
+export type Closure = {
+  starts_on: string;
+  ends_on: string;
+  label: string;
+  message: string | null;
+  phone_number_id: string | null;
+};
+
+/**
+ * Der Schließtag, der heute für diese Leitung gilt, oder null.
+ *
+ * Zeichenketten-Vergleich statt `Date`: `YYYY-MM-DD` sortiert lexikografisch
+ * wie chronologisch, und ein `new Date('2026-12-24')` wäre wieder UTC-Mitternacht
+ * mit demselben Fehler wie oben.
+ *
+ * Bei mehreren zutreffenden gewinnt der mit einer Ansage — „wir haben
+ * Betriebsferien bis zum sechsten Januar" ist eine bessere Auskunft als der
+ * stumme Feiertag, der zufällig hineinfällt.
+ */
+export function closureFor(
+  closures: readonly Closure[],
+  numberId: string,
+  timezone: string,
+  at: Date = new Date(),
+): Closure | null {
+  const today = localDate(timezone, at);
+  const matching = closures.filter(
+    (closure) =>
+      (closure.phone_number_id === null || closure.phone_number_id === numberId) &&
+      closure.starts_on <= today &&
+      today <= closure.ends_on,
+  );
+  if (matching.length === 0) return null;
+  return matching.find((closure) => closure.message?.trim()) ?? matching[0] ?? null;
+}
