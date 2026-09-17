@@ -42,7 +42,7 @@ nie hierher. Hierher gehört, was der Betreiber *sieht* und was ein Besucher
 
 | Pfad | Inhalt |
 |---|---|
-| `src/app/(console)/` | Root-Layout der Konsole, darunter `(admin)/` (elf Screens) und `(auth)/` (Login, Registrierung) |
+| `src/app/(console)/` | Root-Layout der Konsole, darunter `(admin)/` (zwölf Screens) und `(auth)/` (Login, Registrierung) |
 | `src/app/api/` | Proxy- und Webhook-Routen (Agent-Turn, Voice, Widget, Feedback) |
 | `src/app/widget/` | Das öffentliche Chat-Widget mit **eigenem Root-Layout**, läuft im Iframe auf Kundenseiten |
 | `src/styles/` | `base.css` (Tokens + Resets, beide Oberflächen), `console.css`, `widget.css` |
@@ -231,6 +231,9 @@ Die vollständigen Regeln stehen in `norra-backend/CLAUDE.md`.
 | `N8N_WEBHOOK_SECRET` | Vercel + n8n | Header-Auth zwischen Proxy und Webhook |
 | `TWILIO_AUTH_TOKEN` | nur Server, optional | Signaturprüfung der Telefonie-Webhooks |
 | `NORRA_PUBLIC_URL` | Vercel, optional | öffentliche Basis-URL für Telefonie-Signatur und Embed-Code |
+| `N8N_BASE_URL` | Vercel, optional | n8n-URL für die lesende Admin-API des Betriebs-Screens |
+| `N8N_API_KEY` | nur Server, optional | n8n-API-Key, ausschließlich lesend |
+| `NORRA_OPS_ORG_ID` | Vercel, optional | Organisation des Betreibers — ohne sie bleibt der Instanz-Blick zu |
 
 Das Web-Widget braucht keine eigene Variable — sein Signaturschlüssel leitet
 sich aus `N8N_WEBHOOK_SECRET` ab (siehe *Das Web-Widget*).
@@ -452,6 +455,41 @@ der freizügigen Seite: eine vergessene Option ergibt den barrierearmen Fall,
 nicht den engen. Andersherum war es schon einmal, und prompt hatte ausgerechnet
 die Begrüßung kein Tastenfeld.
 
+## Betrieb
+
+Der Screen `/betrieb` beantwortet die Frage, die sonst nur ein Terminal
+beantwortet: *steht zwischen dem Repository und dem nächsten echten Anruf noch
+etwas?* Er hat zwei Hälften, und sie gehören verschiedenen Leuten.
+
+**Diese Organisation** sieht jeder Admin seines Mandanten: Leitungen mit Agent
+und letztem Anruf, gescheiterte Anrufe der letzten 24 Stunden, gescheiterte
+Tool-Aufrufe aus `tool_calls_log`, offene Nachbereitungen. Alles über RLS auf
+die eigene Organisation beschränkt, wie jede andere Konsolen-Seite.
+
+**Die Instanz** sieht nur der Betreiber. Die n8n-Instanz ist über alle Mandanten
+hinweg dieselbe; wessen Workflows dort liegen, geht einen Kunden nichts an. Die
+Grenze ist `NORRA_OPS_ORG_ID`, und sie ist **geschlossen, solange die Variable
+fehlt** — ein API-Key allein reicht ausdrücklich nicht. Das Szenario *Ein fremder
+Mandant sieht die Instanz nicht, auch mit gültigem Schlüssel* in
+`tests/console/scenarios.mjs` setzt deshalb beides: Schlüssel vorhanden,
+Organisation fremd. Ohne Schlüssel wäre „keine Instanz-Karte" kein Beweis,
+sondern nur eine fehlende Zutat.
+
+Zwei Entscheidungen dahinter:
+
+1. **Die Sollliste steht im Frontend und wird trotzdem geprüft.** Die App läuft
+   auf Vercel und hat das Backend-Repository dort nicht; sie kann die Instanz
+   fragen, was da *ist*, nicht was da sein *soll*. Also schreibt
+   `src/lib/ops/workflows.ts` die Workflow-Liste ab — und
+   `check-wiring.mjs` vergleicht sie bei jedem Lauf mit `n8n-workflows/`, in
+   beide Richtungen. Eine neue Workflow-Datei ohne Eintrag ist ein roter Lauf,
+   kein Punkt, der auf dem Screen lautlos fehlt.
+2. **Fehlende Credentials stehen bewusst nicht auf dem Screen.** Die Zuordnung
+   „welcher Node braucht welchen Credential-Typ" hat ihre Antwort in
+   `preflight.mjs`. Eine zweite Kopie hier wäre eine, die irgendwann etwas
+   anderes behauptet — und die falsche von beiden wäre die, der man glaubt. Der
+   Screen nennt stattdessen den Befehl.
+
 ## Einstellungen
 
 Die Regel, nach der entschieden wird, wo eine Einstellung lebt:
@@ -504,7 +542,7 @@ In-Memory-Stand-ins hoch:
 node tests/voice/run.mjs      # 37 Szenarien vom eingehenden Anruf bis zur Nachbereitung
 node tests/widget/run.mjs     # 13 Szenarien von der Session bis zur Bewertung
 node tests/simulate/run.mjs   # 12 Szenarien der Testfall-Simulation, als angemeldeter Admin
-node tests/console/run.mjs    # 17 Szenarien der Konsolen-Routen (Agent-Turn, Wissens-Ingest)
+node tests/console/run.mjs    # 20 Szenarien der Konsolen-Routen (Agent-Turn, Wissens-Ingest, Betrieb)
 ```
 
 **Was diese Suiten nicht beweisen können: Mandantentrennung.** Der Mock hat

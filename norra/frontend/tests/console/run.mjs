@@ -24,6 +24,14 @@ const env = {
   N8N_WEBHOOK_SECRET: '0123456789abcdef0123',
   TWILIO_AUTH_TOKEN: 'test-token-0123456789abcdef',
   NORRA_PUBLIC_URL: 'https://norra.test',
+  // Der Betriebs-Screen bekommt hier absichtlich alles, was er braucht — bis
+  // auf das eine, worauf es ankommt: `NORRA_OPS_ORG_ID` nennt eine *fremde*
+  // Organisation. Ohne Schlüssel wäre „kein Instanz-Blick" kein Beweis, sondern
+  // nur eine fehlende Zutat. Mit Schlüssel und falscher Organisation ist es die
+  // Aussage selbst.
+  N8N_BASE_URL: 'http://127.0.0.1:54322',
+  N8N_API_KEY: 'ops-key-for-test',
+  NORRA_OPS_ORG_ID: '00000000-0000-4000-8000-0000000000ff',
 };
 
 function run(command, args, options) {

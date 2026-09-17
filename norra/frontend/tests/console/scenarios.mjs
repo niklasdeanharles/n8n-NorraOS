@@ -51,7 +51,15 @@ async function post(path, body, { signedIn = true, raw = null } = {}) {
   return response;
 }
 
-function seed({ role = 'admin', messages = [], documents = [] } = {}) {
+async function getPage(path, { signedIn = true } = {}) {
+  const response = await fetch(`${APP}${path}`, {
+    redirect: 'manual',
+    headers: signedIn ? { cookie: SESSION_COOKIE } : {},
+  });
+  return { status: response.status, html: response.status === 200 ? await response.text() : '' };
+}
+
+function seed({ role = 'admin', messages = [], documents = [], phoneNumbers = [], calls = [], toolCalls = [] } = {}) {
   reset(
     {
       organizations: [{ id: ORG, name: 'Lumen Energie' }],
@@ -66,8 +74,10 @@ function seed({ role = 'admin', messages = [], documents = [] } = {}) {
       knowledge_base_documents: documents,
       knowledge_base_chunks: [],
       tickets: [],
-      tool_calls_log: [],
+      tool_calls_log: toolCalls,
       audit_log: [],
+      phone_numbers: phoneNumbers,
+      calls,
     },
     ADMIN_USER,
   );
@@ -304,6 +314,65 @@ await scenario('Ein zu langes Dokument wird abgelehnt', async () => {
   check('nichts angelegt', store.knowledge_base_documents.length === 0);
   check('n8n nicht aufgerufen', n8n.seen.length === 0);
   await stopN8n();
+});
+
+// ---------------------------------------------------------------- Betrieb
+
+const NUMBER = '00000000-0000-4000-8000-00000000b006';
+
+function betriebFixtures() {
+  return {
+    phoneNumbers: [{
+      id: NUMBER, organization_id: ORG, e164: '+4930111222333', label: 'Zentrale',
+      status: 'active', agent_id: AGENT, last_call_at: new Date().toISOString(),
+    }],
+    calls: [{
+      id: '00000000-0000-4000-8000-00000000b007', organization_id: ORG, phone_number_id: NUMBER,
+      status: 'failed', ended_reason: 'provider_error', started_at: new Date().toISOString(),
+      duration_seconds: 4, wrapup_status: 'done',
+    }],
+    toolCalls: [{
+      id: '00000000-0000-4000-8000-00000000b008', organization_id: ORG, agent_id: AGENT,
+      tool_name: 'send_sms', status: 'error', error: 'Twilio antwortete mit 401',
+      duration_ms: 320, created_at: new Date().toISOString(),
+    }],
+  };
+}
+
+await scenario('Der Betriebs-Screen zeigt, was diesem Mandanten gehört', async () => {
+  seed(betriebFixtures());
+  const { status, html } = await getPage('/betrieb');
+  check('200', status === 200, `bekam ${status}`);
+  check('die Leitung steht da', html.includes('+4930111222333'), '');
+  check('der Tool-Fehler steht da', html.includes('Twilio antwortete mit 401'), '');
+  check('der gescheiterte Anruf ist gezählt', /Gescheiterte Anrufe[\s\S]{0,400}>1</.test(html), '');
+});
+
+/**
+ * Die eigentliche Aussage dieser Seite.
+ *
+ * Der Testlauf setzt `N8N_API_KEY` **und** eine `NORRA_OPS_ORG_ID`, die einer
+ * fremden Organisation gehört. Alles zum Abfragen der Instanz ist also da — nur
+ * die Erlaubnis nicht. Fiele die Prüfung weg, stünden hier die Workflow-Namen
+ * einer Instanz, die allen Mandanten gemeinsam gehört, und der n8n-Mock hätte
+ * einen Aufruf gesehen.
+ */
+await scenario('Ein fremder Mandant sieht die Instanz nicht, auch mit gültigem Schlüssel', async () => {
+  seed(betriebFixtures());
+  n8n = await startN8n(54322, { data: [{ id: 'x', name: 'Norra – Voice Turn', active: true }] });
+  const { status, html } = await getPage('/betrieb');
+  check('200', status === 200, `bekam ${status}`);
+  check('kein Workflow-Name auf der Seite', !html.includes('Norra – Voice Turn'), '');
+  check('keine Instanz-Karte', !html.includes('Die Instanz'), '');
+  check('die Instanz wurde nicht einmal gefragt', n8n.seen.length === 0, JSON.stringify(n8n.seen));
+  check('der eigene Teil steht trotzdem da', html.includes('+4930111222333'), '');
+  await stopN8n();
+});
+
+await scenario('Ohne Anmeldung kein Betriebs-Screen', async () => {
+  seed(betriebFixtures());
+  const { status } = await getPage('/betrieb', { signedIn: false });
+  check('nicht 200', status !== 200, `bekam ${status}`);
 });
 
 // ------------------------------------------------------------------ result

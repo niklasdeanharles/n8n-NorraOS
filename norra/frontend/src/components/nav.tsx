@@ -27,6 +27,7 @@ const SECTIONS: Array<{ label: string; items: Array<{ href: string; icon: string
     items: [
       { href: '/governance', icon: '◈', text: 'Governance' },
       { href: '/team', icon: '◎', text: 'Team' },
+      { href: '/betrieb', icon: '◉', text: 'Betrieb' },
       { href: '/settings', icon: '⚙', text: 'Einstellungen' },
     ],
   },

@@ -784,6 +784,66 @@ function checkTenantFilters(workflows, schema) {
   }
 }
 
+/**
+ * 8. Die Workflow-Liste der App muss dieses Verzeichnis sein.
+ *
+ * Der Betriebs-Screen der Konsole zeigt, was auf der Instanz fehlt. Dafür muss
+ * er wissen, was da sein *soll* -- und das steht hier, nicht dort: die App läuft
+ * auf Vercel und hat dieses Repository nicht. Also schreibt sie ab
+ * (`src/lib/ops/workflows.ts`), und Abschreiben ohne Nachprüfen ist genau die
+ * Sorte Konstante, die ein halbes Jahr später etwas anderes behauptet.
+ *
+ * Geprüft wird beides: Datei ohne Eintrag (fiele auf dem Screen lautlos weg)
+ * und Eintrag ohne Datei (zeigte dauerhaft „fehlt" für etwas, das es nicht mehr
+ * gibt). Dazu Name und Auslöser, denn nach dem Namen wird zugeordnet und der
+ * Auslöser entscheidet, ob „inaktiv" ein Blocker ist.
+ */
+async function checkExpectedWorkflows(workflows) {
+  const file = path.join(APP, 'src/lib/ops/workflows.ts');
+  if (!existsSync(file)) {
+    problems.push('src/lib/ops/workflows.ts fehlt — der Betriebs-Screen hätte keine Sollliste');
+    return;
+  }
+  const source = await readFile(file, 'utf8');
+
+  const listed = new Map();
+  for (const match of source.matchAll(/\{ file: '([^']+)', name: '([^']+)', trigger: '([^']+)' \}/g)) {
+    listed.set(match[1], { name: match[2], trigger: match[3] });
+  }
+  if (listed.size === 0) {
+    problems.push('src/lib/ops/workflows.ts: EXPECTED_WORKFLOWS ist leer oder anders formatiert als erwartet');
+    return;
+  }
+
+  const triggerOf = (workflow) => {
+    const types = new Set((workflow.nodes ?? []).map((node) => node.type));
+    if (types.has('n8n-nodes-base.webhook')) return 'webhook';
+    if (types.has('n8n-nodes-base.scheduleTrigger')) return 'schedule';
+    return 'sub';
+  };
+
+  for (const { file: repoFile, workflow } of workflows) {
+    const entry = listed.get(repoFile);
+    if (!entry) {
+      problems.push(`src/lib/ops/workflows.ts kennt ${repoFile} nicht — der Betriebs-Screen zeigte den Workflow nie an`);
+      continue;
+    }
+    if (entry.name !== workflow.name) {
+      problems.push(`src/lib/ops/workflows.ts: ${repoFile} heißt "${workflow.name}", die Liste sagt "${entry.name}"`);
+    }
+    const trigger = triggerOf(workflow);
+    if (entry.trigger !== trigger) {
+      problems.push(`src/lib/ops/workflows.ts: ${repoFile} startet per ${trigger}, die Liste sagt ${entry.trigger}`);
+    }
+    listed.delete(repoFile);
+  }
+
+  for (const stale of listed.keys()) {
+    problems.push(`src/lib/ops/workflows.ts nennt ${stale}, das es in n8n-workflows/ nicht gibt`);
+  }
+  notes.push(`${workflows.length} Workflow-Einträge gegen die Sollliste der App geprüft`);
+}
+
 if (APP_PRESENT) {
   const clientSource = await readFile(CLIENT, 'utf8');
   checkWebhookPaths(workflows, clientSource);
@@ -795,6 +855,7 @@ await checkWriters(workflows, schema);
 checkToolReferences(workflows);
 checkTenantFilters(workflows, schema);
 await checkSkillExamples(schema);
+if (APP_PRESENT) await checkExpectedWorkflows(workflows);
 
 console.log(`Schema: ${schema.size} tables, ${[...schema.values()].reduce((n, c) => n + c.size, 0)} columns`);
 console.log(`Workflows: ${workflows.length}`);
