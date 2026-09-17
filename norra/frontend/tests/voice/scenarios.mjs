@@ -42,12 +42,14 @@ async function post(path, params, { signed = true } = {}) {
 const ORG = 'org-1';
 const AGENT = 'agent-1';
 const NUMBER = '+4930123456789';
+const CAMPAIGN = 'camp-1';
+const TARGET = 'target-1';
 
 function seed(overrides = {}) {
   // Die Stimm-Konfiguration hängt am Agenten, alles übrige an der Nummer. Ohne
   // das Auseinandernehmen landete sie in beiden Zeilen, und der Test bewiese
   // nicht mehr, von wo die Route sie tatsächlich liest.
-  const { voice_config: voiceConfig = {}, ...numberOverrides } = overrides;
+  const { voice_config: voiceConfig = {}, campaign_status: _status, ...numberOverrides } = overrides;
   reset({
     phone_numbers: [{
       id: 'pn-1', organization_id: ORG, e164: NUMBER, label: 'Zentrale', provider: 'twilio',
@@ -57,6 +59,20 @@ function seed(overrides = {}) {
       after_hours: 'agent', status: 'active', last_call_at: null, ...numberOverrides,
     }],
     conversations: [], calls: [], messages: [], tickets: [], contacts: [], callbacks: [],
+    call_campaigns: [{
+      id: CAMPAIGN, organization_id: ORG, name: 'Rückrufe KW38',
+      goal: 'Offene Rückrufwünsche abarbeiten.',
+      opening_line: 'Guten Tag, hier ist Lumen Energie. Sie hatten um einen Rückruf gebeten.',
+      agent_id: AGENT, phone_number_id: 'pn-1',
+      status: overrides.campaign_status ?? 'running',
+      calling_window: { mon: ['09:00', '17:00'] }, timezone: 'Europe/Berlin',
+      max_attempts: 3, retry_after_minutes: 240, max_concurrent: 5,
+    }],
+    campaign_targets: [{
+      id: TARGET, organization_id: ORG, campaign_id: CAMPAIGN, e164: '+4915112345678',
+      display_name: 'A. Beispiel', context: {}, outcome: 'pending', attempts: 1,
+      next_attempt_at: null, last_attempt_at: null, last_call_id: null, contact_id: null,
+    }],
     phone_departments: [
       { id: 'dep-1', organization_id: ORG, name: 'Buchhaltung', e164: '+493011111111',
         description: 'Rechnungen und Mahnungen', active: true },
@@ -395,6 +411,66 @@ await scenario('Nach dem Auflegen wird die Nachbereitung angestoßen', async () 
   // die Organisations-ID liefe die Nachbereitung ohne Mandantenfilter.
   check('Anruf-ID im Body', wrapup?.body?.call_id === callId, JSON.stringify(wrapup?.body));
   check('Organisations-ID im Body', wrapup?.body?.organization_id === ORG, JSON.stringify(wrapup?.body));
+  await n8n.stop();
+});
+
+await scenario('Ausgehender Anruf wird angenommen und beginnt mit dem Eröffnungssatz', async () => {
+  seed();
+  const res = await post(`/api/voice/outbound?target=${TARGET}`, { CallSid: 'CA-out-1', From: NUMBER, To: '+4915112345678' });
+  const xml = await res.text();
+  check('200', res.status === 200, `bekam ${res.status}`);
+  check('Eröffnungssatz gesprochen', xml.includes('Sie hatten um einen Rückruf gebeten.'), xml.slice(0, 200));
+  check('Gather auf /api/voice/turn', /<Gather[^>]+action="[^"]*\/api\/voice\/turn\?call=/.test(xml));
+  check('Anruf als ausgehend vermerkt', store.calls[0]?.direction === 'outbound', store.calls[0]?.direction);
+  check('Ziel am Anruf', store.calls[0]?.campaign_target_id === TARGET);
+  check('Konversation ist voice', store.conversations[0]?.channel === 'voice');
+  // Ohne diesen Rückverweis fände die Auswertung das Gespräch zum Ziel nicht.
+  check('Anruf am Ziel vermerkt', store.campaign_targets[0].last_call_id === store.calls[0]?.id);
+});
+
+await scenario('Eine angehaltene Kampagne nimmt kein Gespräch mehr auf', async () => {
+  seed({ campaign_status: 'paused' });
+  const res = await post(`/api/voice/outbound?target=${TARGET}`, { CallSid: 'CA-out-2', From: NUMBER, To: '+4915112345678' });
+  const xml = await res.text();
+  // Zwischen Wählen und Abheben liegen Sekunden, in denen jemand auf Pause
+  // gedrückt haben kann. Das hier ist der letzte Punkt, an dem das noch zählt.
+  check('legt höflich auf', xml.includes('<Hangup/>') && xml.includes('Entschuldigen Sie'), xml.slice(0, 160));
+  check('keine Konversation angelegt', store.conversations.length === 0, `sind ${store.conversations.length}`);
+  check('kein Anruf angelegt', store.calls.length === 0, `sind ${store.calls.length}`);
+});
+
+await scenario('Anrufbeantworter wird erkannt und festgehalten', async () => {
+  seed();
+  await post(`/api/voice/outbound?target=${TARGET}`, { CallSid: 'CA-out-3', From: NUMBER, To: '+4915112345678' });
+  const res = await post(`/api/voice/amd?target=${TARGET}`, { CallSid: 'CA-out-3', AnsweredBy: 'machine_end_beep' });
+  check('204', res.status === 204, `bekam ${res.status}`);
+  check('am Anruf vermerkt', store.calls[0].answered_by === 'machine', store.calls[0].answered_by);
+  // Ein Band ist kein Fehlschlag: die Nummer stimmt, der Zeitpunkt nicht.
+  check('Ziel als Anrufbeantworter', store.campaign_targets[0].outcome === 'voicemail', store.campaign_targets[0].outcome);
+});
+
+await scenario('Ein Mensch am Hörer ändert am Ziel nichts', async () => {
+  seed();
+  await post(`/api/voice/outbound?target=${TARGET}`, { CallSid: 'CA-out-4', From: NUMBER, To: '+4915112345678' });
+  await post(`/api/voice/amd?target=${TARGET}`, { CallSid: 'CA-out-4', AnsweredBy: 'human' });
+  check('am Anruf vermerkt', store.calls[0].answered_by === 'human');
+  check('Ziel bleibt offen', store.campaign_targets[0].outcome === 'pending', store.campaign_targets[0].outcome);
+});
+
+await scenario('Nach erkanntem Band wird kein Agentenlauf mehr gestartet', async () => {
+  seed();
+  n8n = await startN8n(54322, { reply: 'Sollte nie gesprochen werden.', action: 'continue' });
+  await post(`/api/voice/outbound?target=${TARGET}`, { CallSid: 'CA-out-5', From: NUMBER, To: '+4915112345678' });
+  const callId = store.calls[0].id;
+  await post(`/api/voice/amd?target=${TARGET}`, { CallSid: 'CA-out-5', AnsweredBy: 'machine_start' });
+  const before = n8n.seen.length;
+  const res = await post(`/api/voice/turn?call=${callId}`, { CallSid: 'CA-out-5', SpeechResult: 'Piep' });
+  const xml = await res.text();
+  // Auf ein Band zu sprechen kostet Tokens und Minuten und hinterlässt eine
+  // Konversation, die wie ein geführtes Gespräch aussieht.
+  check('legt auf', xml.includes('<Hangup/>'), xml.slice(0, 120));
+  check('kein Agentenlauf', n8n.seen.length === before, `${n8n.seen.length - before} Aufrufe`);
+  check('Grund festgehalten', store.calls[0].ended_reason === 'answering_machine', store.calls[0].ended_reason);
   await n8n.stop();
 });
 

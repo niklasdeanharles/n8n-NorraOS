@@ -157,8 +157,13 @@ function embed(row, select) {
   for (const match of select.matchAll(/(?:(\w+):)?(\w+)\(([^()]*)\)/g)) {
     const [, alias, target, columns] = match;
     const key = alias ?? target;
-    const foreignKey = `${target.replace(/s$/, '')}_id`;
-    const id = row[foreignKey];
+    // PostgREST löst die Beziehung über den Fremdschlüssel auf, und der heißt
+    // nicht zwingend wie die Zieltabelle: `campaign:call_campaigns(...)` hängt
+    // an `campaign_id`. Deshalb zuerst der Alias, dann der Tabellenname --
+    // andernfalls käme `null` zurück und die Route liefe still ins Leere.
+    const candidates = [`${key}_id`, `${target.replace(/s$/, '')}_id`];
+    const foreignKey = candidates.find((name) => name in row);
+    const id = foreignKey ? row[foreignKey] : undefined;
     const related = id ? (db[target] ?? []).find((r) => r.id === id) : undefined;
     if (!related) {
       result[key] = null;

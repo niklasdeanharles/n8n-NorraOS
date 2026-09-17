@@ -32,6 +32,11 @@ export type CallDirection = 'inbound' | 'outbound';
 export type CallbackStatus = 'pending' | 'done' | 'cancelled';
 /** Nachbereitung eines Anrufs. `skipped` heißt: der Agent hatte nichts zu extrahieren. */
 export type WrapupStatus = 'pending' | 'skipped' | 'done' | 'failed';
+export type CampaignStatus = 'draft' | 'running' | 'paused' | 'done';
+export type TargetOutcome =
+  | 'pending' | 'reached' | 'no_answer' | 'busy' | 'voicemail' | 'failed' | 'opted_out';
+/** Twilios Anrufbeantworter-Erkennung. Nur bei ausgehenden Anrufen gesetzt. */
+export type AnsweredBy = 'human' | 'machine' | 'fax' | 'unknown';
 
 /** Keys whose column accepts NULL. Postgres lets those be omitted on insert. */
 type NullableKeys<Row> = { [K in keyof Row]-?: null extends Row[K] ? K : never }[keyof Row];
@@ -112,6 +117,51 @@ export type CallRow = {
   summary: string | null;
   /** pending | skipped | done | failed — trennt "nichts gefunden" von "nicht gelaufen". */
   wrapup_status: WrapupStatus;
+  /** Das Ziel einer Kampagne, wenn dieser Anruf ausgehend war. */
+  campaign_target_id: string | null;
+  answered_by: AnsweredBy | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type CallCampaignRow = {
+  id: string;
+  organization_id: string;
+  name: string;
+  agent_id: string | null;
+  phone_number_id: string | null;
+  /** Was der Agent erreichen soll, in einem Satz. Wandert in den Gesprächskontext. */
+  goal: string;
+  opening_line: string;
+  status: CampaignStatus;
+  /** {"mon": ["09:00","17:00"], …}. Ein fehlender Tag heißt: an dem Tag wird nicht angerufen. */
+  calling_window: Json;
+  timezone: string;
+  max_attempts: number;
+  retry_after_minutes: number;
+  max_concurrent: number;
+  started_at: string | null;
+  finished_at: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type CampaignTargetRow = {
+  id: string;
+  organization_id: string;
+  campaign_id: string;
+  e164: string;
+  contact_id: string | null;
+  display_name: string | null;
+  /** Was dieser eine Angerufene mitbringt: Vorgangsnummer, Termin, Betrag. */
+  context: Json;
+  outcome: TargetOutcome;
+  attempts: number;
+  /** `null` heißt: nie wieder — der Zustand nach einem endgültigen Ergebnis. */
+  next_attempt_at: string | null;
+  last_attempt_at: string | null;
+  last_call_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -541,6 +591,30 @@ export type Database = {
           Rel<'calls_conversation_id_fkey', 'conversation_id', 'conversations'>,
           Rel<'calls_agent_id_fkey', 'agent_id', 'agents'>,
           Rel<'calls_contact_id_fkey', 'contact_id', 'contacts'>,
+          Rel<'calls_campaign_target_id_fkey', 'campaign_target_id', 'campaign_targets'>,
+        ]
+      >;
+
+      call_campaigns: Table<
+        CallCampaignRow,
+        | Timestamps | 'status' | 'opening_line' | 'calling_window' | 'timezone'
+        | 'max_attempts' | 'retry_after_minutes' | 'max_concurrent',
+        [
+          OrgRel<'call_campaigns'>,
+          Rel<'call_campaigns_agent_id_fkey', 'agent_id', 'agents'>,
+          Rel<'call_campaigns_phone_number_id_fkey', 'phone_number_id', 'phone_numbers'>,
+          Rel<'call_campaigns_created_by_fkey', 'created_by', 'users'>,
+        ]
+      >;
+
+      campaign_targets: Table<
+        CampaignTargetRow,
+        Timestamps | 'outcome' | 'attempts' | 'next_attempt_at' | 'context',
+        [
+          OrgRel<'campaign_targets'>,
+          Rel<'campaign_targets_campaign_id_fkey', 'campaign_id', 'call_campaigns'>,
+          Rel<'campaign_targets_contact_id_fkey', 'contact_id', 'contacts'>,
+          Rel<'campaign_targets_last_call_fk', 'last_call_id', 'calls'>,
         ]
       >;
 

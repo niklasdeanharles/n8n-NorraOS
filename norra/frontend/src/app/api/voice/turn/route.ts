@@ -52,7 +52,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   const { data: call } = await supabase
     .from('calls')
     .select(
-      'id, organization_id, conversation_id, agent_id, started_at, turn_count, phone_number_id, agent:agents(voice_config)',
+      'id, organization_id, conversation_id, agent_id, started_at, turn_count, phone_number_id, answered_by, agent:agents(voice_config)',
     )
     .eq('id', callId)
     .maybeSingle();
@@ -83,6 +83,15 @@ export async function POST(request: NextRequest): Promise<Response> {
     return twiml(
       say('Wir sind an der Zeitgrenze für dieses Gespräch. Ein Mitarbeiter meldet sich bei Ihnen.', voice) + hangup(),
     );
+  }
+
+  // Auf ein Band zu sprechen kostet Claude-Tokens und Telefonminuten und
+  // hinterlässt eine Konversation, die wie ein geführtes Gespräch aussieht.
+  // `answered_by` steht nur bei ausgehenden Anrufen; die Erkennung läuft
+  // asynchron und trifft deshalb frühestens ab dem zweiten Zug ein.
+  if (call.answered_by === 'machine' || call.answered_by === 'fax') {
+    await endCall(supabase, call.id, call.conversation_id, 'answering_machine');
+    return twiml(hangup());
   }
 
   const spoken = (params.SpeechResult ?? '').trim();

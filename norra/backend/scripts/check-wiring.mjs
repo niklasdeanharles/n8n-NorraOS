@@ -376,7 +376,6 @@ const RESERVED = {
   'organizations.settings': 'presentation preferences only; everything a workflow reads became a column',
   'tickets.tags': 'no tagging in the console yet',
   'phone_numbers.provider': "twilio is the only provider, so the default is the value",
-  'calls.direction': 'only inbound calls exist; outbound would need its own route',
   'conversations.end_user_email': 'no channel asks a visitor for one yet; the widget is anonymous',
   'conversations.end_user_external_id': 'set once a channel carries a customer id (email, WhatsApp)',
   // Checked against the node's own type definition, not assumed: the Agent
@@ -536,7 +535,12 @@ async function checkWriters(workflows, schema) {
 
   // A reserved entry that is now written is a note gone stale, and a stale note
   // is how the next real one gets waved through.
-  for (const key of reservedButWritten) notes.push(`reserved column is written now, drop it from RESERVED: ${key}`);
+  for (const key of reservedButWritten) {
+    problems.push(
+      `${key} steht in RESERVED, wird aber geschrieben — Eintrag entfernen. ` +
+      'Ein veralteter Vermerk ist der Weg, auf dem der nächste echte Fund durchgewunken wird.',
+    );
+  }
   notes.push(`${checked} columns checked for a writer`);
 }
 
@@ -701,6 +705,29 @@ function checkTenantFilters(workflows, schema) {
   const SUPABASE = 'n8n-nodes-base.supabase';
 
   for (const { file, workflow } of workflows) {
+    /**
+     * Nodes, die absichtlich ohne Mandantenfilter arbeiten.
+     *
+     * Ein Zeitplan hat keine Organisation -- er arbeitet alle ab. Das ist ein
+     * echter Fall, und ihn zu verbieten hieße, ihn heimlich zu bauen. Also
+     * steht er im Workflow unter `norra.crossTenant`, mit Begründung, und wird
+     * unten als Hinweis ausgegeben statt als Fehler.
+     *
+     * Die Begründung ist Pflicht, nicht Deko: ein leerer Eintrag ist ein
+     * Freifahrtschein ohne Namen darauf und wird deshalb selbst zum Problem.
+     * Dieselbe Rolle wie RESERVED weiter oben -- eine Entscheidung, die jemand
+     * aufgeschrieben hat, keine Lücke.
+     */
+    const declared = workflow.norra?.crossTenant ?? {};
+    const nodeNames = new Set((workflow.nodes ?? []).map((node) => node.name));
+    for (const [name, reason] of Object.entries(declared)) {
+      if (!nodeNames.has(name)) {
+        problems.push(`${file}: crossTenant nennt "${name}", aber diesen Node gibt es nicht mehr`);
+      } else if (typeof reason !== 'string' || reason.trim().length < 20) {
+        problems.push(`${file}: crossTenant "${name}" braucht eine Begründung, keinen Platzhalter`);
+      }
+    }
+
     for (const node of workflow.nodes ?? []) {
       if (node.type !== SUPABASE) continue;
 
@@ -727,6 +754,11 @@ function checkTenantFilters(workflows, schema) {
       // On `organizations` the primary key is the tenant id.
       const tenantKeys = table === 'organizations' ? ['id', 'organization_id'] : ['organization_id'];
       const named = (list) => list.some((key) => tenantKeys.includes(key));
+
+      if (Object.prototype.hasOwnProperty.call(declared, node.name)) {
+        notes.push(`${file}: "${node.name}" läuft erklärtermaßen mandantenübergreifend`);
+        continue;
+      }
 
       if (operation === 'create') {
         if (!named(written)) {
