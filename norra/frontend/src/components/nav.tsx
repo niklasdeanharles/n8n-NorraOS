@@ -18,6 +18,7 @@ const SECTIONS: Array<{ label: string; items: Array<{ href: string; icon: string
       { href: '/agents', icon: '◇', text: 'Agenten' },
       { href: '/phone', icon: '☏', text: 'Telefon' },
       { href: '/campaigns', icon: '↗', text: 'Kampagnen' },
+      { href: '/empfang', icon: '☰', text: 'Empfang' },
       { href: '/knowledge', icon: '▤', text: 'Wissen' },
     ],
   },

@@ -1,0 +1,779 @@
+{
+  "name": "Norra – Tool: take_message",
+  "nodes": [
+    {
+      "id": "message-requested",
+      "name": "Message Requested",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "organization_id",
+              "type": "string"
+            },
+            {
+              "name": "conversation_id",
+              "type": "string"
+            },
+            {
+              "name": "agent_id",
+              "type": "string"
+            },
+            {
+              "name": "call_id",
+              "type": "string"
+            },
+            {
+              "name": "person",
+              "type": "string"
+            },
+            {
+              "name": "caller_name",
+              "type": "string"
+            },
+            {
+              "name": "body",
+              "type": "string"
+            },
+            {
+              "name": "urgency",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "normalize-request",
+      "name": "Normalize Request",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "org",
+              "name": "organization_id",
+              "type": "string",
+              "value": "={{ $('Message Requested').item.json.organization_id }}"
+            },
+            {
+              "id": "conv",
+              "name": "conversation_id",
+              "type": "string",
+              "value": "={{ $('Message Requested').item.json.conversation_id }}"
+            },
+            {
+              "id": "agent",
+              "name": "agent_id",
+              "type": "string",
+              "value": "={{ $('Message Requested').item.json.agent_id }}"
+            },
+            {
+              "id": "call",
+              "name": "call_id",
+              "type": "string",
+              "value": "={{ $('Message Requested').item.json.call_id ?? \"\" }}"
+            },
+            {
+              "id": "person",
+              "name": "person",
+              "type": "string",
+              "value": "={{ $('Message Requested').item.json.person ?? \"\" }}"
+            },
+            {
+              "id": "caller",
+              "name": "caller_name",
+              "type": "string",
+              "value": "={{ $('Message Requested').item.json.caller_name ?? \"\" }}"
+            },
+            {
+              "id": "body",
+              "name": "body",
+              "type": "string",
+              "value": "={{ ($('Message Requested').item.json.body ?? \"\").trim() }}"
+            },
+            {
+              "id": "urgency",
+              "name": "urgency",
+              "type": "string",
+              "value": "={{ String($('Message Requested').item.json.urgency ?? \"\").toLowerCase() === \"dringend\" ? \"dringend\" : \"normal\" }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "load-directory",
+      "name": "Load Directory",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "staff_members",
+        "returnAll": true,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Normalize Request').item.json.organization_id }}"
+            },
+            {
+              "keyName": "active",
+              "condition": "eq",
+              "keyValue": "true"
+            },
+            {
+              "keyName": "accepts_messages",
+              "condition": "eq",
+              "keyValue": "true"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "collect-directory",
+      "name": "Collect Directory",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "data",
+        "options": {}
+      }
+    },
+    {
+      "id": "match-person",
+      "name": "Match Person",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "match",
+              "name": "match",
+              "type": "object",
+              "value": "={{ (() => { const people = ($('Collect Directory').item.json.data ?? [])  .filter(p => p.active && p.accepts_messages); const said = String($('Normalize Request').item.json.person ?? '').toLowerCase().trim(); const names = people.map(p => p.name); if (!said || people.length === 0) return { found: false, ambiguous: false, candidates: names }; const bare = said.replace(/\\b(herr|herrn|frau|die|der|den|zu|mit|an|von)\\b/g, ' ')  .replace(/\\s+/g, ' ').trim(); const norm = (value) => String(value ?? \"\").toLowerCase().trim(); const digits = said.replace(/[^0-9]/g, \"\"); const exact = people.filter(p => norm(p.name) === bare); const byExtension = digits ? people.filter(p => norm(p.extension) === digits) : []; const bySurname = people.filter(p => {  const parts = norm(p.name).split(\" \").filter(Boolean);  const surname = parts[parts.length - 1];  return surname && (bare === surname || bare.split(\" \").includes(surname)); }); const contains = bare.length >= 3 ? people.filter(p => norm(p.name).includes(bare)) : []; const stages = [exact, byExtension, bySurname, contains]; const hit = stages.find(list => list.length === 1); if (!hit) return { found: false, ambiguous: stages.some(l => l.length > 1), candidates: names }; return { found: true, ambiguous: false, candidates: names, person: hit[0] }; })() }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "person-found",
+      "name": "Person Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Match Person').item.json.match.found }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            },
+            {
+              "leftValue": "={{ $('Normalize Request').item.json.body }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true
+      }
+    },
+    {
+      "id": "load-call",
+      "name": "Load Call",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        -100
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "calls",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Normalize Request').item.json.call_id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Normalize Request').item.json.organization_id }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "store-message",
+      "name": "Store Message",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1540,
+        -100
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "messages_for_staff",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "organization_id",
+              "fieldValue": "={{ $('Normalize Request').item.json.organization_id }}"
+            },
+            {
+              "fieldId": "staff_member_id",
+              "fieldValue": "={{ $('Match Person').item.json.match.person.id }}"
+            },
+            {
+              "fieldId": "conversation_id",
+              "fieldValue": "={{ $('Normalize Request').item.json.conversation_id }}"
+            },
+            {
+              "fieldId": "call_id",
+              "fieldValue": "={{ $('Normalize Request').item.json.call_id || null }}"
+            },
+            {
+              "fieldId": "caller_name",
+              "fieldValue": "={{ $('Normalize Request').item.json.caller_name || null }}"
+            },
+            {
+              "fieldId": "caller_e164",
+              "fieldValue": "={{ $('Load Call').item.json.from_e164 ?? null }}"
+            },
+            {
+              "fieldId": "body",
+              "fieldValue": "={{ $('Normalize Request').item.json.body }}"
+            },
+            {
+              "fieldId": "urgency",
+              "fieldValue": "={{ $('Normalize Request').item.json.urgency }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "has-email",
+      "name": "Has Email?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1760,
+        -100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Match Person').item.json.match.person.email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true
+      }
+    },
+    {
+      "id": "send-message-email",
+      "name": "Send Message Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1980,
+        -200
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $('Match Person').item.json.match.person.email }}",
+        "subject": "=[Norra{{ $('Normalize Request').item.json.urgency === 'dringend' ? ' – dringend' : '' }}] Nachricht von {{ $('Normalize Request').item.json.caller_name || $('Load Call').item.json.from_e164 || 'unbekannt' }}",
+        "emailType": "html",
+        "message": "=<p>Am Telefon wurde eine Nachricht für dich hinterlassen.</p><p><strong>{{ $('Normalize Request').item.json.body }}</strong></p><p>Anrufer: {{ $('Normalize Request').item.json.caller_name || 'nicht genannt' }}{{ $('Load Call').item.json.from_e164 ? ' · ' + $('Load Call').item.json.from_e164 : '' }}<br>Dringlichkeit: {{ $('Normalize Request').item.json.urgency }}</p>",
+        "options": {
+          "appendAttribution": false
+        }
+      }
+    },
+    {
+      "id": "mark-delivered",
+      "name": "Mark Delivered",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        -200
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "tableId": "messages_for_staff",
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Store Message').item.json.id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Normalize Request').item.json.organization_id }}"
+            }
+          ]
+        },
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "zugestellt"
+            },
+            {
+              "fieldId": "delivered_at",
+              "fieldValue": "={{ $now.toISO() }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "log-taken",
+      "name": "Log Taken",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2420,
+        -100
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "tool_calls_log",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "organization_id",
+              "fieldValue": "={{ $('Normalize Request').item.json.organization_id }}"
+            },
+            {
+              "fieldId": "conversation_id",
+              "fieldValue": "={{ $('Normalize Request').item.json.conversation_id }}"
+            },
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "={{ $('Normalize Request').item.json.agent_id }}"
+            },
+            {
+              "fieldId": "tool_name",
+              "fieldValue": "take_message"
+            },
+            {
+              "fieldId": "n8n_workflow_id",
+              "fieldValue": "={{ $workflow.id }}"
+            },
+            {
+              "fieldId": "n8n_execution_id",
+              "fieldValue": "={{ $execution.id }}"
+            },
+            {
+              "fieldId": "input",
+              "fieldValue": "={{ JSON.stringify($('Message Requested').item.json) }}"
+            },
+            {
+              "fieldId": "output",
+              "fieldValue": "={{ JSON.stringify({ message_id: $('Store Message').item.json.id ?? null, to: $('Match Person').item.json.match.person.name }) }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "={{ $('Store Message').item.json.id ? 'success' : 'error' }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "return-taken",
+      "name": "Return Taken",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2640,
+        -100
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "taken",
+              "name": "taken",
+              "type": "boolean",
+              "value": "={{ !!$('Store Message').item.json.id }}"
+            },
+            {
+              "id": "to",
+              "name": "to",
+              "type": "string",
+              "value": "={{ $('Match Person').item.json.match.person.name }}"
+            },
+            {
+              "id": "message",
+              "name": "message",
+              "type": "string",
+              "value": "={{ 'Die Nachricht ist notiert. Bestaetige dem Anrufer, dass ' + $('Match Person').item.json.match.person.name + ' sie bekommt.' }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "log-unclear",
+      "name": "Log Unclear",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        180
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "tool_calls_log",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "organization_id",
+              "fieldValue": "={{ $('Normalize Request').item.json.organization_id }}"
+            },
+            {
+              "fieldId": "conversation_id",
+              "fieldValue": "={{ $('Normalize Request').item.json.conversation_id }}"
+            },
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "={{ $('Normalize Request').item.json.agent_id }}"
+            },
+            {
+              "fieldId": "tool_name",
+              "fieldValue": "take_message"
+            },
+            {
+              "fieldId": "n8n_workflow_id",
+              "fieldValue": "={{ $workflow.id }}"
+            },
+            {
+              "fieldId": "n8n_execution_id",
+              "fieldValue": "={{ $execution.id }}"
+            },
+            {
+              "fieldId": "input",
+              "fieldValue": "={{ JSON.stringify($('Message Requested').item.json) }}"
+            },
+            {
+              "fieldId": "output",
+              "fieldValue": "={{ JSON.stringify({ taken: false, person: $('Normalize Request').item.json.person }) }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "success"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "return-unclear",
+      "name": "Return Unclear",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1540,
+        180
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "taken",
+              "name": "taken",
+              "type": "boolean",
+              "value": "={{ false }}"
+            },
+            {
+              "id": "message",
+              "name": "message",
+              "type": "string",
+              "value": "={{ (() => { if (!$('Normalize Request').item.json.body) return 'Frag den Anrufer, was genau ausgerichtet werden soll, und rufe das Tool danach erneut.'; if ($('Match Person').item.json.match.ambiguous) return 'Mehrere Personen passen auf den Namen. Frag nach dem Vornamen oder der Durchwahl.'; if (($('Match Person').item.json.match.candidates ?? []).length === 0) return 'Es ist niemand hinterlegt, der Nachrichten annimmt. Biete stattdessen einen Rueckruf an.'; return 'Diesen Namen gibt es hier nicht. Nenne die hinterlegten Namen und frag nach: ' + ($('Match Person').item.json.match.candidates ?? []).join(', '); })() }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "sticky-message",
+      "name": "Sticky Note message",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -360
+      ],
+      "parameters": {
+        "width": 900,
+        "height": 280,
+        "content": "## Tool: take_message\n\nDer klassische Empfangsakt. **Eine Nachricht ist kein Rückruf**: ein Rückruf ist die Bitte um einen zweiten Anruf, eine Nachricht ist der Inhalt selbst.\n\n**Das Modell nennt einen Namen, das Verzeichnis liefert die Person.** Läge die E-Mail-Adresse im Kontext, könnte ein präparierter Satz sie ersetzen und die Nachricht ginge an einen Fremden.\n\n**Zwei Treffer sind kein Treffer.** Wer bei Mehrdeutigkeit den ersten nimmt, verbindet irgendwann Frau Vogel mit dem Anruf für Herrn Vogel. Dann fragt der Agent nach.\n\n**Die Rufnummer kommt aus `calls`, nicht aus dem Diktat.** Sonst stünde im Rückrufwunsch, was der Anrufer gesagt hat — und nicht, woher er anruft."
+      }
+    }
+  ],
+  "connections": {
+    "Message Requested": {
+      "main": [
+        [
+          {
+            "node": "Normalize Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Request": {
+      "main": [
+        [
+          {
+            "node": "Load Directory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Directory": {
+      "main": [
+        [
+          {
+            "node": "Collect Directory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Directory": {
+      "main": [
+        [
+          {
+            "node": "Match Person",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match Person": {
+      "main": [
+        [
+          {
+            "node": "Person Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Person Found?": {
+      "main": [
+        [
+          {
+            "node": "Load Call",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Unclear",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Call": {
+      "main": [
+        [
+          {
+            "node": "Store Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Message": {
+      "main": [
+        [
+          {
+            "node": "Has Email?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Email?": {
+      "main": [
+        [
+          {
+            "node": "Send Message Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Taken",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Message Email": {
+      "main": [
+        [
+          {
+            "node": "Mark Delivered",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Delivered": {
+      "main": [
+        [
+          {
+            "node": "Log Taken",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Taken": {
+      "main": [
+        [
+          {
+            "node": "Return Taken",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Unclear": {
+      "main": [
+        [
+          {
+            "node": "Return Unclear",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "norra": {
+    "slug": "take-message"
+  }
+}

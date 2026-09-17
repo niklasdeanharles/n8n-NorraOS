@@ -33,6 +33,8 @@ export type CallbackStatus = 'pending' | 'done' | 'cancelled';
 /** Nachbereitung eines Anrufs. `skipped` heißt: der Agent hatte nichts zu extrahieren. */
 export type WrapupStatus = 'pending' | 'skipped' | 'done' | 'failed';
 export type CampaignStatus = 'draft' | 'running' | 'paused' | 'done';
+export type MessageUrgency = 'normal' | 'dringend';
+export type StaffMessageStatus = 'neu' | 'zugestellt' | 'erledigt';
 export type TargetOutcome =
   | 'pending' | 'reached' | 'no_answer' | 'busy' | 'voicemail' | 'failed' | 'opted_out';
 /** Twilios Anrufbeantworter-Erkennung. Nur bei ausgehenden Anrufen gesetzt. */
@@ -81,6 +83,8 @@ export type PhoneNumberRow = {
   voicemail_message: string | null;
   max_call_seconds: number;
   recording_enabled: boolean;
+  /** Ansage vor dem Mitschnitt. Ohne sie darf recording_enabled nicht gesetzt werden. */
+  recording_notice: string | null;
   business_hours: Json;
   timezone: string;
   after_hours: AfterHoursBehavior;
@@ -111,6 +115,8 @@ export type CallRow = {
   turn_count: number;
   recording_url: string | null;
   transferred_to: string | null;
+  /** Ansage für den Mitarbeiter vor dem Verbinden. Der Anrufer hört sie nicht. */
+  transfer_briefing: string | null;
   ended_reason: string | null;
   /** Nach Gesprächsende gezogen, Schlüssel = agents.voice_config.extract[].name. */
   extracted_variables: Json;
@@ -120,6 +126,44 @@ export type CallRow = {
   /** Das Ziel einer Kampagne, wenn dieser Anruf ausgehend war. */
   campaign_target_id: string | null;
   answered_by: AnsweredBy | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type StaffMemberRow = {
+  id: string;
+  organization_id: string;
+  name: string;
+  role: string | null;
+  /** Gewählt wird immer hier. Die Durchwahl ist nur, was ein Anrufer nennt. */
+  e164: string | null;
+  extension: string | null;
+  email: string | null;
+  accepts_transfers: boolean;
+  accepts_messages: boolean;
+  active: boolean;
+  /** Was der Agent über diese Person sagen darf. */
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type StaffMessageRow = {
+  id: string;
+  organization_id: string;
+  staff_member_id: string;
+  call_id: string | null;
+  conversation_id: string | null;
+  contact_id: string | null;
+  caller_name: string | null;
+  caller_e164: string | null;
+  body: string;
+  urgency: MessageUrgency;
+  status: StaffMessageStatus;
+  delivered_at: string | null;
+  handled_at: string | null;
+  handled_by: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -604,6 +648,25 @@ export type Database = {
           Rel<'call_campaigns_agent_id_fkey', 'agent_id', 'agents'>,
           Rel<'call_campaigns_phone_number_id_fkey', 'phone_number_id', 'phone_numbers'>,
           Rel<'call_campaigns_created_by_fkey', 'created_by', 'users'>,
+        ]
+      >;
+
+      staff_members: Table<
+        StaffMemberRow,
+        Timestamps | 'accepts_transfers' | 'accepts_messages' | 'active',
+        [OrgRel<'staff_members'>, Rel<'staff_members_created_by_fkey', 'created_by', 'users'>]
+      >;
+
+      messages_for_staff: Table<
+        StaffMessageRow,
+        Timestamps | 'urgency' | 'status',
+        [
+          OrgRel<'messages_for_staff'>,
+          Rel<'messages_for_staff_staff_member_id_fkey', 'staff_member_id', 'staff_members'>,
+          Rel<'messages_for_staff_call_id_fkey', 'call_id', 'calls'>,
+          Rel<'messages_for_staff_conversation_id_fkey', 'conversation_id', 'conversations'>,
+          Rel<'messages_for_staff_contact_id_fkey', 'contact_id', 'contacts'>,
+          Rel<'messages_for_staff_handled_by_fkey', 'handled_by', 'users'>,
         ]
       >;
 

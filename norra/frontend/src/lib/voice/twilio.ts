@@ -104,19 +104,46 @@ export function gather(args: {
   prompt?: string;
   voice: string;
   hints?: string;
+  /**
+   * Nur Sprache annehmen. Vorgabe ist Sprache **und** Tastenfeld.
+   *
+   * Die Vorgabe steht bewusst auf der freizügigen Seite: wer sie vergisst,
+   * bekommt den barrierearmen Fall, nicht den engen. Andersherum war es schon
+   * einmal, und prompt hatte die Begrüßung kein Tastenfeld, während jeder
+   * folgende Zug eines hatte.
+   */
+  speechOnly?: boolean;
 }): string {
   const inner = args.prompt ? say(args.prompt, { voice: args.voice, language: args.language }) : '';
   const hints = args.hints ? ` hints="${xml(args.hints)}"` : '';
+  // `speech dtmf` nimmt beides an und liefert, was zuerst kommt. Das ist nicht
+  // nur Komfort: eine Kundennummer buchstabiert am Telefon niemand gern, und
+  // wer im Großraumbüro oder im Zug sitzt, kann oft gar nicht sprechen.
+  //
+  // `finishOnKey="#"` gibt dem Anrufer ein Ende. Ohne das wartet Twilio nach
+  // der letzten Ziffer die volle `timeout` ab, und das fühlt sich an, als wäre
+  // die Leitung tot.
+  const digits = !args.speechOnly;
+  const input = digits ? 'speech dtmf' : 'speech';
+  const dtmf = digits ? ' numDigits="20" finishOnKey="#" timeout="6"' : '';
   return (
-    `<Gather input="speech" action="${xml(args.action)}" method="POST"` +
-    ` language="${xml(args.language)}" speechTimeout="auto" speechModel="phone_call"${hints}>` +
+    `<Gather input="${input}" action="${xml(args.action)}" method="POST"` +
+    ` language="${xml(args.language)}" speechTimeout="auto" speechModel="phone_call"${hints}${dtmf}>` +
     `${inner}</Gather>`
   );
 }
 
-export function dial(number: string, callerId?: string): string {
+export function dial(number: string, callerId?: string, briefingUrl?: string): string {
   const attrs = callerId ? ` callerId="${xml(callerId)}"` : '';
-  return `<Dial${attrs}>${xml(number)}</Dial>`;
+  // Mit `briefingUrl` wird aus dem Durchstellen eine Übergabe: Twilio holt das
+  // TwiML von dieser URL und spielt es **nur der angerufenen Seite** vor,
+  // bevor die Leitungen zusammengeschaltet werden. Der Anrufer hört davon
+  // nichts und wartet solange im Freizeichen.
+  //
+  // Das ist der ganze Unterschied zwischen einem Mitarbeiter, der mit "Hallo?"
+  // abhebt, und einem, der weiß, wer dran ist und worum es geht.
+  if (!briefingUrl) return `<Dial${attrs}>${xml(number)}</Dial>`;
+  return `<Dial${attrs}><Number url="${xml(briefingUrl)}">${xml(number)}</Number></Dial>`;
 }
 
 export function hangup(): string {

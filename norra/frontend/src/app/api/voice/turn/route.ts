@@ -39,6 +39,17 @@ const agentReplySchema = z.object({
    * one that is not there transfers nowhere.
    */
   transfer_to: z.string().trim().min(1).max(80).nullish(),
+  /**
+   * Der Name einer Person aus `staff_members`. Gilt dieselbe Regel wie oben:
+   * ein Name, nie eine Nummer.
+   */
+  transfer_to_person: z.string().trim().min(1).max(200).nullish(),
+  /**
+   * Ein Satz für die angerufene Seite, bevor verbunden wird. Er wird nur dem
+   * Mitarbeiter vorgespielt, nicht dem Anrufer — deshalb darf er sagen, was
+   * der Anrufer nicht hören soll, etwa „klingt verärgert".
+   */
+  briefing: z.string().trim().min(1).max(500).nullish(),
 });
 
 export async function POST(request: NextRequest): Promise<Response> {
@@ -208,7 +219,25 @@ export async function POST(request: NextRequest): Promise<Response> {
     // admin configured on the line, or to nothing at all.
     let target = number?.transfer_number ?? null;
     let label: string | null = null;
-    if (parsed.transfer_to) {
+
+    // Eine Person zuerst: „verbinden Sie mich mit Frau Vogel" ist genauer als
+    // „mit der Buchhaltung", und wer beides sagt, meint die Person.
+    if (parsed.transfer_to_person) {
+      const { data: person } = await supabase
+        .from('staff_members')
+        .select('name, e164')
+        .eq('organization_id', call.organization_id)
+        .eq('active', true)
+        .eq('accepts_transfers', true)
+        .ilike('name', parsed.transfer_to_person)
+        .maybeSingle();
+      if (person?.e164) {
+        target = person.e164;
+        label = `person:${person.name}`;
+      }
+    }
+
+    if (!label && parsed.transfer_to) {
       const { data: department } = await supabase
         .from('phone_departments')
         .select('name, e164')
@@ -218,20 +247,33 @@ export async function POST(request: NextRequest): Promise<Response> {
         .maybeSingle();
       if (department) {
         target = department.e164;
-        label = department.name;
+        label = `department:${department.name}`;
       }
     }
 
     if (target) {
+      // Das Briefing wandert in die Zeile, nicht in die URL: die Route, die es
+      // vorliest, liest es von dort. Ein Query-Parameter wäre ein Satz, den
+      // jeder mit gültiger Signatur frei wählen könnte.
       await supabase
         .from('calls')
         .update({
           status: 'transferred',
           transferred_to: target,
-          ended_reason: label ? `department:${label}` : 'agent_handoff',
+          transfer_briefing: parsed.briefing ?? null,
+          ended_reason: label ?? 'agent_handoff',
         })
         .eq('id', call.id);
-      return twiml(say(parsed.reply, voice) + dial(target, number?.e164 ?? ''));
+      return twiml(
+        say(parsed.reply, voice) +
+          dial(
+            target,
+            number?.e164 ?? '',
+            // Ohne Briefing kein Umweg: dann wird direkt verbunden, statt dem
+            // Mitarbeiter eine leere Ansage vorzuspielen.
+            parsed.briefing ? callbackUrl('/api/voice/briefing', { call: call.id }) : undefined,
+          ),
+      );
     }
 
     // The agent announced a transfer that cannot happen. Saying its line and

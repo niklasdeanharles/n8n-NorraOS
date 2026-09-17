@@ -47,28 +47,43 @@ Workflows automatisch anwendet):
 | `send-sms.json` | Agent-Tool `send_sms` | **noch keine** | nur Telefon, braucht Twilio-Credential in n8n |
 | `schedule-callback.json` | Agent-Tool `schedule_callback` | **noch keine** | nur Telefon |
 | `transfer-to-department.json` | Agent-Tool `transfer_to_department` | **noch keine** | nur Telefon, braucht Einträge in `phone_departments` |
+| `take-message.json` | Agent-Tool `take_message` | **noch keine** | nur Telefon, braucht Einträge in `staff_members` |
+| `transfer-to-person.json` | Agent-Tool `transfer_to_person` | **noch keine** | nur Telefon, braucht Einträge in `staff_members` |
+| `book-appointment.json` | Agent-Tool `book_appointment` | **noch keine** | braucht ein Google-Calendar-Credential in n8n |
 
-Die sieben Agent-Tools sind der Katalog aus `frontend/src/lib/tools.ts`;
+Die zehn Agent-Tools sind der Katalog aus `frontend/src/lib/tools.ts`;
 `notify-escalation` ist kein Tool, sondern der Mail-Versand, den
 `escalate-to-human` anstößt.
 
-### Die vier Telefon-Tools
+### Die sechs Telefon-Tools
 
 Sie brauchen alle eine `call_id` und stehen deshalb nur im Voice-Agenten, nicht
-im Chat. Was sie gemeinsam haben, ist wichtiger als was sie unterscheidet:
+im Chat. (`book_appointment` braucht keine und steht deshalb in beiden Kanälen —
+ein Termin lässt sich auch im Chat vereinbaren.) Was sie gemeinsam haben, ist
+wichtiger als was sie unterscheidet:
 
 **Das Modell bestimmt die Worte, nie das Ziel.** `send_sms` bekommt einen Text,
 aber die Empfängernummer kommt aus `calls.from_e164`. `identify_caller` bekommt
 eine `call_id`, keine Rufnummer — sonst wäre es eine freie Abfrage auf die
 Kontaktliste des Mandanten. `transfer_to_department` gibt einen Abteilungsnamen
 zurück, keine Nummer; `/api/voice/turn` schlägt ihn ein zweites Mal in
-`phone_departments` nach, unmittelbar vor dem Wählen. Eine vom Modell erfundene
+`phone_departments` nach, unmittelbar vor dem Wählen. `transfer_to_person` und
+`take_message` bekommen einen **Namen** und schlagen ihn in `staff_members`
+nach; bei zwei Treffern wird abgelehnt statt geraten, weil eine falsche
+Zustellung schlimmer ist als eine ausgebliebene. Eine vom Modell erfundene
 Nummer kann damit nirgends gewählt werden — es gibt keinen Pfad, auf dem sie
 ankäme.
 
+**Das Briefing ist die Ausnahme, die die Regel bestätigt.** Bei
+`transfer_to_person` stammt der Briefing-Satz sehr wohl vom Modell — er ist ja
+die Zusammenfassung des Gesprächs. Deshalb landet er in `calls.transfer_briefing`
+und nicht im Query-Parameter der Briefing-URL: ein Parameter wäre ein Satz, den
+jemand mit einer gültigen Signatur frei wählen könnte. Gesprochen wird, was in
+der Zeile steht.
+
 ### Neue Sub-Workflows in Betrieb nehmen
 
-Der Deploy-Job in der CI legt bewusst nichts an. Die vier neuen Dateien haben
+Der Deploy-Job in der CI legt bewusst nichts an. Neue Dateien haben
 deshalb noch keine `norra.workflowId`. Lokal schließt `--create-missing` die
 Lücke:
 

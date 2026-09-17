@@ -42,7 +42,7 @@ nie hierher. Hierher gehört, was der Betreiber *sieht* und was ein Besucher
 
 | Pfad | Inhalt |
 |---|---|
-| `src/app/(console)/` | Root-Layout der Konsole, darunter `(admin)/` (acht Screens) und `(auth)/` (Login, Registrierung) |
+| `src/app/(console)/` | Root-Layout der Konsole, darunter `(admin)/` (elf Screens) und `(auth)/` (Login, Registrierung) |
 | `src/app/api/` | Proxy- und Webhook-Routen (Agent-Turn, Voice, Widget, Feedback) |
 | `src/app/widget/` | Das öffentliche Chat-Widget mit **eigenem Root-Layout**, läuft im Iframe auf Kundenseiten |
 | `src/styles/` | `base.css` (Tokens + Resets, beide Oberflächen), `console.css`, `widget.css` |
@@ -162,10 +162,12 @@ Grenze aussetzt, ist ein Ausfall, der dem Kunden Geld kostet.
 ### Tools am Telefon
 
 Der Katalog in `src/lib/tools.ts` trägt seit den Telefon-Tools ein Feld
-`channel`. Es ist keine Vorliebe, sondern eine Tatsache: die vier Tools
-`identify_caller`, `send_sms`, `schedule_callback` und `transfer_to_department`
-brauchen eine `call_id`, und eine Chat-Konversation hat keine. Der Agent-Editor
-zeigt sie deshalb in einer eigenen Karte.
+`channel`. Es ist keine Vorliebe, sondern eine Tatsache: die sechs Tools
+`identify_caller`, `send_sms`, `schedule_callback`, `transfer_to_department`,
+`take_message` und `transfer_to_person` brauchen eine `call_id`, und eine
+Chat-Konversation hat keine. Der Agent-Editor zeigt sie deshalb in einer eigenen
+Karte. `book_appointment` steht bewusst **nicht** darin: ein Termin lässt sich
+auch im Chat vereinbaren.
 
 Sie sind dort **nicht deaktiviert**, wenn dem Agenten noch keine Nummer
 zugewiesen ist — nur mit einem Hinweis versehen. Ein `disabled`-Feld wird vom
@@ -174,9 +176,9 @@ Speichern stillschweigend wieder entfernen.
 
 Bei `transfer_to_department` liegt die Absicherung in `/api/voice/turn`: das
 Modell liefert einen Abteilungs**namen**, die Route schlägt ihn in
-`phone_departments` nach und wählt nur eine dort hinterlegte Nummer. Warum das
-so und nicht anders geht, steht im Backend-`CLAUDE.md` unter „Was der Agent nie
-bestimmt".
+`phone_departments` nach und wählt nur eine dort hinterlegte Nummer. Dasselbe
+gilt für `transfer_to_person` gegen `staff_members`. Warum das so und nicht
+anders geht, steht im Backend-`CLAUDE.md` unter „Was der Agent nie bestimmt".
 
 ## Namenskonventionen
 
@@ -413,6 +415,43 @@ mit Echtzeit-Transkription. Dafür braucht es keine zusätzliche Infrastruktur
 und keine offene WebSocket-Verbindung — die Abwägung ist bewusst und der
 richtige Ort für eine spätere Änderung ist `voice-turn`, nicht die App.
 
+### Der Empfang
+
+Was einen Telefonassistenten von einer Ansage unterscheidet, ist, dass er
+jemanden im Haus erreicht. Der Screen *Empfang* pflegt dafür zwei Listen:
+**Personen** (`staff_members`) und die **Nachrichten**, die für sie aufgenommen
+wurden (`messages_for_staff`).
+
+Drei Dinge daran sind nicht offensichtlich:
+
+1. **Die Datenbank lässt keine unerreichbare Person zu.** Wer durchgestellt
+   werden soll, braucht eine Rufnummer; wer Nachrichten bekommen soll, braucht
+   Mail *oder* Nummer. Beides sind Check-Constraints, keine Formularprüfungen —
+   ein Formular kann man umgehen, die Zeile nicht. Im Screen heißt das: das
+   Häkchen „nimmt Anrufe an" ohne Nummer wird abgewiesen, nicht stillschweigend
+   ignoriert.
+2. **Durchstellen heißt Übergeben.** `transfer_to_person` schreibt einen
+   Briefing-Satz nach `calls.transfer_briefing`, und `<Dial><Number url="…">`
+   spielt ihn **nur der angerufenen Seite** vor, bevor die Leitungen
+   zusammengeschaltet werden. Der Unterschied zwischen einem Mitarbeiter, der
+   mit „Hallo?" abhebt, und einem, der weiß, wer dran ist und warum. Der Satz
+   steht in der Zeile und nicht im Query-Parameter der Briefing-URL — siehe
+   `/api/voice/briefing`.
+3. **Mitschnitt nur mit Ansage.** `phone_numbers.recording_enabled` lässt sich
+   ohne hinterlegte `recording_notice` gar nicht erst setzen; die Ansage läuft
+   dann **vor** der Begrüßung, auch vor dem Anrufbeantworter. In Deutschland ist
+   das Aufzeichnen des nicht öffentlich gesprochenen Worts ohne Einwilligung
+   strafbar (§ 201 StGB), und eine Einwilligung setzt voraus, dass jemand
+   vorher Bescheid weiß. Erzwungen wird das im Schema, nicht in der Route.
+
+Am Rand, aber aus demselben Geist: `gather()` nimmt **Sprache und Tastenfeld**
+an, und zwar als Vorgabe — `speechOnly` muss man ausdrücklich verlangen. Wer im
+Großraumbüro oder im Zug sitzt, kann oft gar nicht sprechen, und eine
+Kundennummer buchstabiert am Telefon niemand gern. Die Vorgabe steht deshalb auf
+der freizügigen Seite: eine vergessene Option ergibt den barrierearmen Fall,
+nicht den engen. Andersherum war es schon einmal, und prompt hatte ausgerechnet
+die Begrüßung kein Tastenfeld.
+
 ## Einstellungen
 
 Die Regel, nach der entschieden wird, wo eine Einstellung lebt:
@@ -462,7 +501,7 @@ Die vier End-to-End-Suiten bauen die App selbst und fahren sie gegen
 In-Memory-Stand-ins hoch:
 
 ```bash
-node tests/voice/run.mjs      # 26 Szenarien vom eingehenden Anruf bis zur Nachbereitung
+node tests/voice/run.mjs      # 37 Szenarien vom eingehenden Anruf bis zur Nachbereitung
 node tests/widget/run.mjs     # 13 Szenarien von der Session bis zur Bewertung
 node tests/simulate/run.mjs   # 12 Szenarien der Testfall-Simulation, als angemeldeter Admin
 node tests/console/run.mjs    # 17 Szenarien der Konsolen-Routen (Agent-Turn, Wissens-Ingest)

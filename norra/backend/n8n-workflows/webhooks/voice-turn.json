@@ -544,7 +544,7 @@
             {
               "id": "action",
               "name": "action",
-              "value": "={{ $('Voice Agent').item.json.intermediateSteps?.some(step => step.action?.tool === \"transfer_to_department\") || $json.status === \"escalated\" ? \"transfer\" : \"continue\" }}",
+              "value": "={{ $('Voice Agent').item.json.intermediateSteps?.some(step => [\"transfer_to_department\", \"transfer_to_person\"].includes(step.action?.tool)) || $json.status === \"escalated\" ? \"transfer\" : \"continue\" }}",
               "type": "string"
             },
             {
@@ -558,6 +558,18 @@
               "name": "transfer_to",
               "value": "={{ $('Voice Agent').item.json.intermediateSteps?.findLast(step => step.action?.tool === \"transfer_to_department\")?.action?.toolInput?.department ?? null }}",
               "type": "string"
+            },
+            {
+              "id": "transfer-to-person",
+              "name": "transfer_to_person",
+              "type": "string",
+              "value": "={{ $('Voice Agent').item.json.intermediateSteps?.findLast(step => step.action?.tool === \"transfer_to_person\")?.observation?.transfer_to_person ?? null }}"
+            },
+            {
+              "id": "briefing",
+              "name": "briefing",
+              "type": "string",
+              "value": "={{ $('Voice Agent').item.json.intermediateSteps?.findLast(step => step.action?.tool === \"transfer_to_person\")?.observation?.briefing ?? null }}"
             }
           ]
         }
@@ -1083,6 +1095,202 @@
           ]
         }
       }
+    },
+    {
+      "id": "voice-tool-9",
+      "name": "take_message",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        400
+      ],
+      "parameters": {
+        "description": "Nimm eine Nachricht fuer eine Person im Haus auf. Nutze das Tool, wenn der Anrufer jemandem etwas ausrichten lassen will oder die gewuenschte Person nicht erreichbar ist. Frag vorher nach dem Namen der Person UND danach, was genau ausgerichtet werden soll -- ohne beides lehnt das Tool ab. Sage keine Rueckmeldung zu; die Nachricht wird zugestellt, nicht beantwortet.",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "Norra – Tool: take_message"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "value": {
+            "organization_id": "={{ $('Normalize Request').item.json.organization_id }}",
+            "conversation_id": "={{ $('Normalize Request').item.json.conversation_id }}",
+            "agent_id": "={{ $('Normalize Request').item.json.agent_id }}",
+            "call_id": "={{ $('Normalize Request').item.json.call_id }}",
+            "person": "={{ $fromAI('person', 'Fuer wen die Nachricht ist, im Wortlaut des Anrufers, z. B. \"Frau Vogel\" oder \"Durchwahl 17\"', 'string') }}",
+            "caller_name": "={{ $fromAI('caller_name', 'Der Name des Anrufers, falls genannt. Sonst leer.', 'string') }}",
+            "body": "={{ $fromAI('body', 'Was ausgerichtet werden soll, in ein bis zwei Saetzen. Gib den Inhalt wieder, nicht deine Zusammenfassung des Gespraechs.', 'string') }}",
+            "urgency": "={{ $fromAI('urgency', 'Nur \"dringend\", wenn der Anrufer es ausdruecklich sagt. Sonst \"normal\".', 'string') }}"
+          },
+          "schema": [
+            {
+              "id": "organization_id",
+              "displayName": "organization_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "agent_id",
+              "displayName": "agent_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "call_id",
+              "displayName": "call_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "person",
+              "displayName": "person",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "caller_name",
+              "displayName": "caller_name",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "body",
+              "displayName": "body",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "urgency",
+              "displayName": "urgency",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "voice-tool-10",
+      "name": "transfer_to_person",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        560
+      ],
+      "parameters": {
+        "description": "Stelle zu einer Person im Haus durch. Nutze das Tool, wenn der Anrufer jemanden namentlich verlangt. Das Tool gibt dir den Namen zurueck, den es gefunden hat -- sage einen Namen also nie zu, bevor du die Antwort hast. Findet es die Person nicht, biete an, eine Nachricht aufzunehmen.",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "Norra – Tool: transfer_to_person"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "value": {
+            "organization_id": "={{ $('Normalize Request').item.json.organization_id }}",
+            "conversation_id": "={{ $('Normalize Request').item.json.conversation_id }}",
+            "agent_id": "={{ $('Normalize Request').item.json.agent_id }}",
+            "call_id": "={{ $('Normalize Request').item.json.call_id }}",
+            "person": "={{ $fromAI('person', 'Wen der Anrufer verlangt, im Wortlaut, z. B. \"Frau Vogel\" oder \"Durchwahl 17\"', 'string') }}",
+            "reason": "={{ $fromAI('reason', 'Worum es geht, in einem halben Satz. Der Mitarbeiter hoert das, bevor er verbunden wird -- der Anrufer nicht.', 'string') }}"
+          },
+          "schema": [
+            {
+              "id": "organization_id",
+              "displayName": "organization_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "agent_id",
+              "displayName": "agent_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "call_id",
+              "displayName": "call_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "person",
+              "displayName": "person",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reason",
+              "displayName": "reason",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      }
     }
   ],
   "connections": {
@@ -1274,6 +1482,28 @@
       ]
     },
     "book_appointment": {
+      "ai_tool": [
+        [
+          {
+            "node": "Voice Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "take_message": {
+      "ai_tool": [
+        [
+          {
+            "node": "Voice Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "transfer_to_person": {
       "ai_tool": [
         [
           {

@@ -89,6 +89,18 @@ export const TOOL_CATALOGUE = [
     channel: 'voice',
   },
   {
+    slug: 'take_message',
+    hint: 'Nachricht für eine Person im Haus aufnehmen und ihr zustellen — kein Rückruf, sondern der Inhalt',
+    config: [],
+    channel: 'voice',
+  },
+  {
+    slug: 'transfer_to_person',
+    hint: 'An eine Person aus dem Verzeichnis durchstellen, mit einem Satz Briefing vorab — die Nummer kommt aus dem Verzeichnis, nie vom Agenten',
+    config: [],
+    channel: 'voice',
+  },
+  {
     slug: 'book_appointment',
     hint: 'Termin im Kalender eintragen — prüft erst die Verfügbarkeit, sagt nichts zu, was belegt ist',
     config: [

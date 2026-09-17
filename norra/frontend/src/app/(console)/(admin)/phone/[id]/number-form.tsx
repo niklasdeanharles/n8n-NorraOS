@@ -206,9 +206,23 @@ export function NumberForm({
             <span>
               Gespräche aufzeichnen
               <span className="field-hint" style={{ display: 'block' }}>
-                In Deutschland brauchst du dafür die Einwilligung des Anrufers. Die Ansage dafür gehört in die
-                Begrüßung.
+                Geht nur mit Ansage darunter. Ohne sie lässt die Datenbank es nicht zu.
               </span>
+            </span>
+          </label>
+          <label>
+            Ansage vor dem Mitschnitt
+            <input
+              name="recordingNotice"
+              defaultValue={number.recording_notice ?? ''}
+              maxLength={500}
+              placeholder="Dieses Gespräch wird zur Qualitätssicherung aufgezeichnet."
+            />
+            <span className="field-hint">
+              Wird als Erstes gesprochen, noch vor der Begrüßung — nach dem ersten Satz des Anrufers
+              wäre sie zu spät. In Deutschland ist der Mitschnitt des nicht öffentlich gesprochenen
+              Wortes ohne Einwilligung strafbar (§ 201 StGB), und eine Einwilligung setzt voraus,
+              dass jemand vorher Bescheid weiß.
             </span>
           </label>
         </div>

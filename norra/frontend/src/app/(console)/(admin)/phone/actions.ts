@@ -77,6 +77,7 @@ const saveSchema = z.object({
   voicemailMessage: z.string().max(2000),
   maxCallSeconds: z.coerce.number().int().min(30).max(3600),
   recordingEnabled: z.boolean(),
+  recordingNotice: z.string().trim().max(500),
   afterHours: z.enum(['agent', 'voicemail', 'transfer', 'reject']),
   timezone: z.string().trim().min(1).max(64),
 });
@@ -94,6 +95,7 @@ export async function savePhoneNumber(_prev: PhoneFormState, formData: FormData)
     voicemailMessage: formData.get('voicemailMessage') ?? '',
     maxCallSeconds: formData.get('maxCallSeconds'),
     recordingEnabled: formData.get('recordingEnabled') === 'on',
+    recordingNotice: String(formData.get('recordingNotice') ?? ''),
     afterHours: formData.get('afterHours'),
     timezone: formData.get('timezone'),
   });
@@ -131,6 +133,20 @@ export async function savePhoneNumber(_prev: PhoneFormState, formData: FormData)
     .eq('id', input.id)
     .single();
 
+
+  // Dieselbe Regel wie in der Datenbank, hier mit einem Satz statt einem
+  // Constraint-Namen. Die Datenbank bleibt die Instanz, die entscheidet.
+  if (input.recordingEnabled && !input.recordingNotice) {
+    return {
+      error:
+        'Ohne Ansage kein Mitschnitt. In Deutschland ist es strafbar, ein Gespräch ohne ' +
+        'Einwilligung aufzuzeichnen — und eine Einwilligung setzt voraus, dass der Anrufer ' +
+        'vorher Bescheid weiß.',
+    };
+  }
+  if (input.recordingNotice && input.recordingNotice.length < 10) {
+    return { error: 'Eine Ansage, die zu kurz ist, um irgendetwas zu erklären, ist keine.' };
+  }
   const { error } = await supabase
     .from('phone_numbers')
     .update({
@@ -144,6 +160,7 @@ export async function savePhoneNumber(_prev: PhoneFormState, formData: FormData)
       voicemail_message: input.voicemailMessage || null,
       max_call_seconds: input.maxCallSeconds,
       recording_enabled: input.recordingEnabled,
+      recording_notice: input.recordingNotice || null,
       after_hours: input.afterHours,
       timezone: input.timezone,
       business_hours: hours,

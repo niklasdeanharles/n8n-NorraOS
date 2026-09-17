@@ -55,7 +55,8 @@ function seed(overrides = {}) {
       id: 'pn-1', organization_id: ORG, e164: NUMBER, label: 'Zentrale', provider: 'twilio',
       agent_id: AGENT, greeting: 'Guten Tag, hier ist Lumen Energie.', voice: 'Polly.Vicki-Neural',
       language: 'de-DE', transfer_number: '+4930999888777', voicemail_message: null,
-      max_call_seconds: 600, recording_enabled: false, business_hours: {}, timezone: 'Europe/Berlin',
+      max_call_seconds: 600, recording_enabled: false, recording_notice: null,
+      business_hours: {}, timezone: 'Europe/Berlin',
       after_hours: 'agent', status: 'active', last_call_at: null, ...numberOverrides,
     }],
     conversations: [], calls: [], messages: [], tickets: [], contacts: [], callbacks: [],
@@ -73,6 +74,15 @@ function seed(overrides = {}) {
       display_name: 'A. Beispiel', context: {}, outcome: 'pending', attempts: 1,
       next_attempt_at: null, last_attempt_at: null, last_call_id: null, contact_id: null,
     }],
+    staff_members: [
+      { id: 'staff-1', organization_id: ORG, name: 'Frau Vogel', role: 'Großkunden',
+        e164: '+4930111222333', extension: '17', email: 'vogel@lumen.test', note: null,
+        accepts_transfers: true, accepts_messages: true, active: true },
+      { id: 'staff-2', organization_id: ORG, name: 'Herr Kern', role: 'Geschäftsführung',
+        e164: null, extension: '10', email: 'kern@lumen.test', note: null,
+        accepts_transfers: false, accepts_messages: true, active: true },
+    ],
+    messages_for_staff: [],
     phone_departments: [
       { id: 'dep-1', organization_id: ORG, name: 'Buchhaltung', e164: '+493011111111',
         description: 'Rechnungen und Mahnungen', active: true },
@@ -471,6 +481,77 @@ await scenario('Nach erkanntem Band wird kein Agentenlauf mehr gestartet', async
   check('legt auf', xml.includes('<Hangup/>'), xml.slice(0, 120));
   check('kein Agentenlauf', n8n.seen.length === before, `${n8n.seen.length - before} Aufrufe`);
   check('Grund festgehalten', store.calls[0].ended_reason === 'answering_machine', store.calls[0].ended_reason);
+  await n8n.stop();
+});
+
+await scenario('Das Tastenfeld nimmt Ziffern an, nicht nur Sprache', async () => {
+  seed();
+  const res = await post('/api/voice/incoming', { To: NUMBER, From: '+49176', CallSid: 'CA-dtmf' });
+  const gather = (await res.text()).match(/<Gather[^>]*>/)?.[0] ?? '';
+  // Eine Kundennummer buchstabiert am Telefon niemand gern, und wer im Zug
+  // sitzt, kann oft gar nicht sprechen.
+  check('Gather nimmt speech und dtmf', /input="speech dtmf"/.test(gather), gather);
+  check('mit Abschlusstaste', /finishOnKey="#"/.test(gather), gather);
+});
+
+await scenario('Ohne Ansage wird nichts angekündigt', async () => {
+  seed();
+  const xml = await (await post('/api/voice/incoming', { To: NUMBER, From: '+49176', CallSid: 'CA-norec' })).text();
+  check('keine Aufnahme-Ansage', !xml.includes('aufgezeichnet'), xml.slice(0, 200));
+});
+
+await scenario('Mit Mitschnitt kommt die Ansage vor der Begrüßung', async () => {
+  seed({ recording_enabled: true, recording_notice: 'Dieses Gespräch wird aufgezeichnet.' });
+  const xml = await (await post('/api/voice/incoming', { To: NUMBER, From: '+49176', CallSid: 'CA-rec' })).text();
+  const notice = xml.indexOf('Dieses Gespräch wird aufgezeichnet.');
+  const greeting = xml.indexOf('Guten Tag, hier ist Lumen Energie.');
+  check('Ansage vorhanden', notice >= 0, xml.slice(0, 200));
+  // Nach dem ersten Satz des Anrufers wäre sie zu spät.
+  check('Ansage steht vor der Begrüßung', notice >= 0 && greeting > notice, `${notice} vs ${greeting}`);
+});
+
+await scenario('An eine Person durchstellen: Briefing nur für den Mitarbeiter', async () => {
+  seed();
+  n8n = await startN8n(54322, {
+    reply: 'Ich verbinde Sie mit Frau Vogel.',
+    action: 'transfer',
+    transfer_to_person: 'Frau Vogel',
+    briefing: 'Anruf von plus vier neun. Es geht um eine Rechnung.',
+  });
+  await post('/api/voice/incoming', { To: NUMBER, From: '+4915112345678', CallSid: 'CA-person' });
+  const callId = store.calls[0].id;
+  const xml = await (await post(`/api/voice/turn?call=${callId}`, { CallSid: 'CA-person', SpeechResult: 'Ich möchte zu Frau Vogel' })).text();
+
+  check('an die Nummer aus dem Verzeichnis', xml.includes('+4930111222333'), xml.slice(0, 300));
+  // Der Anrufer wartet im Freizeichen; das Briefing holt Twilio über die URL.
+  check('über Number mit Briefing-URL', /<Number url="[^"]*\/api\/voice\/briefing\?call=/.test(xml), xml.slice(0, 300));
+  check('Briefing nicht im gesprochenen Text', !xml.includes('Es geht um eine Rechnung'), xml.slice(0, 300));
+  check('Briefing an der Anrufzeile', store.calls[0].transfer_briefing === 'Anruf von plus vier neun. Es geht um eine Rechnung.');
+  check('als Personen-Transfer vermerkt', store.calls[0].ended_reason === 'person:Frau Vogel', store.calls[0].ended_reason);
+  await n8n.stop();
+});
+
+await scenario('Die Briefing-Route liest den Satz aus der Zeile, nicht aus der URL', async () => {
+  const callId = store.calls[0].id;
+  const xml = await (await post(`/api/voice/briefing?call=${callId}`, { CallSid: 'CA-person' })).text();
+  check('Briefing wird gesprochen', xml.includes('Es geht um eine Rechnung'), xml);
+  check('kein Gather, nur die Ansage', !xml.includes('<Gather'), xml);
+});
+
+await scenario('Wer keine Anrufe annimmt, wird nicht durchgestellt', async () => {
+  seed();
+  n8n = await startN8n(54322, {
+    reply: 'Ich verbinde Sie mit Herrn Kern.',
+    action: 'transfer',
+    transfer_to_person: 'Herr Kern',
+  });
+  await post('/api/voice/incoming', { To: NUMBER, From: '+49176', CallSid: 'CA-kern' });
+  const callId = store.calls[0].id;
+  const xml = await (await post(`/api/voice/turn?call=${callId}`, { CallSid: 'CA-kern', SpeechResult: 'Zu Herrn Kern bitte' })).text();
+  // Herr Kern hat accepts_transfers = false und gar keine Rufnummer. Statt zu
+  // scheitern fällt die Route auf die Zentrale zurück.
+  check('nicht an eine erfundene Nummer', !xml.includes('staff-2'), xml.slice(0, 200));
+  check('stattdessen die Zentrale', xml.includes('+4930999888777'), xml.slice(0, 200));
   await n8n.stop();
 });
 

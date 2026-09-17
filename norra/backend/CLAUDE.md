@@ -154,7 +154,7 @@ und aus echtem Grund: dort **ist** `id` der Mandant.
 
 Am Telefon gibt es keine Sitzung, keinen Login, keine Seite zum Nachschlagen.
 Der Agent bekommt dort mehr Macht als im Chat — und genau deshalb gilt für alle
-vier Telefon-Tools dieselbe Regel:
+Telefon-Tools dieselbe Regel:
 
 > **Das Modell bestimmt die Worte, nie das Ziel.**
 
@@ -166,6 +166,9 @@ Konkret heißt das:
 | `send_sms` | den Text | `calls.from_e164` als Empfänger, `calls.to_e164` als Absender |
 | `schedule_callback` | Grund und Zeitwunsch | `calls.from_e164` als Rückrufnummer |
 | `transfer_to_department` | einen Abteilungs**namen** | `phone_departments.e164`, nachgeschlagen in `/api/voice/turn` |
+| `transfer_to_person` | einen Personen**namen** und einen Briefing-Satz | `staff_members.e164`, nachgeschlagen in `/api/voice/turn` |
+| `take_message` | Namen des Empfängers und den Text | `staff_members`, aufgelöst im Sub-Workflow; bei zwei Treffern wird abgelehnt |
+| `book_appointment` | Wunschzeit und Anlass | `agents.tools.book_appointment.calendar_id` — das Modell nennt nie einen Kalender |
 
 Bei der Weiterleitung ist das nicht Vorsicht, sondern notwendig: läge die Nummer
 irgendwo im Kontext des Modells, könnte ein präparierter Text im
@@ -175,8 +178,23 @@ Pfad, auf dem eine Rufnummer aus dem Modell in ein `<Dial>` gelangt. Der
 Sub-Workflow gibt einen Namen zurück, die Route schlägt ihn nach, und ein Name
 ohne Zeile in der Tabelle führt zu keiner Verbindung.
 
-Die Szenarien `Eine erfundene Nummer wird niemals gewählt` und `Eine pausierte
-Abteilung nimmt keine Anrufe` in `tests/voice/scenarios.mjs` halten das fest.
+Beim Auflösen eines **Namens** kommt eine zweite Regel dazu, die es bei
+Abteilungen nicht braucht: Namen sind mehrdeutig. Der Matcher versucht vier
+Stufen — exakt, Durchwahl, Nachname, enthalten — und **lehnt ab, sobald eine
+Stufe mehr als einen Treffer hat**. Zwei Kolleginnen namens Schmidt führen dazu,
+dass der Agent nachfragt; sie führen nicht dazu, dass eine von beiden eine
+fremde Nachricht bekommt. Eine falsche Zustellung ist schlimmer als eine
+ausgebliebene.
+
+Der Briefing-Satz bei `transfer_to_person` ist die eine Stelle, an der Text aus
+dem Modell die Route verlässt — er ist ja die Zusammenfassung des Gesprächs.
+Deshalb liegt er in `calls.transfer_briefing` und nicht im Query-Parameter der
+Briefing-URL: ein Parameter wäre ein Satz, den jemand mit einer gültigen
+Signatur frei wählen könnte.
+
+Die Szenarien `Eine erfundene Nummer wird niemals gewählt`, `Eine pausierte
+Abteilung nimmt keine Anrufe` und `Wer keine Anrufe annimmt, wird nicht
+durchgestellt` in `tests/voice/scenarios.mjs` halten das fest.
 
 ### Ordnung auf der Instanz
 

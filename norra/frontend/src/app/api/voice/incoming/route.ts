@@ -32,7 +32,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   const { data: number } = await supabase
     .from('phone_numbers')
     .select(`id, organization_id, agent_id, greeting, voice, language, status, transfer_number,
-             voicemail_message, max_call_seconds, recording_enabled, business_hours, timezone,
+             voicemail_message, max_call_seconds, recording_enabled, recording_notice, business_hours, timezone,
              after_hours, e164, agent:agents(voice_config)`)
     .eq('e164', to)
     .maybeSingle();
@@ -51,6 +51,23 @@ export async function POST(request: NextRequest): Promise<Response> {
   const voice = { voice: number.voice, language: number.language };
   const open = isOpen(parseBusinessHours(number.business_hours), number.timezone);
 
+  /**
+   * Der Hinweis vor dem Mitschnitt.
+   *
+   * In Deutschland ist es strafbar, das nicht öffentlich gesprochene Wort ohne
+   * Einwilligung aufzuzeichnen (§ 201 StGB), und eine Einwilligung setzt
+   * voraus, dass jemand vorher Bescheid weiß. Die Datenbank lässt
+   * `recording_enabled` deshalb gar nicht erst ohne hinterlegte Ansage zu; hier
+   * wird sie gesprochen.
+   *
+   * Sie steht **vor** allem anderen, auch vor der Begrüßung: nach dem ersten
+   * Satz des Anrufers wäre sie zu spät.
+   */
+  const notice =
+    number.recording_enabled && number.recording_notice
+      ? say(number.recording_notice, voice)
+      : '';
+
   if (!open && number.after_hours !== 'agent') {
     if (number.after_hours === 'reject') return twiml(reject());
     if (number.after_hours === 'transfer' && number.transfer_number) {
@@ -59,8 +76,12 @@ export async function POST(request: NextRequest): Promise<Response> {
       );
     }
     // Voicemail. The recording is picked up by the recording callback.
+    //
+    // Hier ist die Ansage kein Formalismus: der Anrufer spricht gleich auf
+    // Band, und zwar ohne dass jemand mithört, der ihn darauf hinweisen könnte.
     return twiml(
-      say(number.voicemail_message || 'Wir sind gerade nicht erreichbar. Bitte hinterlassen Sie eine Nachricht.', voice) +
+      notice +
+        say(number.voicemail_message || 'Wir sind gerade nicht erreichbar. Bitte hinterlassen Sie eine Nachricht.', voice) +
         record({ action: callbackUrl('/api/voice/recording'), maxLength: 180 }),
     );
   }
@@ -132,6 +153,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   const greeting = number.greeting.trim() || DEFAULT_GREETING;
   return twiml(
+    notice +
     gather({
       action: callbackUrl('/api/voice/turn', { call: call.id }),
       language: number.language,
