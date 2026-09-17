@@ -5,7 +5,10 @@ import { usePathname } from 'next/navigation';
 
 const SECTIONS: Array<{ label: string; items: Array<{ href: string; icon: string; text: string }> }> = [
   {
-    label: 'Betrieb',
+    // Nicht „Betrieb": darunter steht in der dritten Gruppe ein Screen dieses
+    // Namens, und eine Sektionsüberschrift, die genauso heißt wie ein Eintrag
+    // woanders, liest sich wie ein Fehler.
+    label: 'Tagesgeschäft',
     items: [
       { href: '/dashboard', icon: '◱', text: 'Dashboard' },
       { href: '/conversations', icon: '◐', text: 'Chat' },
