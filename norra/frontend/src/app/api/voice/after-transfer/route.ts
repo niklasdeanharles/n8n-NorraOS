@@ -2,6 +2,7 @@ import type { NextRequest } from 'next/server';
 import { callbackUrl, verifyWebhook } from '@/lib/voice/session';
 import { gather, hangup, say, twiml } from '@/lib/voice/twilio';
 import { hintsFrom } from '@/lib/voice/keyterms';
+import { voiceFor } from '@/lib/voice/languages';
 
 /**
  * Was passiert, nachdem durchgestellt wurde — und was, wenn niemand abnimmt.
@@ -30,7 +31,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   const { data: call } = await supabase
     .from('calls')
-    .select('id, organization_id, conversation_id, phone_number_id, transferred_to, agent:agents(voice_config)')
+    .select('id, organization_id, conversation_id, phone_number_id, transferred_to, language, voice, agent:agents(voice_config)')
     .eq('id', callId)
     .maybeSingle();
 
@@ -40,7 +41,10 @@ export async function POST(request: NextRequest): Promise<Response> {
     .eq('id', call?.phone_number_id ?? '')
     .maybeSingle();
 
-  const voice = { voice: number?.voice ?? 'alice', language: number?.language ?? 'de-DE' };
+  // Wurde das Gespräch auf Englisch geführt, kommt auch die Nachfrage auf
+  // Englisch. Ein Rückfall auf die Vorgabe der Leitung wäre genau hier am
+  // auffälligsten: der Anrufer wartet, und dann spricht ihn jemand anders an.
+  const voice = voiceFor(call ?? null, number);
   const status = params.DialCallStatus ?? '';
 
   // Verbunden und wieder aufgelegt: hier ist nichts mehr zu tun. Die Zeile

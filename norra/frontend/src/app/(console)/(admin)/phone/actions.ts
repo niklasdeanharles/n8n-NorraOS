@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { currentActor, recordAudit } from '@/lib/audit';
 import { createClient } from '@/lib/supabase/server';
 import { WEEK } from '@/lib/voice/hours';
+import { isKnownLanguage, languageLabel, voiceFits } from '@/lib/voice/languages';
 
 export type PhoneFormState = { error: string | null; ok?: string };
 
@@ -437,4 +438,103 @@ export async function removeClosure(_prev: PhoneFormState, formData: FormData): 
 
   revalidatePath('/phone');
   return { error: null, ok: 'Entfernt. Die Leitungen nehmen an diesen Tagen wieder an.' };
+}
+
+// ----------------------------------------------------------------- Sprachen
+
+const languageSchema = z.object({
+  phoneNumberId: z.string().uuid('Unbekannte Nummer.'),
+  code: z.string().trim().refine(isKnownLanguage, 'Diese Sprache steht nicht im Katalog.'),
+  voice: z.string().trim().min(1, 'Stimme fehlt.'),
+});
+
+/**
+ * Eine zusätzliche Sprache für eine Leitung.
+ *
+ * Zweimal geprüft, und das mit Absicht: hier gegen den Katalog in
+ * `lib/voice/languages.ts`, damit Code und Stimme zusammenpassen, und im
+ * Anrufpfad noch einmal gegen diese Tabelle. Das Formular entscheidet, was
+ * eingetragen werden *darf*; `/api/voice/turn` entscheidet, was gesprochen
+ * *wird*. Wer nur die erste Prüfung hätte, verließe sich darauf, dass der
+ * einzige Weg in diese Tabelle durch dieses Formular führt — und n8n läuft mit
+ * `service_role`.
+ */
+export async function addLanguage(_prev: PhoneFormState, formData: FormData): Promise<PhoneFormState> {
+  const parsed = languageSchema.safeParse({
+    phoneNumberId: formData.get('phoneNumberId'),
+    code: formData.get('code'),
+    voice: formData.get('voice'),
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Eingabe ungültig.' };
+
+  // Eine deutsche Stimme, die Englisch liest, klingt wie eine Parodie. Die
+  // Datenbank kann das nicht wissen — der Katalog schon.
+  if (!voiceFits(parsed.data.code, parsed.data.voice)) {
+    return { error: 'Diese Stimme gehört nicht zu dieser Sprache.' };
+  }
+
+  const supabase = await createClient();
+  const actor = await currentActor(supabase);
+  if (!actor) return { error: 'Nicht angemeldet.' };
+  if (actor.role !== 'admin') return { error: 'Nur Admins können Sprachen freischalten.' };
+
+  const { error } = await supabase.from('phone_languages').insert({
+    organization_id: actor.organizationId,
+    phone_number_id: parsed.data.phoneNumberId,
+    code: parsed.data.code,
+    voice: parsed.data.voice,
+    created_by: actor.id,
+  });
+  if (error) {
+    if (error.code === '23505') return { error: 'Diese Sprache ist für diese Nummer schon freigeschaltet.' };
+    return { error: error.message };
+  }
+
+  await recordAudit(supabase, {
+    organizationId: actor.organizationId,
+    actorId: actor.id,
+    actorLabel: actor.label,
+    action: 'create',
+    entityType: 'phone_language',
+    entityId: parsed.data.phoneNumberId,
+    entityLabel: `${languageLabel(parsed.data.code)} (${parsed.data.code})`,
+  });
+
+  revalidatePath(`/phone/${parsed.data.phoneNumberId}`);
+  return {
+    error: null,
+    ok: `${languageLabel(parsed.data.code)} freigeschaltet. Der Agent darf ab dem nächsten Anruf dorthin wechseln.`,
+  };
+}
+
+export async function removeLanguage(_prev: PhoneFormState, formData: FormData): Promise<PhoneFormState> {
+  const id = z.string().uuid().safeParse(formData.get('id'));
+  if (!id.success) return { error: 'Unbekannte Sprache.' };
+
+  const supabase = await createClient();
+  const actor = await currentActor(supabase);
+  if (!actor) return { error: 'Nicht angemeldet.' };
+  if (actor.role !== 'admin') return { error: 'Nur Admins können Sprachen entfernen.' };
+
+  const { data: before } = await supabase
+    .from('phone_languages')
+    .select('code, phone_number_id')
+    .eq('id', id.data)
+    .maybeSingle();
+
+  const { error } = await supabase.from('phone_languages').delete().eq('id', id.data);
+  if (error) return { error: error.message };
+
+  await recordAudit(supabase, {
+    organizationId: actor.organizationId,
+    actorId: actor.id,
+    actorLabel: actor.label,
+    action: 'delete',
+    entityType: 'phone_language',
+    entityId: id.data,
+    entityLabel: before ? languageLabel(before.code) : id.data,
+  });
+
+  if (before?.phone_number_id) revalidatePath(`/phone/${before.phone_number_id}`);
+  return { error: null, ok: 'Entfernt. Der Agent bietet diese Sprache nicht mehr an.' };
 }

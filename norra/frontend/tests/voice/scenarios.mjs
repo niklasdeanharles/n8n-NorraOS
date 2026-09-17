@@ -49,7 +49,7 @@ function seed(overrides = {}) {
   // Die Stimm-Konfiguration hängt am Agenten, alles übrige an der Nummer. Ohne
   // das Auseinandernehmen landete sie in beiden Zeilen, und der Test bewiese
   // nicht mehr, von wo die Route sie tatsächlich liest.
-  const { voice_config: voiceConfig = {}, campaign_status: _status, closure_days: _closures, ...numberOverrides } = overrides;
+  const { voice_config: voiceConfig = {}, campaign_status: _status, closure_days: _closures, phone_languages: _languages, ...numberOverrides } = overrides;
   reset({
     phone_numbers: [{
       id: 'pn-1', organization_id: ORG, e164: NUMBER, label: 'Zentrale', provider: 'twilio',
@@ -84,6 +84,7 @@ function seed(overrides = {}) {
     ],
     messages_for_staff: [],
     closure_days: overrides.closure_days ?? [],
+    phone_languages: overrides.phone_languages ?? [],
     phone_departments: [
       { id: 'dep-1', organization_id: ORG, name: 'Buchhaltung', e164: '+493011111111',
         description: 'Rechnungen und Mahnungen', active: true },
@@ -721,6 +722,122 @@ await scenario('Antwortet der Agent trotzdem, erfährt er vom Schließtag', asyn
   const sent = n8n.seen[0]?.body?.history ?? [];
   check('n8n bekommt die Notiz', sent.some((m) => m.role === 'system' && m.content.includes('Tag der Deutschen Einheit')), JSON.stringify(sent));
   await n8n.stop();
+});
+
+// ------------------------------------------------------------- Sprachwechsel
+
+const ENGLISH = {
+  id: 'pl-1', organization_id: ORG, phone_number_id: 'pn-1',
+  code: 'en-US', voice: 'Polly.Joanna-Neural',
+};
+
+await scenario('Der Agent erfaehrt, welche Sprachen die Leitung spricht', async () => {
+  seed({ phone_languages: [ENGLISH] });
+  await post('/api/voice/incoming', { To: NUMBER, From: '+49176', CallSid: 'CA-lang-note' });
+  const note = store.messages.find((message) => message.role === 'system');
+  check('eine Notiz in der Historie', Boolean(note), JSON.stringify(store.messages));
+  check('mit dem Code', (note?.content ?? '').includes('en-US'), note?.content);
+  check('und der Vorgabe der Leitung', (note?.content ?? '').includes('de-DE'), note?.content);
+});
+
+await scenario('Ohne zusaetzliche Sprache gibt es keine Notiz', async () => {
+  seed({ phone_languages: [] });
+  await post('/api/voice/incoming', { To: NUMBER, From: '+49176', CallSid: 'CA-lang-none' });
+  check('keine Notiz', !store.messages.some((m) => m.role === 'system'), JSON.stringify(store.messages));
+});
+
+await scenario('Der Agent darf auf eine freigeschaltete Sprache wechseln', async () => {
+  seed({ phone_languages: [ENGLISH] });
+  n8n = await startN8n(54322, { reply: 'Of course, how can I help?', action: 'continue', language: 'en-US' });
+  await post('/api/voice/incoming', { To: NUMBER, From: '+49176', CallSid: 'CA-lang-ok' });
+  const callId = store.calls[0].id;
+  const xml = await (await post(`/api/voice/turn?call=${callId}`, { CallSid: 'CA-lang-ok', SpeechResult: 'Do you speak English?' })).text();
+
+  // Schon dieser Zug, nicht erst der naechste: der englische Satz soll nicht
+  // mit deutscher Stimme vorgelesen werden.
+  check('Say auf Englisch', /<Say voice="Polly.Joanna-Neural" language="en-US"/.test(xml), xml.slice(0, 400));
+  check('Gather erkennt Englisch', /<Gather[^>]*language="en-US"/.test(xml), xml.slice(0, 400));
+  check('am Anruf vermerkt', store.calls[0].language === 'en-US', String(store.calls[0].language));
+  check('mit der Stimme dazu', store.calls[0].voice === 'Polly.Joanna-Neural', String(store.calls[0].voice));
+  await n8n.stop();
+});
+
+/**
+ * Die eigentliche Zusage.
+ *
+ * Der Sprachcode geht direkt in ein TwiML-Attribut. Wuerde er uebernommen
+ * statt nachgeschlagen, koennte ein praepariertes Wissensdokument oder ein
+ * geschickter Anrufersatz ihn setzen -- und der Anbieter bricht den Anruf mit
+ * einem Fehler ab. Dieselbe Regel wie beim Durchstellen: das Modell nennt
+ * einen Namen, die Route schlaegt ihn nach.
+ */
+await scenario('Eine nicht freigeschaltete Sprache wird nicht gesprochen', async () => {
+  seed({ phone_languages: [ENGLISH] });
+  n8n = await startN8n(54322, { reply: 'Bien sur.', action: 'continue', language: 'fr-FR' });
+  await post('/api/voice/incoming', { To: NUMBER, From: '+49176', CallSid: 'CA-lang-bad' });
+  const callId = store.calls[0].id;
+  const xml = await (await post(`/api/voice/turn?call=${callId}`, { CallSid: 'CA-lang-bad', SpeechResult: 'Parlez-vous francais?' })).text();
+
+  check('kein fr-FR im TwiML', !xml.includes('fr-FR'), xml.slice(0, 400));
+  check('weiterhin die Sprache der Leitung', /language="de-DE"/.test(xml), xml.slice(0, 400));
+  check('nichts am Anruf vermerkt', store.calls[0].language === null || store.calls[0].language === undefined, String(store.calls[0].language));
+  // Der Satz wird trotzdem gesprochen -- nur eben mit der bisherigen Stimme.
+  // Den Anruf abzubrechen waere die schlechtere Reaktion auf einen Fehler des
+  // Modells.
+  check('die Antwort kommt trotzdem', xml.includes('Bien sur'), xml.slice(0, 400));
+  await n8n.stop();
+});
+
+await scenario('Zurueck auf die Sprache der Leitung ist immer erlaubt', async () => {
+  seed({ phone_languages: [ENGLISH] });
+  n8n = await startN8n(54322, (callNumber) =>
+    callNumber === 1
+      ? { reply: 'Of course.', action: 'continue', language: 'en-US' }
+      : { reply: 'Gerne, dann auf Deutsch.', action: 'continue', language: 'de-DE' },
+  );
+  await post('/api/voice/incoming', { To: NUMBER, From: '+49176', CallSid: 'CA-lang-back' });
+  const callId = store.calls[0].id;
+  await post(`/api/voice/turn?call=${callId}`, { CallSid: 'CA-lang-back', SpeechResult: 'English please' });
+  check('erst englisch', store.calls[0].language === 'en-US', String(store.calls[0].language));
+
+  const xml = await (await post(`/api/voice/turn?call=${callId}`, { CallSid: 'CA-lang-back', SpeechResult: 'Doch lieber Deutsch' })).text();
+  check('wieder deutsch im TwiML', /<Say voice="Polly.Vicki-Neural" language="de-DE"/.test(xml), xml.slice(0, 400));
+  // Zurueckgenommen heisst null, nicht „de-DE eingetragen": die Vorgabe der
+  // Leitung soll weiter gelten, auch wenn sie jemand spaeter aendert.
+  check('die Ausnahme ist zurueckgenommen', store.calls[0].language === null, String(store.calls[0].language));
+  await n8n.stop();
+});
+
+/**
+ * Der unauffaellige Rueckfall.
+ *
+ * Nach einem gescheiterten Durchstellen fragt `/api/voice/after-transfer` nach.
+ * Laese sie die Sprache von der Leitung statt vom Anruf, spraeche der Anrufer
+ * eben noch Englisch -- und wuerde dann auf Deutsch angesprochen, waehrend er
+ * im Freizeichen wartet.
+ */
+await scenario('Auch die Nachfrage nach dem Durchstellen bleibt in der Sprache', async () => {
+  seed({ phone_languages: [ENGLISH] });
+  n8n = await startN8n(54322, {
+    reply: 'I will put you through to Frau Vogel.',
+    action: 'transfer',
+    transfer_to_person: 'Frau Vogel',
+    briefing: 'English caller, asking about an invoice.',
+    language: 'en-US',
+  });
+  await post('/api/voice/incoming', { To: NUMBER, From: '+49176', CallSid: 'CA-lang-transfer' });
+  const callId = store.calls[0].id;
+  await post(`/api/voice/turn?call=${callId}`, { CallSid: 'CA-lang-transfer', SpeechResult: 'Can I speak to Mrs Vogel?' });
+  await n8n.stop();
+
+  const briefing = await (await post(`/api/voice/briefing?call=${callId}`, { CallSid: 'CA-lang-transfer' })).text();
+  check('das Briefing spricht Englisch', /language="en-US"/.test(briefing), briefing.slice(0, 300));
+
+  const after = await (await post(`/api/voice/after-transfer?call=${callId}`, {
+    CallSid: 'CA-lang-transfer', DialCallStatus: 'no-answer',
+  })).text();
+  check('die Nachfrage auch', /<Gather[^>]*language="en-US"/.test(after), after.slice(0, 300));
+  check('und die Stimme dazu', after.includes('Polly.Joanna-Neural'), after.slice(0, 300));
 });
 
 console.log(`\n${results.length} Szenarien, ${failures} Fehler`);

@@ -500,6 +500,47 @@ der freizügigen Seite: eine vergessene Option ergibt den barrierearmen Fall,
 nicht den engen. Andersherum war es schon einmal, und prompt hatte ausgerechnet
 die Begrüßung kein Tastenfeld.
 
+### Wenn der Anrufer eine andere Sprache spricht
+
+Die Sprache hing an der Leitung und galt für den ganzen Anruf. Ein Empfang, der
+nur eine Sprache kann, schickt jeden anderen weg — mit einem Satz, den dieser
+Mensch nicht versteht.
+
+`phone_languages` sagt je Leitung, welche Sprachen sie außerdem annimmt und mit
+welcher Stimme. Der Wechsel läuft nach derselben Regel wie das Durchstellen:
+
+> **Das Modell nennt einen Code, die Route schlägt ihn nach.**
+
+Das Feld `language` in der Agent-Antwort ist eine *Bitte*, keine Anweisung. Was
+nicht in `phone_languages` steht, wird nicht gesprochen — der Wert geht direkt
+in ein TwiML-Attribut, und eine erfundene Zeichenkette dort ist beim Anbieter
+ein Fehler, der den Anruf beendet. Eine abgelehnte Sprache beendet hier
+dagegen nichts: der Satz wird gesprochen, nur in der bisherigen Sprache.
+
+Vier Dinge, die nicht offensichtlich sind:
+
+- **Der Wechsel greift im selben Zug.** Die Antwort auf den englischen Satz soll
+  englisch klingen, nicht erst die übernächste. Deshalb steht die Auflösung vor
+  dem `say(parsed.reply, …)` und `voice` ist ein `let`.
+- **Zurück auf die Vorgabe ist immer erlaubt** und setzt `calls.language` auf
+  `null`, nicht auf den Code der Leitung. Ändert jemand später die Sprache der
+  Nummer, gilt die neue — ein eingetragener Code wäre eingefroren.
+- **`language` und `voice` sind nur zusammen gesetzt**, erzwungen per
+  Check-Constraint. Eine Stimme ohne Sprache wäre eine halbe Umschaltung:
+  gesprochen würde anders, erkannt weiterhin wie vorher.
+- **Drei Routen brauchen dieselbe Antwort** — `turn`, `briefing`,
+  `after-transfer`. Sie teilen sich `voiceFor()` in `lib/voice/languages.ts`.
+  Drei Kopien derselben drei Zeilen wären drei Stellen, an denen jemand eine
+  vergisst; dann spräche ausgerechnet die Nachfrage nach dem gescheiterten
+  Durchstellen wieder Deutsch, während der Anrufer im Freizeichen wartet.
+
+Der Katalog in `lib/voice/languages.ts` ist eine Auswahlliste und kein
+Freitextfeld — ein Tippfehler im Stimmnamen fällt nicht auf, er klingt nur. Für
+die meisten Sprachen steht dort bewusst nur `alice`: Twilios Liste neuraler
+Polly-Stimmen ändert sich, und ein Name, der nicht nachgeschlagen wurde, wäre
+genau der Tippfehler, den das Modul verhindern soll. Wer eine neurale Stimme
+will, trägt sie dort ein, nachdem er sie beim Anbieter nachgeschlagen hat.
+
 ## Betrieb
 
 Der Screen `/betrieb` beantwortet die Frage, die sonst nur ein Terminal
@@ -584,7 +625,7 @@ Die vier End-to-End-Suiten bauen die App selbst und fahren sie gegen
 In-Memory-Stand-ins hoch:
 
 ```bash
-node tests/voice/run.mjs      # 44 Szenarien vom eingehenden Anruf bis zur Nachbereitung
+node tests/voice/run.mjs      # 50 Szenarien vom eingehenden Anruf bis zur Nachbereitung
 node tests/widget/run.mjs     # 20 Szenarien von der Session bis zur Bewertung
 node tests/simulate/run.mjs   # 12 Szenarien der Testfall-Simulation, als angemeldeter Admin
 node tests/console/run.mjs    # 20 Szenarien der Konsolen-Routen (Agent-Turn, Wissens-Ingest, Betrieb)

@@ -5,6 +5,7 @@ import type { createServiceRoleClient } from '@/lib/supabase/server';
 import { callbackUrl, verifyWebhook } from '@/lib/voice/session';
 import { dial, gather, hangup, say, twiml } from '@/lib/voice/twilio';
 import { hintsFrom } from '@/lib/voice/keyterms';
+import { voiceFor } from '@/lib/voice/languages';
 
 /**
  * One spoken turn.
@@ -50,6 +51,16 @@ const agentReplySchema = z.object({
    * der Anrufer nicht hören soll, etwa „klingt verärgert".
    */
   briefing: z.string().trim().min(1).max(500).nullish(),
+  /**
+   * Die Sprache, in der es weitergehen soll.
+   *
+   * Dieselbe Regel wie beim Durchstellen: das Modell nennt einen Code, die
+   * Route schlägt ihn in `phone_languages` nach. Was dort nicht steht, wird
+   * nicht gesprochen — der Wert geht direkt in ein TwiML-Attribut, und eine
+   * erfundene Zeichenkette dort ist entweder ein Fehler beim Anbieter oder
+   * eine Stimme, die den Satz falsch ausspricht.
+   */
+  language: z.string().trim().regex(/^[a-z]{2}-[A-Z]{2}$/).nullish(),
 });
 
 export async function POST(request: NextRequest): Promise<Response> {
@@ -63,7 +74,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   const { data: call } = await supabase
     .from('calls')
     .select(
-      'id, organization_id, conversation_id, agent_id, started_at, turn_count, phone_number_id, answered_by, agent:agents(voice_config)',
+      'id, organization_id, conversation_id, agent_id, started_at, turn_count, phone_number_id, answered_by, language, voice, agent:agents(voice_config)',
     )
     .eq('id', callId)
     .maybeSingle();
@@ -76,9 +87,12 @@ export async function POST(request: NextRequest): Promise<Response> {
     .eq('id', call.phone_number_id ?? '')
     .maybeSingle();
 
-  const voice = {
-    voice: number?.voice ?? 'alice',
-    language: number?.language ?? 'de-DE',
+  // `let`, weil ein Sprachwechsel mitten im Zug greift: die Antwort auf den
+  // englischen Satz soll schon englisch sein, nicht erst die übernächste.
+  let voice = {
+    // Die Sprache am Anruf gewinnt über die an der Leitung — sie gilt für
+    // dieses Gespräch, nicht für das nächste.
+    ...voiceFor(call, number),
     // Teil des Stimm-Objekts und nicht Argument jedes einzelnen Aufrufs: diese
     // Route hat vier Gather-Stellen, und eine vergessene waere ein Zug, in dem
     // sich die Erkennung wieder verhoert.
@@ -204,6 +218,40 @@ export async function POST(request: NextRequest): Promise<Response> {
         prompt: 'Das dauert gerade länger als gewohnt. Können Sie Ihre Frage bitte noch einmal stellen?',
       }) + hangup(),
     );
+  }
+
+  /**
+   * Der Sprachwechsel, wenn das Modell einen verlangt.
+   *
+   * Nachgeschlagen, nicht übernommen: `phone_languages` sagt, welche Sprachen
+   * diese Leitung überhaupt annimmt und mit welcher Stimme. Steht der Code
+   * nicht drin, passiert schlicht nichts — der Satz wird in der bisherigen
+   * Sprache gesprochen. Das ist die unauffälligere Fehlerart: eine falsche
+   * Sprache im TwiML ist beim Anbieter ein Fehler und beendet den Anruf.
+   *
+   * Vor dem `say(parsed.reply, …)` weiter unten, damit schon die Antwort auf
+   * den englischen Satz englisch klingt und nicht erst die übernächste.
+   */
+  if (parsed.language && parsed.language !== voice.language) {
+    const { data: allowed } = await supabase
+      .from('phone_languages')
+      .select('code, voice')
+      .eq('organization_id', call.organization_id)
+      .eq('phone_number_id', call.phone_number_id ?? '')
+      .eq('code', parsed.language)
+      .maybeSingle();
+
+    // Zurück auf die Vorgabe der Leitung ist immer erlaubt: das ist keine
+    // Freischaltung, sondern ihre Rücknahme.
+    const backToDefault = number?.language === parsed.language && number.voice;
+
+    if (allowed) {
+      voice = { ...voice, language: allowed.code, voice: allowed.voice };
+      await supabase.from('calls').update({ language: allowed.code, voice: allowed.voice }).eq('id', call.id);
+    } else if (backToDefault) {
+      voice = { ...voice, language: number.language, voice: number.voice };
+      await supabase.from('calls').update({ language: null, voice: null }).eq('id', call.id);
+    }
   }
 
   await supabase.from('messages').insert({

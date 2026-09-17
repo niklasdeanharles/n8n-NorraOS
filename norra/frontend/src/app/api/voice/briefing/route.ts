@@ -1,6 +1,7 @@
 import type { NextRequest } from 'next/server';
 import { verifyWebhook } from '@/lib/voice/session';
 import { say, twiml } from '@/lib/voice/twilio';
+import { voiceFor } from '@/lib/voice/languages';
 
 /**
  * Der Satz, den der Mitarbeiter hört, bevor verbunden wird.
@@ -30,7 +31,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   const { data: call } = await supabase
     .from('calls')
-    .select('id, transfer_briefing, phone_number_id, from_e164')
+    .select('id, transfer_briefing, phone_number_id, from_e164, language, voice')
     .eq('id', callId)
     .maybeSingle();
 
@@ -45,10 +46,8 @@ export async function POST(request: NextRequest): Promise<Response> {
     .eq('id', call?.phone_number_id ?? '')
     .maybeSingle();
 
-  return twiml(
-    say(briefing, {
-      voice: number?.voice ?? 'alice',
-      language: number?.language ?? 'de-DE',
-    }),
-  );
+  // Dieselbe Stimme, in der das Gespräch geführt wurde. Der Mitarbeiter hört
+  // sonst ein deutsches Briefing über einen englischen Anrufer — und weiß
+  // nicht, dass er gleich Englisch sprechen muss.
+  return twiml(say(briefing, voiceFor(call ?? null, number)));
 }

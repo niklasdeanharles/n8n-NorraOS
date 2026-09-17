@@ -117,6 +117,14 @@ export type CallRow = {
   transferred_to: string | null;
   /** Ansage für den Mitarbeiter vor dem Verbinden. Der Anrufer hört sie nicht. */
   transfer_briefing: string | null;
+  /**
+   * Die Sprache, in der dieses Gespräch gerade geführt wird. Null heißt: es
+   * gilt weiter, was an der Nummer eingestellt ist. `language` und `voice`
+   * sind nur zusammen gesetzt — eine Stimme ohne Sprache wäre eine halbe
+   * Umschaltung.
+   */
+  language: string | null;
+  voice: string | null;
   ended_reason: string | null;
   /** Nach Gesprächsende gezogen, Schlüssel = agents.voice_config.extract[].name. */
   extracted_variables: Json;
@@ -493,6 +501,18 @@ export type ClosureDayRow = {
   updated_at: string;
 }
 
+/** Eine zusätzliche Sprache, die eine Leitung annimmt, mit der Stimme dazu. */
+export type PhoneLanguageRow = {
+  id: string;
+  organization_id: string;
+  phone_number_id: string;
+  code: string;
+  voice: string;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 /** A foreign key, in the shape PostgREST's select parser expects. */
 type Rel<Name extends string, Column extends string, Target extends string> = {
   foreignKeyName: Name;
@@ -648,7 +668,7 @@ export type Database = {
       calls: Table<
         CallRow,
         | 'id' | 'created_at' | 'updated_at' | 'direction' | 'status' | 'started_at'
-        | 'turn_count' | 'extracted_variables' | 'wrapup_status',
+        | 'turn_count' | 'extracted_variables' | 'wrapup_status' | 'language' | 'voice',
         [
           OrgRel<'calls'>,
           Rel<'calls_phone_number_id_fkey', 'phone_number_id', 'phone_numbers'>,
@@ -716,6 +736,16 @@ export type Database = {
           Rel<'callbacks_contact_id_fkey', 'contact_id', 'contacts'>,
           Rel<'callbacks_assignee_id_fkey', 'assignee_id', 'users'>,
           Rel<'callbacks_completed_by_fkey', 'completed_by', 'users'>,
+        ]
+      >;
+
+      phone_languages: Table<
+        PhoneLanguageRow,
+        'id' | 'created_at' | 'updated_at',
+        [
+          OrgRel<'phone_languages'>,
+          Rel<'phone_languages_phone_number_id_fkey', 'phone_number_id', 'phone_numbers'>,
+          Rel<'phone_languages_created_by_fkey', 'created_by', 'users'>,
         ]
       >;
 

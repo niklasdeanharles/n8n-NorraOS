@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { relativeTime } from '@/lib/format';
 import { NumberForm } from './number-form';
+import { Languages } from './languages';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,9 +11,11 @@ export default async function PhoneNumberPage({ params }: { params: Promise<{ id
   const { id } = await params;
   const supabase = await createClient();
 
-  const [numberResult, agentsResult, callsResult] = await Promise.all([
+  const [numberResult, agentsResult, languagesResult, meResult, callsResult] = await Promise.all([
     supabase.from('phone_numbers').select('*').eq('id', id).maybeSingle(),
     supabase.from('agents').select('id, name, status').order('name'),
+    supabase.from('phone_languages').select('id, code, voice').eq('phone_number_id', id).order('code'),
+    supabase.auth.getUser(),
     supabase
       .from('calls')
       .select('id, from_e164, status, started_at, duration_seconds, turn_count, conversation_id')
@@ -25,6 +28,13 @@ export default async function PhoneNumberPage({ params }: { params: Promise<{ id
   if (!number) notFound();
 
   const calls = callsResult.data ?? [];
+
+  // Die Policy blockt den Schreibzugriff eines Nicht-Admins ohnehin; die Frage
+  // hier entscheidet nur, ob ein Formular gezeigt wird, das abgewiesen würde.
+  const userId = meResult.data.user?.id;
+  const { data: me } = userId
+    ? await supabase.from('users').select('role').eq('id', userId).single()
+    : { data: null };
 
   return (
     <>
@@ -44,6 +54,13 @@ export default async function PhoneNumberPage({ params }: { params: Promise<{ id
 
       <div className="content stack" style={{ gap: 20, maxWidth: 860 }}>
         <NumberForm number={number} agents={agentsResult.data ?? []} />
+
+        <Languages
+          numberId={number.id}
+          primary={number.language}
+          languages={languagesResult.data ?? []}
+          canEdit={me?.role === 'admin'}
+        />
 
         <div className="card card-body-flush">
           <div className="card-head">

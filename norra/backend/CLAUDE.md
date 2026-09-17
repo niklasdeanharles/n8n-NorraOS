@@ -169,6 +169,7 @@ Konkret heißt das:
 | `transfer_to_person` | einen Personen**namen** und einen Briefing-Satz | `staff_members.e164`, nachgeschlagen in `/api/voice/turn` |
 | `take_message` | Namen des Empfängers und den Text | `staff_members`, aufgelöst im Sub-Workflow; bei zwei Treffern wird abgelehnt |
 | `book_appointment` | Wunschzeit und Anlass | `agents.tools.book_appointment.calendar_id` — das Modell nennt nie einen Kalender |
+| (Sprachwechsel) | einen Sprach**code** | `phone_languages` — was dort nicht steht, wird nicht gesprochen |
 
 Bei der Weiterleitung ist das nicht Vorsicht, sondern notwendig: läge die Nummer
 irgendwo im Kontext des Modells, könnte ein präparierter Text im

@@ -3,21 +3,13 @@
 import { useActionState, useState } from 'react';
 import { savePhoneNumber, type PhoneFormState } from '../actions';
 import { DAY_LABELS, parseBusinessHours, WEEK } from '@/lib/voice/hours';
+// Eine Liste statt zwei: die Stimmen standen hier und im Sprach-Katalog, und
+// zwei Listen driften.
+import { ALL_VOICES as VOICES } from '@/lib/voice/languages';
 import type { PhoneNumberRow } from '@/types/database';
 
 const initial: PhoneFormState = { error: null };
 
-/**
- * Provider voices. A free-text field would be more flexible and would also let
- * a typo silently fall back to a robot reading German with an English accent.
- */
-const VOICES = [
-  { value: 'Polly.Vicki-Neural', label: 'Vicki — weiblich, deutsch (neural)' },
-  { value: 'Polly.Daniel-Neural', label: 'Daniel — männlich, deutsch (neural)' },
-  { value: 'Polly.Hannah-Neural', label: 'Hannah — weiblich, deutsch (neural)' },
-  { value: 'Polly.Joanna-Neural', label: 'Joanna — weiblich, englisch (neural)' },
-  { value: 'alice', label: 'Alice — Standard, viele Sprachen' },
-];
 
 const AFTER_HOURS = [
   { value: 'agent', label: 'Agent nimmt trotzdem ab' },

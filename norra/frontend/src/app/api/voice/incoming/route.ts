@@ -3,6 +3,7 @@ import { parseBusinessHours, isOpen, closureFor, localDate } from '@/lib/voice/h
 import { callbackUrl, verifyWebhook } from '@/lib/voice/session';
 import { dial, gather, hangup, record, reject, say, twiml } from '@/lib/voice/twilio';
 import { hintsFrom } from '@/lib/voice/keyterms';
+import { languageLabel } from '@/lib/voice/languages';
 
 /**
  * A call arrives.
@@ -204,6 +205,36 @@ export async function POST(request: NextRequest): Promise<Response> {
    * Nicht als gesprochener Satz und nicht in den System-Prompt: der Prompt
    * gehört dem Betreiber und wird nicht pro Anruf umgeschrieben.
    */
+  /**
+   * Welche Sprachen diese Leitung noch spricht.
+   *
+   * Als `system`-Notiz und nicht als Feld im Webhook-Payload: der
+   * n8n-Workflow müsste sonst mitgeändert werden, und eine Sprache, die die
+   * Datenbank kennt, aber der Workflow noch nicht durchreicht, wäre genau die
+   * stille Lücke. Die Historie liest jeder Zug ohnehin.
+   *
+   * Der Agent bekommt hier keine Erlaubnis, sondern eine Auskunft: die
+   * Erlaubnis prüft `/api/voice/turn` ein zweites Mal gegen dieselbe Tabelle.
+   */
+  const { data: languages } = await supabase
+    .from('phone_languages')
+    .select('code')
+    .eq('organization_id', number.organization_id)
+    .eq('phone_number_id', number.id);
+
+  if (languages && languages.length > 0) {
+    const list = languages.map((row) => `${languageLabel(row.code)} (${row.code})`).join(', ');
+    await supabase.from('messages').insert({
+      organization_id: number.organization_id,
+      conversation_id: conversation.id,
+      role: 'system',
+      content:
+        `Diese Leitung bedient außer ${languageLabel(number.language)} (${number.language}) auch: ${list}. ` +
+        'Spricht der Anrufer eine davon, antworte in dieser Sprache und gib ihren Code im Feld "language" zurück. ' +
+        'Andere Sprachen gibt es hier nicht — biete keine an, die nicht in dieser Liste steht.',
+    });
+  }
+
   if (closure) {
     await supabase.from('messages').insert({
       organization_id: number.organization_id,
