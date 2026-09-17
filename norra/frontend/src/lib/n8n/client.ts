@@ -6,6 +6,7 @@ export const N8N_WEBHOOKS = {
   kbIngest: 'webhook/norra/kb-ingest',
   voiceTurn: 'webhook/norra/voice-turn',
   callWrapup: 'webhook/norra/call-wrapup',
+  kbCrawl: 'webhook/norra/kb-crawl',
 } as const;
 
 export type N8nWebhook = (typeof N8N_WEBHOOKS)[keyof typeof N8N_WEBHOOKS];

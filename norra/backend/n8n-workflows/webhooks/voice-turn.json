@@ -995,6 +995,94 @@
         "width": 520,
         "height": 300
       }
+    },
+    {
+      "id": "voice-tool-8",
+      "name": "book_appointment",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        400
+      ],
+      "parameters": {
+        "description": "Trage einen Termin in den Kalender ein. Nutze das Tool erst, wenn Tag UND Uhrzeit eindeutig genannt wurden. Das Tool prueft die Verfuegbarkeit selbst und lehnt ab, wenn die Zeit belegt ist -- sage einen Termin also nie zu, bevor du die Antwort hast. Bekommst du eine Absage, frag nach einer anderen Zeit.",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "Norra – Tool: book_appointment"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "value": {
+            "organization_id": "={{ $('Normalize Request').item.json.organization_id }}",
+            "conversation_id": "={{ $('Normalize Request').item.json.conversation_id }}",
+            "agent_id": "={{ $('Normalize Request').item.json.agent_id }}",
+            "call_id": "={{ $('Normalize Request').item.json.call_id }}",
+            "requested_start": "={{ $fromAI('requested_start', 'Der gewuenschte Beginn als ISO-8601-Zeitstempel mit Zeitzone, z. B. 2026-09-22T15:00:00+02:00. Rechne Angaben wie \"morgen um drei\" selbst um und frag nach, wenn Tag oder Uhrzeit unklar sind. Rate nie.', 'string') }}",
+            "reason": "={{ $fromAI('reason', 'Worum es bei dem Termin geht, in drei bis fuenf Woertern', 'string') }}"
+          },
+          "schema": [
+            {
+              "id": "organization_id",
+              "displayName": "organization_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "agent_id",
+              "displayName": "agent_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "call_id",
+              "displayName": "call_id",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "requested_start",
+              "displayName": "requested_start",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reason",
+              "displayName": "reason",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      }
     }
   ],
   "connections": {
@@ -1180,6 +1268,17 @@
           {
             "node": "Voice Agent",
             "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "book_appointment": {
+      "ai_tool": [
+        [
+          {
+            "node": "Voice Agent",
+            "type": "ai_tool",
             "index": 0
           }
         ]

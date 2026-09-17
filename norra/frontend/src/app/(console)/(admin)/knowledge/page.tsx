@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { formatDateTime, statusTone } from '@/lib/format';
 import { UploadForm } from './upload-form';
+import { CrawlForm } from './crawl-form';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,6 +62,7 @@ export default async function KnowledgePage() {
         </div>
 
         <UploadForm agents={agentsResult.data ?? []} />
+      <CrawlForm agents={agentsResult.data ?? []} />
       </div>
     </>
   );

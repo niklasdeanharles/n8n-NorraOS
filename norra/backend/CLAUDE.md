@@ -120,7 +120,10 @@ Hostinger VPS, self-hosted Community Edition: `https://n8n-fdhh.srv1817599.hstgr
 | Agent Turn | `webhooks/agent-turn.json` | `yTH3YQeR5qdNVxSI` | `POST /webhook/norra/agent-turn` | Zentraler Turn: Config laden, RAG, Streaming |
 | Voice Turn | `webhooks/voice-turn.json` | `wc4s77ROyul5LR5X` | `POST /webhook/norra/voice-turn` | Ein gesprochener Turn, ohne Streaming |
 | KB Ingest | `webhooks/kb-ingest.json` | `Q3XhlP6eet9eqnm0` | `POST /webhook/norra/kb-ingest` | Dokument chunken, einbetten, speichern |
-| Call Wrapup | `webhooks/call-wrapup.json` | — | `POST /webhook/norra/call-wrapup` | Nach dem Auflegen: Variablen ziehen, zusammenfassen, Follow-up |
+| Call Wrapup | `webhooks/call-wrapup.json` | — | `POST /webhook/norra/call-wrapup` | Nach dem Auflegen: Variablen ziehen, zusammenfassen, Follow-up, Webhook |
+| KB Crawl | `webhooks/kb-crawl.json` | — | `POST /webhook/norra/kb-crawl` | Seitenliste holen, Text extrahieren, an KB Ingest geben |
+| Outbound Call | `scheduled/outbound-call.json` | — | Zeitplan, alle 5 Minuten | Fällige Kampagnenziele anrufen |
+| Tool: book_appointment | `sub-workflows/book-appointment.json` | — | Sub-Workflow | Termin im Kalender eintragen, nach Verfügbarkeitsprüfung |
 | Tool: lookup_record | `sub-workflows/lookup-record.json` | `KHHKDV5CoyiDxuCO` | Sub-Workflow | Datensatz beim Kunden nachschlagen, read-only |
 | Tool: escalate_to_human | `sub-workflows/escalate-to-human.json` | `pw6OzhBSG2oxagNt` | Sub-Workflow | Ticket anlegen, Konversation eskalieren |
 | Tool: request_action | `sub-workflows/request-action.json` | `LwyJZr8WFsjd0L9v` | Sub-Workflow | Folgenreiche Aktion zur **Freigabe** einreichen |
@@ -301,6 +304,7 @@ Drei Dinge schließen die Lücke, alle drei in `agents.voice_config`:
 | `keyterms` | `<Gather hints=…>` bei **jedem** Zug | Die Wörter, an denen sich eine Telefonleitung verhört: Produktnamen, Fachbegriffe, Eigennamen |
 | `extract` | `call-wrapup` nach dem Auflegen | Was strukturiert vorliegen soll, als `{name, prompt}` |
 | `followup` | `call-wrapup` | Eine Adresse, die eine Zusammenfassung bekommt |
+| `webhook` | `call-wrapup` | Eine `https`-URL, an die das Ergebnis zusätzlich geht — fürs eigene CRM |
 
 **Das Extraktionsschema ist nicht fest.** Es entsteht im Node `Plan Wrapup` zur
 Laufzeit aus `voice_config.extract`. Eine feste Attributliste wäre ein Workflow
@@ -332,6 +336,70 @@ Secrets an. Ihre Beispiel-Payloads sind Anleitung *und* Vorlage, deshalb prüft
 Anleitung, die auf einen alten Feldnamen zeigt, scheitert sonst erst beim
 Nutzer, und zwar mit einer PostgREST-Meldung, die nicht sagt, dass die
 Anleitung schuld ist.
+
+### Ausgehende Anrufe
+
+`calls.direction` kannte `'outbound'` von Anfang an, und niemand hat es je
+geschrieben: es gab keinen Weg, einen Anruf zu *beginnen*. Das ist der
+Unterschied zwischen einem Assistenten, der abnimmt, und einem, der etwas
+erledigt.
+
+| Tabelle | Was darin steht |
+|---|---|
+| `call_campaigns` | Wer anruft, mit welchem Ziel, in welchem Zeitfenster, wie oft |
+| `campaign_targets` | Eine Zeile pro Rufnummer, mit Versuchen, nächstem Versuch und Ergebnis |
+
+Zwei Tabellen und nicht eine, weil ein Ziel eigenen Zustand hat und der
+Zeitplan sie nach „jetzt fällig" abfragt. Als jsonb-Feld an der Kampagne wäre
+„fällig" kein Index, sondern ein Full Scan — und jeder Versuch schriebe die
+ganze Zeile neu.
+
+**Das Anrufzeitfenster wird in der Zeitzone der Kampagne gerechnet.** Der
+n8n-Container läuft in UTC, und ein Werbeanruf um 22 Uhr ist in Deutschland
+eine Ordnungswidrigkeit. Ein Tag ohne Eintrag heißt: an dem Tag wird nicht
+angerufen — die sichere Lesart, bei der ein vergessener Eintrag schweigt statt
+zu wählen.
+
+**Gewählt wird per REST, nicht mit dem Twilio-Node.** Der kennt
+`MachineDetection` nicht. Ohne sie redet der Agent auf einen Anrufbeantworter,
+und der Lauf zählt in der Auswertung als geführtes Gespräch. Die Account-SID
+holt der Workflow einmal pro Lauf über `GET /Accounts.json`, statt sie als
+zweite Kopie in die Datenbank zu legen, wo sie veralten könnte.
+
+**`/api/voice/amd` legt nicht auf.** Dafür bräuchte die App
+Twilio-Zugangsdaten; sie prüft Signaturen und steuert keine Anrufe. Sie hält
+`calls.answered_by` fest, und `/api/voice/turn` weigert sich beim nächsten Zug,
+einen Agentenlauf auf ein Band zu schicken.
+
+### Ein Zeitplan hat keine Organisation
+
+`outbound-call` liest die laufenden Kampagnen **aller** Mandanten — anders geht
+ein Zeitplan nicht. Das zu verbieten hieße, es heimlich zu bauen. Also steht
+die Ausnahme im Workflow unter `norra.crossTenant`, mit Begründung, und
+`check-wiring.mjs` verlangt genau das: einen Node, den es gibt, und einen Grund,
+der einer ist. Jede weitere Abfrage im Lauf filtert wieder nach der
+`organization_id` der jeweiligen Kampagne.
+
+Dieselbe Rolle wie `RESERVED`: eine Entscheidung, die jemand aufgeschrieben
+hat, kein Weg am Check vorbei. Die Liste soll kurz bleiben.
+
+### Was die Ausdrücke prüft
+
+```bash
+node tests/workflow-expressions.mjs
+```
+
+`check-wiring.mjs` prüft, dass ein Workflow die richtigen Tabellen und Spalten
+*nennt*. Was zwischen `{{` und `}}` steht, ist für es eine Zeichenkette — und
+genau dort liegt die Logik, die ein Kunde zu spüren bekommt: welches Schema das
+Modell befüllt, ob eine HTML-Entity als `j&auml;hrlich` in der Wissensbasis
+landet, ob ein unklarer Zeitpunkt geraten wird.
+
+Die Suite lädt die Workflow-JSONs, zieht die Ausdrücke heraus und führt sie mit
+gestellten Daten aus. Sie ersetzt keinen Lauf auf der Instanz; sie fängt die
+Klasse Fehler, die dort erst auffällt, wenn ein Kunde in der Leitung ist. Zwei
+echte Fehler hat sie beim Schreiben schon gefunden — nicht aufgelöste deutsche
+Entities und einen `<title>`, der in den Fließtext leckte.
 
 ### Tool-Regeln
 

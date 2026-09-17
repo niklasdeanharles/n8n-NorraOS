@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
+import { TOOL_CATALOGUE, type ToolConfigField } from '@/lib/tools';
 import { currentActor, recordAudit } from '@/lib/audit';
 import { findTemplate } from './templates';
 
@@ -17,8 +18,10 @@ function toList(value: FormDataEntryValue | null): string[] {
     .filter(Boolean);
 }
 
-/** Tools that need a per-organization endpoint before they do anything. */
-const TOOLS_WITH_ENDPOINT = new Set(['lookup_record']);
+/** Was ein Tool pro Organisation braucht, steht im Katalog — nicht hier. */
+const CONFIG_BY_SLUG: ReadonlyMap<string, readonly ToolConfigField[]> = new Map(
+  TOOL_CATALOGUE.map((tool) => [tool.slug as string, tool.config as readonly ToolConfigField[]]),
+);
 
 const agentSchema = z.object({
   id: z.string().uuid(),
@@ -47,6 +50,7 @@ type VoiceConfigOut = {
   keyterms?: string[];
   extract?: Array<{ name: string; prompt: string }>;
   followup?: { target: 'email'; address: string };
+  webhook?: { url: string };
 };
 
 function readVoiceConfig(formData: FormData): { config: VoiceConfigOut } | { error: string } {
@@ -95,12 +99,19 @@ function readVoiceConfig(formData: FormData): { config: VoiceConfigOut } | { err
     return { error: `„${address}” ist keine E-Mail-Adresse. Leer lassen heißt: keine Zusammenfassung.` };
   }
 
+  const webhook = String(formData.get('voiceWebhook') ?? '').trim();
+  if (webhook && !/^https:\/\/\S+$/.test(webhook)) {
+    return { error: 'Die Ziel-URL muss mit https:// beginnen — die Zustellung trägt Gesprächsinhalte.' };
+  }
+  if (webhook.length > 500) return { error: 'Die Ziel-URL ist zu lang. Höchstens 500 Zeichen.' };
+
   // Nur schreiben, was gesetzt ist. Ein `{"keyterms": []}` wäre von "aus" nicht
   // zu unterscheiden und würde den leeren Zustand mit Struktur zumüllen.
   const config: VoiceConfigOut = {};
   if (keyterms.length > 0) config.keyterms = keyterms;
   if (extract.length > 0) config.extract = extract;
   if (address) config.followup = { target: 'email', address };
+  if (webhook) config.webhook = { url: webhook };
   return { config };
 }
 
@@ -153,12 +164,21 @@ export async function saveAgent(_prev: AgentFormState, formData: FormData): Prom
   const toolRows: Array<{ slug: string; enabled: true; config: Record<string, string> }> = [];
   for (const slug of enabledTools) {
     const config: Record<string, string> = {};
-    if (TOOLS_WITH_ENDPOINT.has(slug)) {
-      const raw = formData.get(`toolUrl:${slug}`);
-      const url = typeof raw === 'string' ? raw.trim() : '';
-      if (!url) return { error: `${slug}: Endpunkt fehlt.` };
-      if (!/^https:\/\//.test(url)) return { error: `${slug}: Endpunkt muss mit https:// beginnen.` };
-      config.url = url;
+    for (const field of CONFIG_BY_SLUG.get(slug) ?? []) {
+      const raw = formData.get(`toolConfig:${slug}:${field.key}`);
+      const value = typeof raw === 'string' ? raw.trim() : '';
+      if (!value) {
+        if (field.required) return { error: `${slug}: ${field.label}` };
+        continue;
+      }
+      // https only — der Aufruf trägt Kundenkennungen.
+      if (field.kind === 'url' && !/^https:\/\//.test(value)) {
+        return { error: `${slug}: Der Endpunkt muss mit https:// beginnen.` };
+      }
+      if (field.kind === 'number' && !/^\d+$/.test(value)) {
+        return { error: `${slug}: „${field.label}" erwartet eine Zahl.` };
+      }
+      config[field.key] = value;
     }
     toolRows.push({ slug, enabled: true, config });
   }

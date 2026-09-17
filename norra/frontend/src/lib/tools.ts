@@ -17,10 +17,27 @@
  */
 export type ToolChannel = 'both' | 'voice';
 
+/**
+ * Ein Wert, den ein Tool pro Organisation braucht, um überhaupt etwas zu tun.
+ *
+ * Er steht in `agents.tools[].config` und wird im Agenten-Editor gepflegt —
+ * nicht im Workflow. Der Grund ist derselbe wie bei der Rufnummer einer
+ * Abteilung: was ein Tool *anspricht*, darf nie aus dem Modell kommen. Läge die
+ * Kalender-ID im Gesprächskontext, könnte ein präparierter Satz sie ersetzen.
+ */
+export type ToolConfigField = {
+  readonly key: string;
+  readonly kind: 'url' | 'text' | 'number';
+  readonly label: string;
+  readonly placeholder: string;
+  /** Ein fehlender Pflichtwert lässt das Tool gar nicht erst speichern. */
+  readonly required: boolean;
+};
+
 type ToolDefinition = {
   readonly slug: string;
   readonly hint: string;
-  readonly endpoint: string | null;
+  readonly config: readonly ToolConfigField[];
   readonly channel: ToolChannel;
 };
 
@@ -28,44 +45,65 @@ export const TOOL_CATALOGUE = [
   {
     slug: 'lookup_record',
     hint: 'Datensatz im System des Kunden nachschlagen, read-only',
-    endpoint: 'Read-only-Endpunkt, den das Tool mit ?query=… aufruft',
+    config: [{
+      key: 'url', kind: 'url', required: true,
+      label: 'Read-only-Endpunkt, den das Tool mit ?query=… aufruft',
+      placeholder: 'https://api.example.com/records',
+    }],
     channel: 'both',
   },
   {
     slug: 'escalate_to_human',
     hint: 'Ticket anlegen und an einen Menschen übergeben',
-    endpoint: null,
+    config: [],
     channel: 'both',
   },
   {
     slug: 'request_action',
     hint: 'Folgenreiche Aktion zur Freigabe einreichen — führt nichts aus',
-    endpoint: null,
+    config: [],
     channel: 'both',
   },
   {
     slug: 'identify_caller',
     hint: 'Anrufer an seiner Nummer erkennen: Name, frühere Anliegen, Notizen',
-    endpoint: null,
+    config: [],
     channel: 'voice',
   },
   {
     slug: 'send_sms',
     hint: 'Dem Anrufer eine SMS schicken — für Links, Nummern und Adressen, die man sich nicht merken kann',
-    endpoint: null,
+    config: [],
     channel: 'voice',
   },
   {
     slug: 'schedule_callback',
     hint: 'Rückruf notieren, statt den Anrufer warten zu lassen',
-    endpoint: null,
+    config: [],
     channel: 'voice',
   },
   {
     slug: 'transfer_to_department',
     hint: 'An eine Fachabteilung durchstellen — die Nummer kommt aus den Einstellungen, nie vom Agenten',
-    endpoint: null,
+    config: [],
     channel: 'voice',
+  },
+  {
+    slug: 'book_appointment',
+    hint: 'Termin im Kalender eintragen — prüft erst die Verfügbarkeit, sagt nichts zu, was belegt ist',
+    config: [
+      {
+        key: 'calendar_id', kind: 'text', required: true,
+        label: 'Kalender, in den eingetragen wird. Die Adresse des Google-Kalenders, nicht sein Anzeigename.',
+        placeholder: 'team@kunde.de',
+      },
+      {
+        key: 'duration_minutes', kind: 'number', required: false,
+        label: 'Dauer eines Termins in Minuten. Leer heißt 30.',
+        placeholder: '30',
+      },
+    ],
+    channel: 'both',
   },
 ] as const satisfies readonly ToolDefinition[];
 

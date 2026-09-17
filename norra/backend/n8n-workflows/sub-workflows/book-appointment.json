@@ -1,0 +1,740 @@
+{
+  "name": "Norra – Tool: book_appointment",
+  "nodes": [
+    {
+      "id": "booking-requested",
+      "name": "Booking Requested",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "organization_id",
+              "type": "string"
+            },
+            {
+              "name": "conversation_id",
+              "type": "string"
+            },
+            {
+              "name": "agent_id",
+              "type": "string"
+            },
+            {
+              "name": "call_id",
+              "type": "string"
+            },
+            {
+              "name": "requested_start",
+              "type": "string"
+            },
+            {
+              "name": "reason",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "load-agent-config",
+      "name": "Load Agent Config",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "agents",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Booking Requested').item.json.agent_id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Booking Requested').item.json.organization_id }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "resolve-slot",
+      "name": "Resolve Slot",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "calendar",
+              "name": "calendar_id",
+              "type": "string",
+              "value": "={{ ( ($('Load Agent Config').item.json.tools ?? []).find(tool => tool.slug === 'book_appointment')?.config ?? {}).calendar_id ?? \"\" }}"
+            },
+            {
+              "id": "duration",
+              "name": "duration_minutes",
+              "type": "number",
+              "value": "={{ Number(( ($('Load Agent Config').item.json.tools ?? []).find(tool => tool.slug === 'book_appointment')?.config ?? {}).duration_minutes) || 30 }}"
+            },
+            {
+              "id": "start",
+              "name": "start",
+              "type": "string",
+              "value": "={{ (() => { const raw = ($('Booking Requested').item.json.requested_start ?? \"\").trim(); if (!raw) return \"\"; const parsed = DateTime.fromISO(raw, { setZone: true }); return parsed.isValid ? parsed.toISO() : \"\"; })() }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "slot-usable",
+      "name": "Slot Usable?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.calendar_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            },
+            {
+              "leftValue": "={{ $json.start }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true
+      }
+    },
+    {
+      "id": "compute-end",
+      "name": "Compute End",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        880,
+        -100
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "end",
+              "name": "end",
+              "type": "string",
+              "value": "={{ (() => { const start = $('Resolve Slot').item.json.start; if (!start) return \"\"; const minutes = Number($('Resolve Slot').item.json.duration_minutes) || 30; return DateTime.fromISO(start, { setZone: true }).plus({ minutes }).toISO(); })() }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "check-availability",
+      "name": "Check Availability",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1100,
+        -100
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "resource": "calendar",
+        "operation": "availability",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Resolve Slot').item.json.calendar_id }}"
+        },
+        "timeMin": "={{ $('Resolve Slot').item.json.start }}",
+        "timeMax": "={{ $json.end }}",
+        "options": {
+          "outputFormat": "availability"
+        }
+      }
+    },
+    {
+      "id": "is-free",
+      "name": "Is Free?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1320,
+        -100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.available }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true
+      }
+    },
+    {
+      "id": "create-event",
+      "name": "Create Event",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1540,
+        -200
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "resource": "event",
+        "operation": "create",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Resolve Slot').item.json.calendar_id }}"
+        },
+        "start": "={{ $('Resolve Slot').item.json.start }}",
+        "end": "={{ $('Compute End').item.json.end }}",
+        "useDefaultReminders": true,
+        "additionalFields": {
+          "summary": "=Termin: {{ $('Booking Requested').item.json.reason || \"Rückruf\" }}",
+          "description": "=Vereinbart im Telefonat mit Norra.\\n\\nAnliegen: {{ $('Booking Requested').item.json.reason || \"nicht genannt\" }}\\nAnrufer: {{ $('Load Call').item.json.from_e164 || \"unbekannt\" }}\\nKonversation: {{ $('Booking Requested').item.json.conversation_id }}",
+          "showMeAs": "opaque"
+        }
+      }
+    },
+    {
+      "id": "load-call",
+      "name": "Load Call",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        880,
+        40
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "calls",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Booking Requested').item.json.call_id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Booking Requested').item.json.organization_id }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "log-booked",
+      "name": "Log Booked",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1760,
+        -200
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "tool_calls_log",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "organization_id",
+              "fieldValue": "={{ $('Booking Requested').item.json.organization_id }}"
+            },
+            {
+              "fieldId": "conversation_id",
+              "fieldValue": "={{ $('Booking Requested').item.json.conversation_id }}"
+            },
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "={{ $('Booking Requested').item.json.agent_id }}"
+            },
+            {
+              "fieldId": "tool_name",
+              "fieldValue": "book_appointment"
+            },
+            {
+              "fieldId": "n8n_workflow_id",
+              "fieldValue": "={{ $workflow.id }}"
+            },
+            {
+              "fieldId": "n8n_execution_id",
+              "fieldValue": "={{ $execution.id }}"
+            },
+            {
+              "fieldId": "input",
+              "fieldValue": "={{ JSON.stringify($('Booking Requested').item.json) }}"
+            },
+            {
+              "fieldId": "output",
+              "fieldValue": "={{ JSON.stringify({ event_id: $('Create Event').item.json.id ?? null, start: $('Resolve Slot').item.json.start }) }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "={{ $('Create Event').item.json.id ? 'success' : 'error' }}"
+            },
+            {
+              "fieldId": "error",
+              "fieldValue": "={{ $('Create Event').item.json.id ? null : 'Kalender hat den Termin nicht angelegt' }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "log-busy",
+      "name": "Log Busy",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1540,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "tool_calls_log",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "organization_id",
+              "fieldValue": "={{ $('Booking Requested').item.json.organization_id }}"
+            },
+            {
+              "fieldId": "conversation_id",
+              "fieldValue": "={{ $('Booking Requested').item.json.conversation_id }}"
+            },
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "={{ $('Booking Requested').item.json.agent_id }}"
+            },
+            {
+              "fieldId": "tool_name",
+              "fieldValue": "book_appointment"
+            },
+            {
+              "fieldId": "n8n_workflow_id",
+              "fieldValue": "={{ $workflow.id }}"
+            },
+            {
+              "fieldId": "n8n_execution_id",
+              "fieldValue": "={{ $execution.id }}"
+            },
+            {
+              "fieldId": "input",
+              "fieldValue": "={{ JSON.stringify($('Booking Requested').item.json) }}"
+            },
+            {
+              "fieldId": "output",
+              "fieldValue": "={{ JSON.stringify({ booked: false, reason: 'slot_taken', start: $('Resolve Slot').item.json.start }) }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "success"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "log-unusable",
+      "name": "Log Unusable",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        880,
+        200
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "tool_calls_log",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "organization_id",
+              "fieldValue": "={{ $('Booking Requested').item.json.organization_id }}"
+            },
+            {
+              "fieldId": "conversation_id",
+              "fieldValue": "={{ $('Booking Requested').item.json.conversation_id }}"
+            },
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "={{ $('Booking Requested').item.json.agent_id }}"
+            },
+            {
+              "fieldId": "tool_name",
+              "fieldValue": "book_appointment"
+            },
+            {
+              "fieldId": "n8n_workflow_id",
+              "fieldValue": "={{ $workflow.id }}"
+            },
+            {
+              "fieldId": "n8n_execution_id",
+              "fieldValue": "={{ $execution.id }}"
+            },
+            {
+              "fieldId": "input",
+              "fieldValue": "={{ JSON.stringify($('Booking Requested').item.json) }}"
+            },
+            {
+              "fieldId": "output",
+              "fieldValue": "={{ JSON.stringify({ booked: false, reason: $('Resolve Slot').item.json.calendar_id ? 'unreadable_time' : 'no_calendar' }) }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "error"
+            },
+            {
+              "fieldId": "error",
+              "fieldValue": "={{ $('Resolve Slot').item.json.calendar_id ? 'Zeitpunkt nicht als Datum lesbar' : 'Für diesen Agenten ist kein Kalender hinterlegt' }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "return-booked",
+      "name": "Return Booked",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1980,
+        -200
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "booked",
+              "name": "booked",
+              "type": "boolean",
+              "value": "={{ !!$('Create Event').item.json.id }}"
+            },
+            {
+              "id": "start",
+              "name": "start",
+              "type": "string",
+              "value": "={{ $('Resolve Slot').item.json.start }}"
+            },
+            {
+              "id": "message",
+              "name": "message",
+              "type": "string",
+              "value": "={{ $('Create Event').item.json.id ? \"Der Termin ist eingetragen. Bestaetige ihn dem Anrufer mit Datum und Uhrzeit.\" : \"Der Termin konnte nicht eingetragen werden. Sag das ehrlich und biete an, dass sich jemand meldet.\" }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "return-busy",
+      "name": "Return Busy",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1760,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "booked",
+              "name": "booked",
+              "type": "boolean",
+              "value": "={{ false }}"
+            },
+            {
+              "id": "message",
+              "name": "message",
+              "type": "string",
+              "value": "Zu dieser Zeit ist der Kalender belegt. Frag nach einem anderen Zeitpunkt."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "return-unusable",
+      "name": "Return Unusable",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1100,
+        200
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "booked",
+              "name": "booked",
+              "type": "boolean",
+              "value": "={{ false }}"
+            },
+            {
+              "id": "message",
+              "name": "message",
+              "type": "string",
+              "value": "={{ $('Resolve Slot').item.json.calendar_id ? \"Der genannte Zeitpunkt war nicht eindeutig. Frag nach Tag und Uhrzeit und nenne beides zurueck.\" : \"Termine kann ich am Telefon nicht vergeben. Biete an, dass sich jemand meldet.\" }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "sticky-booking",
+      "name": "Sticky Note booking",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -400
+      ],
+      "parameters": {
+        "width": 880,
+        "height": 300,
+        "content": "## Tool: book_appointment\n\n**Der Kalender kommt aus der Agenten-Konfiguration, nie aus dem Modell.** Läge die Kalender-ID im Kontext, könnte ein präparierter Satz im Wissensdokument oder im gesprochenen Wunsch des Anrufers sie ersetzen — und der Termin landete im Kalender eines Fremden. Dieselbe Regel wie bei `transfer_to_department`.\n\n**Das Modell liefert Zeitpunkt und Anlass.** Beides ist Wunsch, nicht Ziel: ein unlesbarer Zeitpunkt wird nicht geraten, sondern zurückgefragt. Ein erfundener Termin ist schlimmer als eine Rückfrage.\n\n**Erst prüfen, dann eintragen.** Ohne `availability` würde der Agent Doppelbuchungen zusagen und es klänge dabei genauso sicher.\n\n`config.calendar_id` und `config.duration_minutes` stehen pro Agent in `agents.tools`, gepflegt im Agenten-Editor — so wie die URL von `lookup_record`."
+      }
+    }
+  ],
+  "connections": {
+    "Booking Requested": {
+      "main": [
+        [
+          {
+            "node": "Load Agent Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Agent Config": {
+      "main": [
+        [
+          {
+            "node": "Resolve Slot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Slot": {
+      "main": [
+        [
+          {
+            "node": "Slot Usable?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slot Usable?": {
+      "main": [
+        [
+          {
+            "node": "Load Call",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Unusable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Call": {
+      "main": [
+        [
+          {
+            "node": "Compute End",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute End": {
+      "main": [
+        [
+          {
+            "node": "Check Availability",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Availability": {
+      "main": [
+        [
+          {
+            "node": "Is Free?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Free?": {
+      "main": [
+        [
+          {
+            "node": "Create Event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Busy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Event": {
+      "main": [
+        [
+          {
+            "node": "Log Booked",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Booked": {
+      "main": [
+        [
+          {
+            "node": "Return Booked",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Busy": {
+      "main": [
+        [
+          {
+            "node": "Return Busy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Unusable": {
+      "main": [
+        [
+          {
+            "node": "Return Unusable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "norra": {
+    "slug": "book-appointment"
+  }
+}

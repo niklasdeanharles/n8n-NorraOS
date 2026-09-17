@@ -386,7 +386,6 @@ const RESERVED = {
   // null and show the cost column a confident 0.
   'messages.tokens_in': 'the Agent node exposes no token usage; see the sticky note in agent-turn.json',
   'messages.tokens_out': 'as above',
-  'knowledge_base_documents.source_url': 'for crawled sources; today ingest takes pasted text',
   'knowledge_base_documents.storage_path': 'for file upload; not built',
   'knowledge_base_documents.mime_type': 'as above',
   // The vector store node writes its own columns (content, metadata, embedding)

@@ -25,6 +25,7 @@ type VoiceConfig = {
   keyterms?: string[];
   extract?: Array<{ name: string; prompt: string }>;
   followup?: { target: 'email'; address: string };
+  webhook?: { url: string };
 };
 
 function asObject<T>(value: unknown): T {
@@ -44,7 +45,7 @@ export function AgentForm({ agent, publicUrl }: { agent: AgentRow; publicUrl: st
   const extractLines = (voice.extract ?? []).map((field) => `${field.name}: ${field.prompt}`).join('\n');
   // The stored shape is [{ slug, enabled, config }] — the same rows agent-turn
   // reads per turn. Keep slug -> config here so the form can round-trip it.
-  const configured = new Map<string, { url?: string }>();
+  const configured = new Map<string, Record<string, string>>();
   for (const entry of Array.isArray(agent.tools) ? agent.tools : []) {
     const tool = asObject<{ slug?: unknown; enabled?: unknown; config?: unknown }>(entry);
     if (typeof tool.slug !== 'string' || tool.enabled === false) continue;
@@ -72,17 +73,17 @@ export function AgentForm({ agent, publicUrl }: { agent: AgentRow; publicUrl: st
             <span className="field-hint" style={{ display: 'block' }}>{tool.hint}</span>
           </span>
         </label>
-        {tool.endpoint ? (
-          <label style={{ marginLeft: 26 }}>
+        {tool.config.map((field) => (
+          <label key={field.key} style={{ marginLeft: 26 }}>
             <input
-              name={`toolUrl:${tool.slug}`}
-              type="url"
-              placeholder="https://api.example.com/records"
-              defaultValue={configured.get(tool.slug)?.url ?? ''}
+              name={`toolConfig:${tool.slug}:${field.key}`}
+              type={field.kind === 'url' ? 'url' : field.kind === 'number' ? 'number' : 'text'}
+              placeholder={field.placeholder}
+              defaultValue={configured.get(tool.slug)?.[field.key] ?? ''}
             />
-            <span className="field-hint">{tool.endpoint}</span>
+            <span className="field-hint">{field.label}</span>
           </label>
-        ) : null}
+        ))}
       </div>
     ));
   }
@@ -205,6 +206,22 @@ export function AgentForm({ agent, publicUrl }: { agent: AgentRow; publicUrl: st
               <span className="field-hint">
                 Leer lassen heißt: keine Mail. Die Nachbereitung läuft nach dem Auflegen und kostet
                 den Anrufer keine Wartezeit.
+              </span>
+            </label>
+
+            <label>
+              Ergebnis zusätzlich schicken an
+              <input
+                type="url"
+                name="voiceWebhook"
+                defaultValue={voice.webhook?.url ?? ''}
+                placeholder="https://kunde.de/norra/anrufe"
+                spellCheck={false}
+              />
+              <span className="field-hint">
+                Ein POST mit Zusammenfassung, extrahierten Feldern, Dauer und Rufnummern — für das
+                eigene CRM. Nur <code>https</code>: die Zustellung trägt Gesprächsinhalte. Antwortet
+                das System nicht, bleibt das Ergebnis trotzdem in Norra.
               </span>
             </label>
           </div>

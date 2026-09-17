@@ -21,6 +21,7 @@ Workflows automatisch anwendet):
 |---|---|---|
 | `webhooks/` | `n8n-nodes-base.webhook` | das Next.js-Backend über HTTP |
 | `sub-workflows/` | `n8n-nodes-base.executeWorkflowTrigger` | ein anderer Workflow |
+| `scheduled/` | `n8n-nodes-base.scheduleTrigger` | die Uhr — niemand ruft auf |
 
 ## Aktueller Stand
 
@@ -32,6 +33,7 @@ Workflows automatisch anwendet):
 | `voice-turn.json` | `norra/voice-turn` | `wc4s77ROyul5LR5X` | angelegt, **nicht aktiviert** |
 | `kb-ingest.json` | `norra/kb-ingest` | `Q3XhlP6eet9eqnm0` | angelegt, **nicht aktiviert** |
 | `call-wrapup.json` | `norra/call-wrapup` | **noch keine** | Nachbereitung nach dem Auflegen |
+| `kb-crawl.json` | `norra/kb-crawl` | **noch keine** | Seitenliste in die Wissensbasis |
 
 ### `sub-workflows/` — vom Agent bzw. von einem Workflow aufgerufen
 

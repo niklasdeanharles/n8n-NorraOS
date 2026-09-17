@@ -59,6 +59,14 @@ jobs:
         working-directory: norra/backend
         run: node scripts/check-wiring.mjs
 
+      # Was zwischen `{{` und `}}` steht, ist für check-wiring eine
+      # Zeichenkette — und genau dort liegt die Logik, die ein Kunde spürt:
+      # welches Schema das Modell befüllt, was in die Wissensbasis gerät, ob
+      # ein Zeitpunkt geraten wird.
+      - name: Workflow expressions
+        working-directory: norra/backend
+        run: node tests/workflow-expressions.mjs
+
       # Builds the app against in-memory stand-ins and drives real signed
       # webhooks through it. This is the check that catches a call path broken
       # by something outside the routes -- middleware, a header, a status code.
