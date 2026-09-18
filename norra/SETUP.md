@@ -28,7 +28,7 @@ nach jeder aufhören und hast etwas Laufendes.
 
 | Stufe | Was dann geht | Was du dafür brauchst |
 |---|---|---|
-| **A — Konsole** | Anmelden, Agenten anlegen, Wissensbasis pflegen | Supabase, Vercel |
+| **A — Konsole** | Anmelden, Agenten anlegen, Wissensbasis pflegen | Supabase, ein Hosting (Schritt 7) |
 | **B — Chat** | Das Web-Widget auf einer echten Seite | dazu n8n mit `supabaseApi`, `openAiApi`, `anthropicApi`, `httpHeaderAuth` |
 | **C — Telefon** | Eingehende Anrufe, Durchstellen, Anrufbeantworter | dazu Twilio |
 | **D — Der ganze Empfang** | Termine, Mails, Bestellungen, Abschriften | dazu Google Calendar, Gmail, Google Sheets, Google AI Studio |
@@ -65,6 +65,34 @@ Repository → **Settings → Secrets and variables → Actions → New secret**
 | `SUPABASE_DB_PASSWORD` | Schritt 1 | Migrationen ausrollen |
 | `N8N_BASE_URL` | die URL deiner n8n-Instanz | Workflows ausrollen und sichern |
 | `N8N_API_KEY` | n8n → Settings → API | Workflows ausrollen und sichern |
+
+> **Dieser Schritt ist Bequemlichkeit, keine Voraussetzung.** Die fünf Secrets
+> automatisieren genau zwei Dinge: den Schema-Rollout (Schritt 3) und das
+> Ausrollen der Workflows (Schritt 6). Beides geht von Hand, und die Stufen A
+> bis D hängen an keinem davon. Wer hier hängenbleibt, überspringt den Schritt
+> und macht weiter — Norra läuft trotzdem.
+
+### Wenn die Secrets leer ankommen
+
+Gemessen auf `master`, Lauf `e3de87ec`: **alle fünf** kamen mit null Zeichen an,
+`supabase link --project-ref ""` eingeschlossen. Nicht vier von fünf, nicht die
+zwei n8n-Werte — alle. Ein einzelner vergessener Eintrag sieht anders aus.
+
+Zwei Ursachen erklären das, und beide sehen in der Oberfläche identisch aus:
+
+1. **Der falsche Reiter.** In der linken Spalte unter *Secrets and variables*
+   stehen drei Einträge untereinander: **Actions**, **Codespaces**,
+   **Dependabot**. Jeder hat eine eigene Liste mit der Überschrift
+   *Repository secrets*, und ein Secret im falschen davon ist für Actions
+   schlicht nicht vorhanden. Die Adresszeile ist der Beweis: sie muss auf
+   `/settings/secrets/actions` enden.
+2. **Das falsche Repository.** Derselbe Screenshot entsteht in jedem Repository.
+   Vor dem Namen muss `niklasdeanharles/n8n-NorraOS` stehen.
+
+`norra-secrets-check.yml` beantwortet das ohne Raten: der Lauf listet die
+*Namen* der Secrets, die tatsächlich ankommen — `toJSON(secrets)`, dessen Werte
+GitHub ohnehin maskiert. Liegt dort nur `github_token`, ist keines der fünf im
+Actions-Reiter dieses Repositories.
 
 ## 3 · Schema ausrollen
 
@@ -153,10 +181,86 @@ nicht an: ein Rollout, der nebenbei Webhooks scharf schaltet, ist ein Rollout,
 der nachts niemanden fragt. Scharf gehören die sechs Webhook-Workflows und
 `outbound-call`; die Sub-Workflows werden gerufen und brauchen es nicht.
 
-## 7 · Vercel
+## 7 · Hosting
 
-Repository verbinden, **Root Directory** auf `norra/frontend` setzen. Dann unter
-**Settings → Environment Variables** eintragen, was in
+Die App ist eine gewöhnliche Next.js-Anwendung mit Node-Laufzeit — kein
+Edge-Runtime, kein Vercel-SDK, keine Vercel-spezifische Konfiguration. Sie
+läuft überall, wo ein Node-Prozess laufen darf. Drei Wege — der erste ist der,
+den du schon bezahlst, der zweite der bequemste zum Anfangen.
+
+### 7a · Der eigene VPS (empfohlen)
+
+Auf dem Hostinger-Rechner, auf dem n8n schon steht. Vollständige Anleitung in
+[`deploy/README.md`](deploy/README.md); kurz:
+
+```bash
+git clone https://github.com/niklasdeanharles/n8n-NorraOS.git
+cd n8n-NorraOS/norra/deploy
+cp norra.env.example norra.env && $EDITOR norra.env
+docker compose up -d --build
+```
+
+Danach im Reverse Proxy, der dort schon TLS für n8n macht, einen Block auf
+`127.0.0.1:3000` — Beispiele für Caddy und nginx liegen daneben.
+
+Drei Gründe, die schwerer wiegen als der Preis:
+
+- **Kein Zeitlimit pro Aufruf.** Der Telefonpfad gibt sich selbst zwölf
+  Sekunden. Gegen ein hartes Funktionslimit ist das eine Rechnung, die knapp
+  aufgeht; hier ist es keine.
+- **n8n liegt nebenan.** Jeder Turn geht sonst übers öffentliche Netz samt
+  TLS-Handshake. Im selben Docker-Netzwerk wird daraus `http://n8n:5678`.
+- **Vercels Hobby-Tarif ist nicht für kommerzielle Projekte.** Norra soll
+  Kunden haben. Gratis wäre dort nur der Anfang.
+
+Der Build braucht ~1,5 GB Arbeitsspeicher. Auf einem kleinen VPS neben n8n ist
+das knapp — vorher 2 GB Swap anlegen, siehe `deploy/README.md`.
+
+### 7b · Netlify
+
+`netlify.toml` liegt im Wurzelverzeichnis des Repositories und sagt alles, was
+Netlify über den Bau wissen muss — Basisverzeichnis, Node-Version, Next-Runtime.
+Nichts davon musst du anklicken.
+
+1. **Add new site → Import an existing project**, dieses Repository wählen.
+   Basisverzeichnis und Befehl stehen schon in `netlify.toml`; lässt Netlify
+   dich etwas vorschlagen, lass es so.
+2. **Site configuration → Environment variables**, dieselben sechs wie oben:
+
+   ```
+   NEXT_PUBLIC_SUPABASE_URL       aus Schritt 1
+   NEXT_PUBLIC_SUPABASE_ANON_KEY  aus Schritt 1
+   SUPABASE_SERVICE_ROLE_KEY      aus Schritt 1
+   N8N_WEBHOOK_URL                die URL deiner n8n-Instanz
+   N8N_WEBHOOK_SECRET             derselbe String wie in Schritt 5
+   NORRA_PUBLIC_URL               die Netlify-URL dieser App
+   ```
+
+3. **Deploy.** Danach `NORRA_PUBLIC_URL` auf die tatsächliche Adresse setzen
+   und noch einmal deployen — vorher kennst du sie nicht, und die
+   Twilio-Signaturprüfung hasht die vollständige URL.
+
+Drei Dinge, die der Gratis-Tarif dir nicht sagt, bevor sie wehtun:
+
+- **Funktionen werden nach 10 Sekunden abgebrochen.** Der Telefonpfad gibt sich
+  selbst zwölf. Das ist keine Kleinigkeit: unser eigener Abbruch käme nie zum
+  Zug, und der Anrufer bekäme eine tote Leitung statt „Das dauert gerade
+  länger als gewohnt …". Deshalb gibt es jetzt `NORRA_VOICE_TIMEOUT_MS` — bei
+  Netlify **auf `8000` setzen**, bevor du eine Nummer anschließt. Auf einem
+  eigenen Server bleibt die Vorgabe.
+- **125.000 Funktionsaufrufe im Monat.** Jede serverseitig gerenderte Seite und
+  jeder Turn zählt; ein Telefongespräch sind mehrere. Für Erprobung und die
+  ersten Kunden reicht es, für Betrieb in Menge nicht.
+- **300 Bauminuten im Monat.** Ein Bau dieser App dauert ein bis zwei.
+
+Der Stufe A und B sieht man nichts davon an. Erst Stufe C, das Telefon, stößt
+an die erste Grenze — und dann ist der VPS aus 7a der nächste Schritt, nicht
+ein teurerer Tarif.
+
+### 7c · Vercel
+
+Repository verbinden, **Root Directory** auf `norra/frontend` setzen. Dann
+unter **Settings → Environment Variables** eintragen, was in
 `frontend/.env.example` steht:
 
 ```
@@ -168,13 +272,24 @@ N8N_WEBHOOK_SECRET             derselbe String wie in Schritt 5
 NORRA_PUBLIC_URL               die Vercel-URL dieser App
 ```
 
+### Für alle drei
+
 Für den Screen *Betrieb* zusätzlich `N8N_BASE_URL`, `N8N_API_KEY` und
 `NORRA_OPS_ORG_ID` — **alle drei**, sonst bleibt die Karte „Die Instanz"
 geschlossen. Das ist Absicht: die n8n-Instanz gehört allen Mandanten gemeinsam,
 und ein API-Key allein wäre die Abkürzung, die diese Grenze aufhebt.
 
 `NEXT_PUBLIC_*` wird beim **Bauen** eingesetzt. Wer sie nachträglich ändert,
-muss neu deployen — die alte App redet sonst weiter mit dem alten Projekt.
+muss neu deployen bzw. neu bauen — die alte App redet sonst weiter mit dem
+alten Projekt.
+
+### Andere Gratis-Anbieter
+
+| Anbieter | Taugt? |
+|---|---|
+| **Cloudflare Workers** | im Prinzip ja über OpenNext, aber `node:crypto` und Middleware wollen Handarbeit |
+| **Render (Free)** | **nein für Stufe C.** Der Dienst schläft nach 15 Minuten ein und braucht ~50 s zum Aufwachen — Twilio legt vorher auf |
+| **Fly.io** | kein echtes Gratis-Kontingent mehr |
 
 ## 8 · Twilio (Stufe C)
 
@@ -221,6 +336,7 @@ aktivieren, den Einbettungs-Code auf eine Seite legen und selbst schreiben.
 | Anruf bricht sofort ab | `NORRA_PUBLIC_URL` weicht von der bei Twilio eingetragenen URL ab |
 | Agent antwortet, aber die Auswertung bleibt leer | `anthropicApi` hängt nicht am Klassifikations-Node |
 | Wissensbasis findet nichts | `openAiApi` fehlt — ohne Einbettungen keine Vektorsuche |
+| GitHub-Action meldet ein leeres Secret | Secret liegt im Reiter *Codespaces* oder *Dependabot* statt *Actions* |
 | Sprachnachricht ohne Abschrift | `googlePalmApi` oder `twilioApi` fehlt an `voicemail-transcribe` |
 
 Der Reflex bei allem, was nach Verdrahtung riecht:

@@ -1,0 +1,46 @@
+# Norra-App auf demselben VPS, auf dem schon n8n laeuft.
+#
+#   docker compose --env-file norra.env up -d --build
+#
+# Der Dienst horcht bewusst nur auf 127.0.0.1. Nach aussen geht er ueber den
+# Reverse Proxy, der auf diesem Rechner schon TLS fuer n8n macht -- ein zweiter
+# offener Port waere ein zweiter Weg an ihm vorbei.
+
+name: norra
+
+services:
+  norra-app:
+    build:
+      context: ../frontend
+      args:
+        # Beim Bauen eingesetzt, nicht beim Start: siehe Dockerfile.
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?fehlt in norra.env}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:?fehlt in norra.env}
+    image: norra-frontend:latest
+    container_name: norra-app
+    restart: unless-stopped
+    env_file:
+      - norra.env
+    ports:
+      - '127.0.0.1:3000:3000'
+    healthcheck:
+      # /login rendert ohne Sitzung und ohne Datenbank -- die richtige Probe
+      # dafuer, ob der Server steht, nicht ob Supabase erreichbar ist.
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/login']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    # Wenn n8n auf demselben Rechner in Docker laeuft, kann die App es intern
+    # erreichen -- kein Umweg ueber den Proxy, kein TLS-Handshake pro Turn.
+    # Dafuer den Netzwerknamen des n8n-Projekts eintragen (`docker network ls`)
+    # und in norra.env `N8N_WEBHOOK_URL=http://n8n:5678` setzen:
+    #
+    # networks:
+    #   - default
+    #   - n8n
+#
+# networks:
+#   n8n:
+#     external: true
+#     name: <netzwerkname-aus-docker-network-ls>

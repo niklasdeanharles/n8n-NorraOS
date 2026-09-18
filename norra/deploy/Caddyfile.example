@@ -1,0 +1,17 @@
+# Nur fuer den Fall, dass auf dem VPS noch kein Reverse Proxy steht. Wer n8n
+# schon unter https erreicht, hat einen -- dann gehoert dort ein Block wie
+# dieser hinein, nicht ein zweiter Proxy daneben.
+#
+# Caddy holt das Zertifikat selbst. Voraussetzung ist ein A-Record, der auf
+# diesen Rechner zeigt.
+
+norra.deine-domain.de {
+	encode zstd gzip
+
+	reverse_proxy 127.0.0.1:3000 {
+		# Die Antwort des Agenten wird gestreamt. Ohne das sammelt der Proxy
+		# sie ein und gibt sie am Stueck weiter -- im Chat stuende dann
+		# sekundenlang nichts und dann alles.
+		flush_interval -1
+	}
+}

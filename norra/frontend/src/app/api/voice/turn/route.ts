@@ -1,5 +1,6 @@
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
+import { voiceTurnBudgetMs } from '@/lib/env';
 import { callN8nWebhook, N8N_WEBHOOKS } from '@/lib/n8n/client';
 import type { createServiceRoleClient } from '@/lib/supabase/server';
 import { callbackUrl, verifyWebhook } from '@/lib/voice/session';
@@ -24,8 +25,11 @@ const HISTORY_LIMIT = 12;
 /**
  * A provider drops the call if the webhook takes too long. Better to answer
  * something useful at 12s than to have the line go dead at 15.
+ *
+ * The host can have a lower ceiling than the provider -- see
+ * `voiceTurnBudgetMs` and `NORRA_VOICE_TIMEOUT_MS`.
  */
-const AGENT_TIMEOUT_MS = 12_000;
+const AGENT_TIMEOUT_MS = voiceTurnBudgetMs;
 
 const agentReplySchema = z.object({
   reply: z.string().trim().min(1).max(4000),
