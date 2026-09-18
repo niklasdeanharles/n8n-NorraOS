@@ -22,10 +22,18 @@ function normalizeE164(input: string): string {
 const addSchema = z.object({
   e164: z.string().transform(normalizeE164).refine((v) => E164.test(v), 'Nummer im Format +49301234567 angeben.'),
   label: z.string().trim().max(120).optional(),
+  // Wer abnimmt. Leer bleibt erlaubt: eine Nummer anzulegen, bevor der Agent
+  // fertig ist, ist ein echter Ablauf — nur soll man nicht *gezwungen* sein,
+  // in zwei Schritten zu denken.
+  agentId: z.string().uuid().or(z.literal('')).optional(),
 });
 
 export async function addPhoneNumber(_prev: PhoneFormState, formData: FormData): Promise<PhoneFormState> {
-  const parsed = addSchema.safeParse({ e164: formData.get('e164'), label: formData.get('label') ?? undefined });
+  const parsed = addSchema.safeParse({
+    e164: formData.get('e164'),
+    label: formData.get('label') ?? undefined,
+    agentId: formData.get('agentId') ?? undefined,
+  });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Eingabe ungültig.' };
 
   const supabase = await createClient();
@@ -39,6 +47,7 @@ export async function addPhoneNumber(_prev: PhoneFormState, formData: FormData):
       organization_id: actor.organizationId,
       e164: parsed.data.e164,
       label: parsed.data.label || null,
+      agent_id: parsed.data.agentId || null,
       created_by: actor.id,
     })
     .select('id')
@@ -63,7 +72,12 @@ export async function addPhoneNumber(_prev: PhoneFormState, formData: FormData):
   });
 
   revalidatePath('/phone');
-  return { error: null, ok: 'Nummer angelegt. Jetzt Agent zuweisen und Weiterleitung eintragen.' };
+  return {
+    error: null,
+    ok: parsed.data.agentId
+      ? 'Nummer angelegt und dem Agenten zugewiesen. Sie steht noch auf „nicht eingerichtet" — öffne sie, trage die beiden URLs beim Anbieter ein und schalte sie dann live.'
+      : 'Nummer angelegt. Jetzt Agent zuweisen und Weiterleitung eintragen.',
+  };
 }
 
 const saveSchema = z.object({

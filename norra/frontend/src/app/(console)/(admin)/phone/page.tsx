@@ -138,7 +138,7 @@ export default async function PhonePage() {
           )}
         </div>
 
-        <AddNumberForm />
+        <AddNumberForm agents={agentsResult.data ?? []} />
 
         <SetupGuide numbers={numbers.map((n) => ({ id: n.id, e164: n.e164, status: n.status }))} />
 

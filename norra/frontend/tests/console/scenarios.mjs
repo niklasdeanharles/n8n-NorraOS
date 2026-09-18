@@ -78,6 +78,9 @@ function seed({ role = 'admin', messages = [], documents = [], phoneNumbers = []
       audit_log: [],
       phone_numbers: phoneNumbers,
       calls,
+      phone_departments: [],
+      closure_days: [],
+      callbacks: [],
     },
     ADMIN_USER,
   );
@@ -373,6 +376,32 @@ await scenario('Ohne Anmeldung kein Betriebs-Screen', async () => {
   seed(betriebFixtures());
   const { status } = await getPage('/betrieb', { signedIn: false });
   check('nicht 200', status !== 200, `bekam ${status}`);
+});
+
+/**
+ * Das Feld, mit dem eine Leitung entsteht.
+ *
+ * Geprueft wird die Seite, nicht die Server Action: die laesst sich ueber HTTP
+ * nicht sinnvoll aufrufen, weil Next sie ueber eine generierte Action-ID
+ * adressiert. Was diese Pruefung wert ist, ist trotzdem genau das, was fehlen
+ * koennte -- ein Formular, das es im Code gibt und das auf der Seite nicht
+ * ankommt, weil jemand die Komponente nicht eingehaengt hat.
+ */
+await scenario('Der Telefon-Screen hat ein Feld fuer die Nummer und den Assistenten', async () => {
+  seed();
+  const { status, html } = await getPage('/phone');
+  check('200', status === 200, `bekam ${status}`);
+  // NICHT `name="e164"` allein: das Abteilungs-Formular auf derselben Seite hat
+  // dasselbe Feld, und die Pruefung bliebe gruen, waere die Karte „Nummer
+  // anlegen" komplett verschwunden. Genau das ist bei der Fehlerinjektion
+  // passiert. Der Platzhalter gehoert nur dieser einen Karte.
+  check('die Karte „Nummer anlegen"', html.includes('Nummer anlegen'), '');
+  check('ein Feld fuer die Rufnummer', html.includes('+49 30 1234567'), '');
+  check('eine Auswahl fuer den Assistenten', /name="agentId"/.test(html), '');
+  // Der angelegte Agent muss darin auftauchen -- eine leere Auswahl waere
+  // dasselbe wie kein Feld.
+  check('der Agent steht zur Wahl', html.includes('Erstkontakt'), '');
+  check('und „spaeter zuweisen" bleibt moeglich', html.includes('später zuweisen'), '');
 });
 
 // ------------------------------------------------------------------ result
