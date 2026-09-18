@@ -1,0 +1,23 @@
+# Norra auf Netlify.
+#
+# Dieses Repository ist ein Fork des n8n-Monorepos; die App liegt darin unter
+# norra/frontend mit eigenem Lockfile. `base` sagt Netlify, wo gebaut wird --
+# ohne das sucht es im Monorepo-Root und installiert eine halbe Stunde lang
+# Pakete, die diese App nicht braucht.
+#
+# Die Datei steht bewusst im Repository statt in Netlifys Oberflaeche: was hier
+# nicht dokumentiert ist, weiss nachher niemand mehr.
+
+[build]
+  base = "norra/frontend"
+  command = "npm run build"
+  # `publish` bleibt weg: die Next.js-Runtime setzt es selbst und weiss besser,
+  # was zum Server gehoert und was zum CDN.
+
+[build.environment]
+  NODE_VERSION = "22"
+  NEXT_TELEMETRY_DISABLED = "1"
+
+# Netlify erkennt Next.js von selbst; hier zu stehen macht es nachpruefbar.
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

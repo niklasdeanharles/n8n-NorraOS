@@ -85,3 +85,41 @@ export function voiceConfigured(): boolean {
     NORRA_PUBLIC_URL: process.env.NORRA_PUBLIC_URL,
   }).success;
 }
+
+/**
+ * How long a voice turn may wait for the agent before it gives up and says
+ * something useful instead of nothing.
+ *
+ * Configurable because the ceiling is not ours. A serverless host kills the
+ * function on its own schedule -- Netlify's free tier at 10s -- and a budget
+ * above that limit is worse than a smaller one: our own abort never fires, so
+ * the caller gets a dead line instead of "einen Moment bitte". On a server we
+ * control there is no such ceiling and the default stands.
+ *
+ * Validated at import. That is deliberately loud: this module is on every
+ * route's path, so a typo makes the whole app answer 500 -- measured, `/login`
+ * included -- from the first request after a deploy. A value that only broke
+ * the phone path would be found by a caller, at night.
+ */
+const DEFAULT_VOICE_TURN_BUDGET_MS = 12_000;
+
+export const voiceTurnBudgetMs: number = (() => {
+  const raw = process.env.NORRA_VOICE_TIMEOUT_MS?.trim();
+  if (!raw) return DEFAULT_VOICE_TURN_BUDGET_MS;
+
+  const parsed = z.coerce
+    .number()
+    .int()
+    // Below 2s no model answers in time; above 20s no provider is still
+    // listening. Outside that range the value is a mistake, not a preference.
+    .min(2_000)
+    .max(20_000)
+    .safeParse(raw);
+
+  if (!parsed.success) {
+    throw new Error(
+      `NORRA_VOICE_TIMEOUT_MS must be a whole number of milliseconds between 2000 and 20000, got "${raw}".`,
+    );
+  }
+  return parsed.data;
+})();

@@ -416,6 +416,30 @@ await scenario('Zeitlimit beendet das Gespräch', async () => {
   await n8n.stop();
 });
 
+await scenario('Das Budget des Gastgebers gilt, nicht die Vorgabe', async () => {
+  // Ohne Weiterleitung, damit der reine Zeitablauf-Zweig geprueft wird und
+  // nicht der Griff zum Menschen.
+  seed({ transfer_number: null });
+  // `null` heisst: antwortet nie. Genau der Fall, gegen den das Budget steht.
+  n8n = await startN8n(54322, null);
+  await post('/api/voice/incoming', { To: NUMBER, From: '+49176', CallSid: 'CA-budget' });
+  const callId = store.calls[0].id;
+
+  const begonnen = Date.now();
+  const xml = await (
+    await post(`/api/voice/turn?call=${callId}`, { CallSid: 'CA-budget', SpeechResult: 'Hallo?' })
+  ).text();
+  const gedauert = Date.now() - begonnen;
+
+  check('sagt trotzdem etwas', xml.includes('dauert gerade länger'), xml.slice(0, 200));
+  check('und hoert weiter zu', xml.includes('<Gather'), xml.slice(0, 200));
+  // Der Runner setzt NORRA_VOICE_TIMEOUT_MS auf 2500. Ohne die Variable liefe
+  // die Vorgabe von 12s -- dieser eine Vergleich ist der ganze Beweis, dass
+  // der Wert ankommt und nicht nur danebensteht.
+  check(`innerhalb des gesetzten Budgets (${gedauert} ms)`, gedauert < 6_000, `${gedauert} ms`);
+  await n8n.stop();
+});
+
 await scenario('Statuscallback schließt den Anruf ab', async () => {
   seed();
   n8n = await startN8n(54322, { reply: 'Gern geschehen.', action: 'continue' });

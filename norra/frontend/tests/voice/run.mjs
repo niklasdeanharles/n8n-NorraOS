@@ -21,6 +21,10 @@ const env = {
   SUPABASE_SERVICE_ROLE_KEY: 'service-key-for-test',
   N8N_WEBHOOK_URL: 'http://127.0.0.1:54322',
   N8N_WEBHOOK_SECRET: '0123456789abcdef0123',
+  // Kuerzer als die Vorgabe von 12s, damit das Zeitablauf-Szenario den Lauf
+  // nicht um zwoelf Sekunden verlaengert -- und damit es ueberhaupt etwas
+  // beweist: bei der Vorgabe waere jede Messung mit ihr vereinbar.
+  NORRA_VOICE_TIMEOUT_MS: '2500',
   TWILIO_AUTH_TOKEN: 'test-token-0123456789abcdef',
   NORRA_PUBLIC_URL: 'https://norra.test',
 };

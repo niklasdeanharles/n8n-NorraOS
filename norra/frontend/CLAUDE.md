@@ -234,6 +234,7 @@ Die vollständigen Regeln stehen in `norra-backend/CLAUDE.md`.
 | `N8N_BASE_URL` | Hosting, optional | n8n-URL für die lesende Admin-API des Betriebs-Screens |
 | `N8N_API_KEY` | nur Server, optional | n8n-API-Key, ausschließlich lesend |
 | `NORRA_OPS_ORG_ID` | Hosting, optional | Organisation des Betreibers — ohne sie bleibt der Instanz-Blick zu |
+| `NORRA_VOICE_TIMEOUT_MS` | Hosting, optional | Zeitbudget eines Anruf-Turns; nur nötig, wenn der Gastgeber früher abbricht als 12s |
 
 ### Wo die App läuft
 

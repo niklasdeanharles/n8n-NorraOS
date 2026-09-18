@@ -185,8 +185,8 @@ der nachts niemanden fragt. Scharf gehören die sechs Webhook-Workflows und
 
 Die App ist eine gewöhnliche Next.js-Anwendung mit Node-Laufzeit — kein
 Edge-Runtime, kein Vercel-SDK, keine Vercel-spezifische Konfiguration. Sie
-läuft überall, wo ein Node-Prozess laufen darf. Zwei Wege, und der erste ist
-der, den du schon bezahlst.
+läuft überall, wo ein Node-Prozess laufen darf. Drei Wege — der erste ist der,
+den du schon bezahlst, der zweite der bequemste zum Anfangen.
 
 ### 7a · Der eigene VPS (empfohlen)
 
@@ -216,7 +216,48 @@ Drei Gründe, die schwerer wiegen als der Preis:
 Der Build braucht ~1,5 GB Arbeitsspeicher. Auf einem kleinen VPS neben n8n ist
 das knapp — vorher 2 GB Swap anlegen, siehe `deploy/README.md`.
 
-### 7b · Vercel
+### 7b · Netlify
+
+`netlify.toml` liegt im Wurzelverzeichnis des Repositories und sagt alles, was
+Netlify über den Bau wissen muss — Basisverzeichnis, Node-Version, Next-Runtime.
+Nichts davon musst du anklicken.
+
+1. **Add new site → Import an existing project**, dieses Repository wählen.
+   Basisverzeichnis und Befehl stehen schon in `netlify.toml`; lässt Netlify
+   dich etwas vorschlagen, lass es so.
+2. **Site configuration → Environment variables**, dieselben sechs wie oben:
+
+   ```
+   NEXT_PUBLIC_SUPABASE_URL       aus Schritt 1
+   NEXT_PUBLIC_SUPABASE_ANON_KEY  aus Schritt 1
+   SUPABASE_SERVICE_ROLE_KEY      aus Schritt 1
+   N8N_WEBHOOK_URL                die URL deiner n8n-Instanz
+   N8N_WEBHOOK_SECRET             derselbe String wie in Schritt 5
+   NORRA_PUBLIC_URL               die Netlify-URL dieser App
+   ```
+
+3. **Deploy.** Danach `NORRA_PUBLIC_URL` auf die tatsächliche Adresse setzen
+   und noch einmal deployen — vorher kennst du sie nicht, und die
+   Twilio-Signaturprüfung hasht die vollständige URL.
+
+Drei Dinge, die der Gratis-Tarif dir nicht sagt, bevor sie wehtun:
+
+- **Funktionen werden nach 10 Sekunden abgebrochen.** Der Telefonpfad gibt sich
+  selbst zwölf. Das ist keine Kleinigkeit: unser eigener Abbruch käme nie zum
+  Zug, und der Anrufer bekäme eine tote Leitung statt „Das dauert gerade
+  länger als gewohnt …". Deshalb gibt es jetzt `NORRA_VOICE_TIMEOUT_MS` — bei
+  Netlify **auf `8000` setzen**, bevor du eine Nummer anschließt. Auf einem
+  eigenen Server bleibt die Vorgabe.
+- **125.000 Funktionsaufrufe im Monat.** Jede serverseitig gerenderte Seite und
+  jeder Turn zählt; ein Telefongespräch sind mehrere. Für Erprobung und die
+  ersten Kunden reicht es, für Betrieb in Menge nicht.
+- **300 Bauminuten im Monat.** Ein Bau dieser App dauert ein bis zwei.
+
+Der Stufe A und B sieht man nichts davon an. Erst Stufe C, das Telefon, stößt
+an die erste Grenze — und dann ist der VPS aus 7a der nächste Schritt, nicht
+ein teurerer Tarif.
+
+### 7c · Vercel
 
 Repository verbinden, **Root Directory** auf `norra/frontend` setzen. Dann
 unter **Settings → Environment Variables** eintragen, was in
@@ -231,7 +272,7 @@ N8N_WEBHOOK_SECRET             derselbe String wie in Schritt 5
 NORRA_PUBLIC_URL               die Vercel-URL dieser App
 ```
 
-### Beides
+### Für alle drei
 
 Für den Screen *Betrieb* zusätzlich `N8N_BASE_URL`, `N8N_API_KEY` und
 `NORRA_OPS_ORG_ID` — **alle drei**, sonst bleibt die Karte „Die Instanz"
@@ -246,7 +287,6 @@ alten Projekt.
 
 | Anbieter | Taugt? |
 |---|---|
-| **Netlify** | ja, Next-Laufzeit und Streaming funktionieren; 125k Aufrufe/Monat gratis |
 | **Cloudflare Workers** | im Prinzip ja über OpenNext, aber `node:crypto` und Middleware wollen Handarbeit |
 | **Render (Free)** | **nein für Stufe C.** Der Dienst schläft nach 15 Minuten ein und braucht ~50 s zum Aufwachen — Twilio legt vorher auf |
 | **Fly.io** | kein echtes Gratis-Kontingent mehr |
