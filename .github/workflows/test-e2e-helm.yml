@@ -31,6 +31,8 @@ env:
 
 jobs:
   build:
+    # Upstream-only: braucht die Blacksmith-Runner der n8n-Organisation.
+    if: github.repository == 'n8n-io/n8n'
     name: 'Build Docker Image'
     runs-on: blacksmith-4vcpu-ubuntu-2204
     permissions:

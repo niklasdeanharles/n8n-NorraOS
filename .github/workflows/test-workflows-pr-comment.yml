@@ -11,7 +11,8 @@ permissions:
 jobs:
   handle_comment_command:
     name: Handle /test-workflows Command
-    if: github.event.issue.pull_request && startsWith(github.event.comment.body, '/test-workflows')
+    # Upstream-only: braucht die Blacksmith-Runner der n8n-Organisation.
+    if: github.repository == 'n8n-io/n8n' && github.event.issue.pull_request && startsWith(github.event.comment.body, '/test-workflows')
     runs-on: ubuntu-latest
     outputs:
       permission_granted: ${{ steps.pr_check_and_details.outputs.permission_granted }}

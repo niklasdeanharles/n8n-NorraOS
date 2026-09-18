@@ -9,6 +9,8 @@ on:
 jobs:
   # Cache-aware: no-op if an ancestor already populated the SHA-keyed cache.
   prepare-docker:
+    # Upstream-only: braucht die Blacksmith-Runner der n8n-Organisation.
+    if: github.repository == 'n8n-io/n8n'
     uses: ./.github/workflows/prepare-docker-reusable.yml
     secrets: inherit
 
