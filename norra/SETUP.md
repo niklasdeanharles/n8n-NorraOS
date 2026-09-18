@@ -28,7 +28,7 @@ nach jeder aufhören und hast etwas Laufendes.
 
 | Stufe | Was dann geht | Was du dafür brauchst |
 |---|---|---|
-| **A — Konsole** | Anmelden, Agenten anlegen, Wissensbasis pflegen | Supabase, Vercel |
+| **A — Konsole** | Anmelden, Agenten anlegen, Wissensbasis pflegen | Supabase, ein Hosting (Schritt 7) |
 | **B — Chat** | Das Web-Widget auf einer echten Seite | dazu n8n mit `supabaseApi`, `openAiApi`, `anthropicApi`, `httpHeaderAuth` |
 | **C — Telefon** | Eingehende Anrufe, Durchstellen, Anrufbeantworter | dazu Twilio |
 | **D — Der ganze Empfang** | Termine, Mails, Bestellungen, Abschriften | dazu Google Calendar, Gmail, Google Sheets, Google AI Studio |
@@ -181,10 +181,45 @@ nicht an: ein Rollout, der nebenbei Webhooks scharf schaltet, ist ein Rollout,
 der nachts niemanden fragt. Scharf gehören die sechs Webhook-Workflows und
 `outbound-call`; die Sub-Workflows werden gerufen und brauchen es nicht.
 
-## 7 · Vercel
+## 7 · Hosting
 
-Repository verbinden, **Root Directory** auf `norra/frontend` setzen. Dann unter
-**Settings → Environment Variables** eintragen, was in
+Die App ist eine gewöhnliche Next.js-Anwendung mit Node-Laufzeit — kein
+Edge-Runtime, kein Vercel-SDK, keine Vercel-spezifische Konfiguration. Sie
+läuft überall, wo ein Node-Prozess laufen darf. Zwei Wege, und der erste ist
+der, den du schon bezahlst.
+
+### 7a · Der eigene VPS (empfohlen)
+
+Auf dem Hostinger-Rechner, auf dem n8n schon steht. Vollständige Anleitung in
+[`deploy/README.md`](deploy/README.md); kurz:
+
+```bash
+git clone https://github.com/niklasdeanharles/n8n-NorraOS.git
+cd n8n-NorraOS/norra/deploy
+cp norra.env.example norra.env && $EDITOR norra.env
+docker compose up -d --build
+```
+
+Danach im Reverse Proxy, der dort schon TLS für n8n macht, einen Block auf
+`127.0.0.1:3000` — Beispiele für Caddy und nginx liegen daneben.
+
+Drei Gründe, die schwerer wiegen als der Preis:
+
+- **Kein Zeitlimit pro Aufruf.** Der Telefonpfad gibt sich selbst zwölf
+  Sekunden. Gegen ein hartes Funktionslimit ist das eine Rechnung, die knapp
+  aufgeht; hier ist es keine.
+- **n8n liegt nebenan.** Jeder Turn geht sonst übers öffentliche Netz samt
+  TLS-Handshake. Im selben Docker-Netzwerk wird daraus `http://n8n:5678`.
+- **Vercels Hobby-Tarif ist nicht für kommerzielle Projekte.** Norra soll
+  Kunden haben. Gratis wäre dort nur der Anfang.
+
+Der Build braucht ~1,5 GB Arbeitsspeicher. Auf einem kleinen VPS neben n8n ist
+das knapp — vorher 2 GB Swap anlegen, siehe `deploy/README.md`.
+
+### 7b · Vercel
+
+Repository verbinden, **Root Directory** auf `norra/frontend` setzen. Dann
+unter **Settings → Environment Variables** eintragen, was in
 `frontend/.env.example` steht:
 
 ```
@@ -196,13 +231,25 @@ N8N_WEBHOOK_SECRET             derselbe String wie in Schritt 5
 NORRA_PUBLIC_URL               die Vercel-URL dieser App
 ```
 
+### Beides
+
 Für den Screen *Betrieb* zusätzlich `N8N_BASE_URL`, `N8N_API_KEY` und
 `NORRA_OPS_ORG_ID` — **alle drei**, sonst bleibt die Karte „Die Instanz"
 geschlossen. Das ist Absicht: die n8n-Instanz gehört allen Mandanten gemeinsam,
 und ein API-Key allein wäre die Abkürzung, die diese Grenze aufhebt.
 
 `NEXT_PUBLIC_*` wird beim **Bauen** eingesetzt. Wer sie nachträglich ändert,
-muss neu deployen — die alte App redet sonst weiter mit dem alten Projekt.
+muss neu deployen bzw. neu bauen — die alte App redet sonst weiter mit dem
+alten Projekt.
+
+### Andere Gratis-Anbieter
+
+| Anbieter | Taugt? |
+|---|---|
+| **Netlify** | ja, Next-Laufzeit und Streaming funktionieren; 125k Aufrufe/Monat gratis |
+| **Cloudflare Workers** | im Prinzip ja über OpenNext, aber `node:crypto` und Middleware wollen Handarbeit |
+| **Render (Free)** | **nein für Stufe C.** Der Dienst schläft nach 15 Minuten ein und braucht ~50 s zum Aufwachen — Twilio legt vorher auf |
+| **Fly.io** | kein echtes Gratis-Kontingent mehr |
 
 ## 8 · Twilio (Stufe C)
 

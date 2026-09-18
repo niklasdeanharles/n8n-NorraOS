@@ -224,16 +224,28 @@ Die vollständigen Regeln stehen in `norra-backend/CLAUDE.md`.
 
 | Variable | Wo | Zweck |
 |---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | Vercel, lokal | Supabase-Projekt-URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Vercel, lokal | Client-/SSR-Key, RLS greift |
+| `NEXT_PUBLIC_SUPABASE_URL` | Hosting, lokal | Supabase-Projekt-URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Hosting, lokal | Client-/SSR-Key, RLS greift |
 | `SUPABASE_SERVICE_ROLE_KEY` | nur Server | umgeht RLS — niemals an den Client |
-| `N8N_WEBHOOK_URL` | Vercel | Basis-URL der n8n-Instanz |
-| `N8N_WEBHOOK_SECRET` | Vercel + n8n | Header-Auth zwischen Proxy und Webhook |
+| `N8N_WEBHOOK_URL` | Hosting | Basis-URL der n8n-Instanz |
+| `N8N_WEBHOOK_SECRET` | Hosting + n8n | Header-Auth zwischen Proxy und Webhook |
 | `TWILIO_AUTH_TOKEN` | nur Server, optional | Signaturprüfung der Telefonie-Webhooks |
-| `NORRA_PUBLIC_URL` | Vercel, optional | öffentliche Basis-URL für Telefonie-Signatur und Embed-Code |
-| `N8N_BASE_URL` | Vercel, optional | n8n-URL für die lesende Admin-API des Betriebs-Screens |
+| `NORRA_PUBLIC_URL` | Hosting, optional | öffentliche Basis-URL für Telefonie-Signatur und Embed-Code |
+| `N8N_BASE_URL` | Hosting, optional | n8n-URL für die lesende Admin-API des Betriebs-Screens |
 | `N8N_API_KEY` | nur Server, optional | n8n-API-Key, ausschließlich lesend |
-| `NORRA_OPS_ORG_ID` | Vercel, optional | Organisation des Betreibers — ohne sie bleibt der Instanz-Blick zu |
+| `NORRA_OPS_ORG_ID` | Hosting, optional | Organisation des Betreibers — ohne sie bleibt der Instanz-Blick zu |
+
+### Wo die App läuft
+
+Nichts hier ist an Vercel gebunden — kein Edge-Runtime, kein Vercel-SDK, keine
+Vercel-spezifische Konfiguration. `next.config.mjs` steht auf
+`output: 'standalone'`, und `norra/deploy/` enthält Compose-Datei und
+Reverse-Proxy-Beispiele für den VPS, auf dem n8n schon läuft.
+
+Eine Sache ist beim Selbsthosten anders und fällt sonst erst im Betrieb auf:
+**der Proxy darf nicht puffern.** `/api/agent-turn` und `/api/widget/turn`
+reichen den Body gestreamt durch; ein nginx mit `proxy_buffering on` (die
+Vorgabe) sammelt ihn ein, und im Chat steht sekundenlang nichts und dann alles.
 
 Das Web-Widget braucht keine eigene Variable — sein Signaturschlüssel leitet
 sich aus `N8N_WEBHOOK_SECRET` ab (siehe *Das Web-Widget*).
