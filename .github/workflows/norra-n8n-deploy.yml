@@ -1,0 +1,219 @@
+name: 'Norra: n8n Deploy'
+
+# Pushes committed workflow definitions back to the n8n instance. Only fires on
+# changes under norra/backend/n8n-workflows, so n8n's own repository changes never
+# trigger a deploy.
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - norra/backend/n8n-workflows/**
+      - norra/backend/scripts/**
+      - norra/backend/supabase/migrations/**
+      - norra/frontend/src/lib/n8n/**
+      - norra/frontend/src/app/api/**
+      - .github/workflows/norra-n8n-deploy.yml
+  pull_request:
+    paths:
+      - norra/backend/n8n-workflows/**
+      - norra/backend/scripts/**
+      - norra/backend/supabase/migrations/**
+      - norra/frontend/src/lib/n8n/**
+      - norra/frontend/src/app/api/**
+      - .github/workflows/norra-n8n-deploy.yml
+  workflow_dispatch:
+    inputs:
+      create_missing:
+        description: 'Fehlende Workflows auf der Instanz anlegen und die neuen IDs zurück ins Repository committen'
+        type: boolean
+        default: false
+
+concurrency:
+  # Never let two deploys race the same instance.
+  group: norra-n8n-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Push workflows
+    # Beim Anlegen tritt dieser Job zurück: der Job darunter deployt ohnehin
+    # mit, und liefe dieser zuerst, überspränge er genau die Dateien, um die es
+    # geht.
+    if: ${{ inputs.create_missing != true }}
+    runs-on: ubuntu-latest
+    # Hier stand `environment: ${{ github.event_name == 'push' && 'production'
+    # || '' }}`. Bei einem Pull Request wurde daraus ein *leerer*
+    # Umgebungsname, und dann erreichen die Repository-Secrets den Job nicht
+    # mehr: `N8N_BASE_URL` kam mit null Zeichen an, obwohl das Secret gesetzt
+    # war. Gemessen auf PR #1, mit einem frischen Lauf, nicht nur einem Re-Run.
+    #
+    # Die Schranke, die zählt, steht ohnehin am Schritt selbst: `Deploy` läuft
+    # nur, wenn das Ereignis kein Pull Request ist. Ein PR bekommt den Dry Run
+    # und sonst nichts -- dieselbe Wirkung, ohne den leeren Sonderfall.
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: '22'
+
+      # Läuft als Skript statt als bash-Schleife im YAML: die alte
+      # Fassung suchte *.json flach, fand nach der Ordner-Umstellung
+      # nichts mehr — und ein leerer Glob ist in bash kein Fehler,
+      # sondern das Muster selbst. Die Prüfung prüfte nichts.
+      - name: Validate workflow JSON
+        working-directory: norra/backend
+        run: node scripts/validate-workflows.mjs
+
+      - name: Check app and workflows still agree
+        working-directory: norra/backend
+        run: node scripts/check-wiring.mjs
+
+      # Was zwischen `{{` und `}}` steht, ist für check-wiring eine
+      # Zeichenkette — und genau dort liegt die Logik, die ein Kunde spürt:
+      # welches Schema das Modell befüllt, was in die Wissensbasis gerät, ob
+      # ein Zeitpunkt geraten wird.
+      - name: Workflow expressions
+        working-directory: norra/backend
+        run: node tests/workflow-expressions.mjs
+
+      # Ohne Secret kann der Sync nichts tun. Auf einem Pull Request ist
+      # das der Normalfall — ein Fork bekommt sie ohnehin nie —, und ein
+      # dauerhaft roter Check erzieht dazu, rote Checks zu übersehen.
+      # Auf master ist dasselbe Fehlen ein echter Fehler: dort *ist* der
+      # Deploy der Zweck des Jobs.
+      # Beide prüfen, nicht nur die URL: fehlt der Schlüssel, scheiterte der
+      # Deploy erst mitten im Lauf an einem 401 -- und die Meldung nennt dann
+      # den Endpunkt statt das fehlende Secret.
+      - name: Check for instance credentials
+        id: creds
+        env:
+          N8N_BASE_URL: ${{ secrets.N8N_BASE_URL }}
+          N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
+        run: |
+          missing=""
+          [ -z "$N8N_BASE_URL" ] && missing="$missing N8N_BASE_URL"
+          [ -z "$N8N_API_KEY" ] && missing="$missing N8N_API_KEY"
+
+          # Die Laenge statt des Werts: sie unterscheidet "nicht gesetzt" von
+          # "gesetzt, aber leer" und von "gesetzt, aber mit Zeilenumbruch
+          # eingefuegt" -- ohne das Secret selbst ins Protokoll zu schreiben.
+          echo "N8N_BASE_URL: ${#N8N_BASE_URL} Zeichen"
+          echo "N8N_API_KEY:  ${#N8N_API_KEY} Zeichen"
+
+          if [ -z "$missing" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Nicht gesetzt:$missing — Dry Run übersprungen."
+          else
+            echo "::error::Nicht gesetzt:$missing. Ohne diese Secrets läuft der Deploy nie."
+            exit 1
+          fi
+
+      - name: Dry run
+        if: steps.creds.outputs.configured == 'true'
+        working-directory: norra/backend
+        env:
+          N8N_BASE_URL: ${{ secrets.N8N_BASE_URL }}
+          N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
+        run: node scripts/n8n-sync.mjs deploy --dry-run
+
+      - name: Deploy
+        if: github.event_name != 'pull_request' && steps.creds.outputs.configured == 'true'
+        working-directory: norra/backend
+        env:
+          N8N_BASE_URL: ${{ secrets.N8N_BASE_URL }}
+          N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
+        run: node scripts/n8n-sync.mjs deploy
+
+      # Berichtet, was zwischen der Instanz und dem ersten echten Anruf noch
+      # steht. Absichtlich ohne Abbruch: was hier fehlt -- eine Credential
+      # anlegen, einen Workflow aktivieren -- kann nur ein Mensch tun, und ein
+      # Check, der bis dahin dauerhaft rot steht, erzieht dazu, rote Checks zu
+      # übersehen. Das Ergebnis landet in der Job-Zusammenfassung.
+      #
+      # Nicht mit --create-missing: ein Deploy, der bei jedem Push neue
+      # Workflows anlegt, legt sie irgendwann doppelt an. Anlegen ist deshalb
+      # ein eigener Knopf -- der Job `create-missing` weiter unten.
+      - name: Startbereitschaft berichten
+        if: steps.creds.outputs.configured == 'true'
+        continue-on-error: true
+        working-directory: norra/backend
+        env:
+          N8N_BASE_URL: ${{ secrets.N8N_BASE_URL }}
+          N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
+        run: |
+          {
+            echo '```'
+            node scripts/preflight.mjs || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Einmalig bei der Inbetriebnahme: die zwölf Workflows, die noch nicht auf der
+  # Instanz liegen, anlegen. Bewusst ein eigener Job und ein eigener Knopf --
+  # ein Deploy, der bei jedem Push neue Workflows anlegt, legt sie irgendwann
+  # doppelt an.
+  #
+  # Der Grund, warum das frueher nur am eigenen Rechner ging: `--create-missing`
+  # schreibt die neuen IDs in die JSON-Dateien, und die Aenderung ginge mit dem
+  # Runner verloren. Sie wird deshalb hier committet -- dieselbe Loesung, die
+  # `norra-n8n-backup.yml` fuer die Drift schon benutzt.
+  create-missing:
+    name: Fehlende Workflows anlegen
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.create_missing == true }}
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: '22'
+
+      - name: Validate workflow JSON
+        working-directory: norra/backend
+        run: node scripts/validate-workflows.mjs
+
+      - name: Anlegen und deployen
+        working-directory: norra/backend
+        env:
+          N8N_BASE_URL: ${{ secrets.N8N_BASE_URL }}
+          N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
+        run: node scripts/n8n-sync.mjs deploy --create-missing
+
+      # Ohne diesen Schritt legt der naechste Lauf dieselben Workflows ein
+      # zweites Mal an: die Zuordnung Datei -> Instanz steht ausschliesslich in
+      # `norra.workflowId`.
+      - name: Neue Workflow-IDs committen
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- norra/backend/n8n-workflows; then
+            echo "Keine neuen IDs -- es lag schon alles auf der Instanz."
+            exit 0
+          fi
+          git diff --stat -- norra/backend/n8n-workflows
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add norra/backend/n8n-workflows
+          git commit -m 'chore(norra): Workflow-IDs der n8n-Instanz'
+          git push
+
+      - name: Startbereitschaft berichten
+        continue-on-error: true
+        working-directory: norra/backend
+        env:
+          N8N_BASE_URL: ${{ secrets.N8N_BASE_URL }}
+          N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
+        run: |
+          {
+            echo '```'
+            node scripts/preflight.mjs || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
