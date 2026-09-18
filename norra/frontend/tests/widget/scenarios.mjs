@@ -7,7 +7,7 @@
  * itself, so a chunk of this suite is dedicated to what happens when it is
  * tampered with, expired, or points at an agent that goes dark mid-chat.
  */
-import { start as startSupabase, reset, store } from '../mocks/supabase.mjs';
+import { start as startSupabase, reset, setRateLimitClock, store } from '../mocks/supabase.mjs';
 import { start as startN8n } from '../mocks/n8n.mjs';
 import { createHmac } from 'node:crypto';
 
@@ -282,6 +282,14 @@ await scenario('Zu viele Turns auf einem Token werden abgewiesen', async () => {
   const session = await (await post('/api/widget/session', { agentId: AGENT },
     { 'x-forwarded-for': freshAddress() })).json();
 
+  // Die Uhr des Zählers wird festgehalten. Ohne das hängt diese Prüfung davon
+  // ab, wann in der Minute sie läuft: die Fenster sind fest an der Wanduhr
+  // ausgerichtet, und ein Burst über die Minutengrenze bekommt mitten drin
+  // einen frischen Zähler. Genau so ist sie in CI umgefallen (17 × 200 statt
+  // 15 × 200 + 2 × 429, gelaufen um 13:50:59).
+  const t0 = Date.UTC(2026, 0, 1, 12, 0, 0);
+  setRateLimitClock(t0);
+
   const codes = [];
   for (let i = 0; i < 17; i += 1) {
     const res = await post('/api/widget/turn', { token: session.token, message: `Frage ${i}` });
@@ -292,6 +300,16 @@ await scenario('Zu viele Turns auf einem Token werden abgewiesen', async () => {
   check('danach 429', codes.slice(15).every((c) => c === 429), codes.join(','));
   // Der Punkt der Uebung: was nicht durchkommt, kostet auch nichts.
   check('n8n wurde nur fünfzehnmal gerufen', n8n.seen.length === 15, `waren ${n8n.seen.length}`);
+
+  // Die Kehrseite, die vorher niemand geprüft hat: das Fenster muss auch wieder
+  // aufgehen. Ein Zähler, der nur zusperrt, wäre eine Sperre auf Dauer — der
+  // Kunde käme nach einer Minute nicht zurück, sondern nie.
+  setRateLimitClock(t0 + 61_000);
+  const after = await post('/api/widget/turn', { token: session.token, message: 'Eine Minute später' });
+  if (after.body) await after.text();
+  check('im nächsten Fenster geht es weiter', after.status === 200, `bekam ${after.status}`);
+
+  setRateLimitClock(null);
   await n8n.stop();
 });
 

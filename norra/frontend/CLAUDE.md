@@ -628,7 +628,7 @@ In-Memory-Stand-ins hoch:
 node tests/voice/run.mjs      # 50 Szenarien vom eingehenden Anruf bis zur Nachbereitung
 node tests/widget/run.mjs     # 20 Szenarien von der Session bis zur Bewertung
 node tests/simulate/run.mjs   # 12 Szenarien der Testfall-Simulation, als angemeldeter Admin
-node tests/console/run.mjs    # 20 Szenarien der Konsolen-Routen (Agent-Turn, Wissens-Ingest, Betrieb)
+node tests/console/run.mjs    # 21 Szenarien der Konsolen-Routen (Agent-Turn, Wissens-Ingest, Betrieb)
 ```
 
 **Was diese Suiten nicht beweisen können: Mandantentrennung.** Der Mock hat

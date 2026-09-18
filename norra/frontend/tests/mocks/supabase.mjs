@@ -187,7 +187,27 @@ function parseFilters(url) {
   return filters;
 }
 
+/**
+ * Die Uhr, nach der `take_rate_limit` seine Fenster schneidet.
+ *
+ * `null` heißt: echte Uhrzeit, wie im Betrieb. Ein Test, der eine Obergrenze
+ * prüft, darf davon aber nicht abhängen — die Fenster sind fest an der
+ * Wanduhr ausgerichtet, und ein Burst, der über die Minutengrenze fällt,
+ * bekommt mitten drin einen frischen Zähler. Genau daran ist die Prüfung
+ * „nach fünfzehn kommt 429" in CI gescheitert: sie lief um 13:50:59.
+ *
+ * Mit gesetzter Uhr ist der Burst deterministisch — und der Fensterwechsel
+ * wird prüfbar, statt zufällig zu passieren.
+ */
+let clock = null;
+
+/** Pinnt die Uhr des Zählers. `null` gibt sie wieder frei. */
+export function setRateLimitClock(ms) {
+  clock = ms;
+}
+
 export function reset(seed, user = null) {
+  clock = null;
   for (const key of Object.keys(db)) db[key] = [];
   Object.assign(db, seed);
   authUser = user;
@@ -226,7 +246,8 @@ export function start(port) {
       let raw = '';
       for await (const chunk of req) raw += chunk;
       const { p_bucket, p_limit, p_window_seconds } = raw ? JSON.parse(raw) : {};
-      const windowStart = Math.floor(Date.now() / 1000 / p_window_seconds) * p_window_seconds;
+      const nowMs = clock ?? Date.now();
+      const windowStart = Math.floor(nowMs / 1000 / p_window_seconds) * p_window_seconds;
       let row = db.rate_limits.find((r) => r.bucket === p_bucket && r.window_start === windowStart);
       if (!row) {
         row = { bucket: p_bucket, window_start: windowStart, count: 0 };
