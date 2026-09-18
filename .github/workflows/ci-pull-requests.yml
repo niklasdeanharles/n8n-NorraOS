@@ -10,6 +10,8 @@ concurrency:
 
 jobs:
   install-and-build:
+    # Upstream-only: braucht die Blacksmith-Runner der n8n-Organisation.
+    if: github.repository == 'n8n-io/n8n'
     name: Install & Build
     runs-on: ${{ vars.RUNNER_PROVIDER == 'github' && 'ubuntu-latest' || 'blacksmith-2vcpu-ubuntu-2204' }}
     env:

@@ -35,6 +35,8 @@ on:
 
 jobs:
   check-skip:
+    # Upstream-only: braucht die Blacksmith-Runner der n8n-Organisation.
+    if: github.repository == 'n8n-io/n8n'
     name: Check Skip Label
     runs-on: ubuntu-latest
     outputs:

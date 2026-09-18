@@ -9,6 +9,8 @@ on:
 
 jobs:
   build-github:
+    # Upstream-only: braucht die Blacksmith-Runner der n8n-Organisation.
+    if: github.repository == 'n8n-io/n8n'
     name: Build for Github Cache
     runs-on: ubuntu-latest
     env:
@@ -25,6 +27,8 @@ jobs:
           build-command: pnpm build
 
   unit-test:
+    # Upstream-only: braucht die Blacksmith-Runner der n8n-Organisation.
+    if: github.repository == 'n8n-io/n8n'
     name: Unit tests
     uses: ./.github/workflows/test-unit-reusable.yml
     strategy:
@@ -38,12 +42,16 @@ jobs:
     secrets: inherit
 
   lint:
+    # Upstream-only: braucht die Blacksmith-Runner der n8n-Organisation.
+    if: github.repository == 'n8n-io/n8n'
     name: Lint
     uses: ./.github/workflows/test-linting-reusable.yml
     with:
       ref: ${{ github.sha }}
 
   performance:
+    # Upstream-only: braucht die Blacksmith-Runner der n8n-Organisation.
+    if: github.repository == 'n8n-io/n8n'
     name: Performance
     uses: ./.github/workflows/test-bench-reusable.yml
     with:
