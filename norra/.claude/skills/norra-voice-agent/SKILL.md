@@ -81,22 +81,27 @@ den Anruf doppelt so lang.
 
 ### Phase 3 — Fähigkeiten und Tools
 
-Sieben Tools gibt es (`frontend/src/lib/tools.ts`). Drei laufen überall, vier
+Elf Tools gibt es (`frontend/src/lib/tools.ts`). Fünf laufen überall, sechs
 nur am Telefon:
 
 | Tool | Kanal | Wofür |
 |---|---|---|
 | `lookup_record` | beide | Datensatz beim Kunden nachschlagen, read-only |
+| `lookup_order` | beide | Bestellung aus `order_sources` nachschlagen — nur die freigegebenen Spalten |
 | `escalate_to_human` | beide | Ticket anlegen, Konversation eskalieren |
 | `request_action` | beide | Folgenreiche Aktion zur **Freigabe** einreichen — führt nichts aus |
+| `book_appointment` | beide | Termin eintragen, nach Verfügbarkeitsprüfung |
 | `identify_caller` | Telefon | Anrufer an seiner Nummer erkennen |
 | `send_sms` | Telefon | SMS an den Anrufer |
 | `schedule_callback` | Telefon | Rückruf notieren |
 | `transfer_to_department` | Telefon | An eine Fachabteilung durchstellen |
+| `take_message` | Telefon | Nachricht für eine Person im Haus aufnehmen |
+| `transfer_to_person` | Telefon | An eine Person aus dem Verzeichnis durchstellen, mit Briefing |
 
-Braucht eine gewünschte Fähigkeit einen fremden Dienst, ist das
-`lookup_record` mit einer URL in `tools[].config.url` — nicht ein neuer
-Workflow. Erst wenn die Fähigkeit wirklich etwas anderes tut, wird ein
+Geht es um Bestellungen, ist es `lookup_order` und ein Eintrag im Screen
+*Bestellungen* — nicht `lookup_record` mit einer selbstgebauten URL. Braucht
+eine gewünschte Fähigkeit sonst einen fremden Dienst, ist das `lookup_record`
+mit einer URL in `tools[].config.url` — nicht ein neuer Workflow. Erst wenn die Fähigkeit wirklich etwas anderes tut, wird ein
 Sub-Workflow gebaut; dann gilt `backend/n8n-workflows/README.md`.
 
 ### Phase 4 — Telefon-Feinschliff

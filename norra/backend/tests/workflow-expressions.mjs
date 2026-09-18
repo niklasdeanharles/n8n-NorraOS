@@ -48,6 +48,21 @@ function evaluate(expression, context) {
   );
 }
 
+/**
+ * Führt den JavaScript-Code eines Code-Nodes aus.
+ *
+ * Ein Ausdruck ist eine Zeile, ein Code-Node ein kleines Programm mit
+ * Verzweigungen — und in einer davon steht bei `lookup_order`, was ein Anrufer
+ * zu hören bekommt und was nicht. Diese Klasse Fehler fällt sonst erst dann
+ * auf, wenn sie schon jemandem vorgelesen wurde.
+ */
+function runCode(node, { items = [], nodes = {} } = {}) {
+  const wrapped = items.map((json) => ({ json }));
+  const $input = { all: () => wrapped, first: () => wrapped[0] };
+  const $ = (name) => ({ first: () => ({ json: nodes[name] ?? {} }), item: { json: nodes[name] ?? {} } });
+  return new Function('$input', '$', node.parameters.jsCode)($input, $);
+}
+
 /** Nur was die Ausdrücke brauchen. Luxon selbst ist hier keine Abhängigkeit wert. */
 const MiniDateTime = {
   fromISO(raw) {
@@ -233,6 +248,84 @@ const field = (node, id) =>
   );
   // Eine Minute nachts: praktisch nie, und genau das muss herauskommen.
   check('ein Minutenfenster trifft fast nie zu', inWindow(neverOpen) === false);
+}
+
+// ---------------------------------------------------------------------------
+// lookup-order: die Spaltenliste ist die Grenze
+// ---------------------------------------------------------------------------
+
+{
+  const order = nodesOf(load('sub-workflows/lookup-order.json'));
+  const sheetSource = {
+    id: 's1', label: 'Bestellungen 2026', kind: 'google_sheet', active: true,
+    sheet_id: 'abc', sheet_range: 'Bestellungen!A:H', endpoint_url: null,
+    match_column: 'Bestellnummer', return_columns: ['Status', 'Lieferung'],
+  };
+  const pick = (sources, label = '') => runCode(order['Pick Source'], {
+    items: sources,
+    nodes: { 'Order Requested': { source_label: label } },
+  })[0].json;
+  const find = (source, payload, ref) => runCode(order['Find Order'], {
+    items: payload,
+    nodes: { 'Pick Source': source, 'Order Requested': { order_ref: ref } },
+  })[0].json;
+
+  group('lookup_order: welche Quelle gemeint ist');
+  check('genau eine aktive Quelle wird genommen', pick([sheetSource]).label === 'Bestellungen 2026');
+  check('gar keine Quelle ergibt keinen Rateversuch', pick([]).kind === 'none');
+  const two = [sheetSource, { ...sheetSource, id: 's2', label: 'Altbestand' }];
+  // Die falsche Tabelle vorzulesen ist schlimmer, als zu sagen, dass es
+  // gerade nicht geht. Deshalb wird hier nicht die erste genommen.
+  check('mehrere ohne Auswahl ergeben keinen Rateversuch', pick(two).kind === 'none');
+  check('mehrere mit Auswahl ergeben die benannte', pick(two, 'Altbestand').label === 'Altbestand');
+  check('eine Auswahl ohne Treffer ergibt keinen Rateversuch', pick(two, 'Gibt es nicht').kind === 'none');
+
+  const grid = [
+    ['Bestellnummer', 'Status', 'Lieferung', 'Einkaufspreis', 'Interne Notiz'],
+    ['A-1234', 'versandt', '22.09.', '12,40', 'Kunde meckert immer'],
+    ['A-1235', 'offen', '-', '3,10', ''],
+  ];
+
+  group('lookup_order: nur freigegebene Spalten verlassen den Workflow');
+  const hit = find(pick([sheetSource]), [{ values: grid }], 'A-1234');
+  check('Bestellung gefunden', hit.found === true);
+  check('der Status kommt mit', hit.order.Status === 'versandt');
+  check('der Einkaufspreis bleibt in der Tabelle', !('Einkaufspreis' in hit.order));
+  check('die interne Notiz bleibt in der Tabelle', !('Interne Notiz' in hit.order));
+  check('die Bestellnummer selbst auch', !('Bestellnummer' in hit.order));
+  // Der Satz an das Modell ist die zweite Stelle, an der etwas entweichen
+  // könnte -- eine saubere Projektion nützt nichts, wenn daneben die ganze
+  // Zeile im Klartext steht.
+  check('auch der Satz an das Modell trägt nur das Freigegebene',
+    !hit.result.includes('12,40') && !hit.result.includes('meckert'));
+
+  group('lookup_order: was passiert, wenn nichts passt');
+  check('eine unbekannte Nummer', find(pick([sheetSource]), [{ values: grid }], 'Z-9').found === false);
+  check('Groß-, Kleinschreibung und Leerzeichen sind egal',
+    find(pick([sheetSource]), [{ values: grid }], '  a-1234 ').found === true);
+
+  group('lookup_order: Konfigurationsfehler werden protokolliert, nicht verschwiegen');
+  check('keine nutzbare Quelle wird als Fehler geloggt', find(pick([]), [{ values: [] }], 'A-1234').status === 'error');
+  const typo = { ...sheetSource, return_columns: ['Statuss'] };
+  const nothingReleased = find(pick([typo]), [{ values: grid }], 'A-1234');
+  check('ein Tippfehler in der Spaltenliste auch', nothingReleased.status === 'error');
+  check('und wird nicht als „nicht gefunden" getarnt', nothingReleased.found === true);
+
+  group('lookup_order: der eigene Endpunkt');
+  const httpSource = { ...sheetSource, kind: 'http', endpoint_url: 'https://api.example.com/orders' };
+  const shapes = {
+    'ein einzelnes Objekt': [{ Bestellnummer: 'A-1234', Status: 'versandt', Marge: '4,20' }],
+    'eine Liste': [{ Bestellnummer: 'A-9' }, { Bestellnummer: 'A-1234', Status: 'versandt' }],
+    'orders darin': [{ orders: [{ Bestellnummer: 'A-1234', Status: 'versandt' }] }],
+    'data darin': [{ data: [{ Bestellnummer: 'A-1234', Status: 'versandt' }] }],
+    'results darin': [{ results: [{ Bestellnummer: 'A-1234', Status: 'versandt' }] }],
+  };
+  for (const [label, payload] of Object.entries(shapes)) {
+    const found = find(pick([httpSource]), payload, 'A-1234');
+    check(label, found.found === true && found.order.Status === 'versandt');
+  }
+  check('die Marge bleibt beim Kunden',
+    !('Marge' in find(pick([httpSource]), shapes['ein einzelnes Objekt'], 'A-1234').order));
 }
 
 console.log(`\n${checks} Prüfungen, ${failures} Fehler`);

@@ -124,7 +124,7 @@
         "promptType": "define",
         "text": "={{ $(\"Normalize Request\").item.json.message }}",
         "options": {
-          "systemMessage": "={{ $('Load Agent Config').first().json.system_prompt }}\n\n## Guardrails\nVerbotene Themen (freundlich ablehnen und ggf. eskalieren): {{ JSON.stringify($('Load Agent Config').first().json.guardrails?.forbidden_topics ?? []) }}\nErlaubte Themen (leer = keine Einschraenkung): {{ JSON.stringify($('Load Agent Config').first().json.guardrails?.allowed_topics ?? []) }}\nEskalationsregeln: {{ JSON.stringify($('Load Agent Config').first().json.escalation_rules ?? {}) }}\n\n## Werkzeuge\nKnowledge Base: fuer jede inhaltliche Frage zuerst hier nachschlagen. Erfinde niemals Richtlinien oder Fakten.\nlookup_record: fuer jede Aussage ueber konkrete Kundendaten. Rate niemals einen Status, einen Betrag oder ein Datum.\nescalate_to_human: wenn der Kunde einen Menschen verlangt, du nicht weiterkommst, oder es eine Beschwerde ist.\nrequest_action: fuer jede folgenreiche Aktion. Das Tool fuehrt nichts aus, es reicht die Aktion zur Freigabe ein. Sage dem Kunden zu, dass ein Mitarbeiter prueft -- bestaetige niemals, dass die Aktion bereits erfolgt ist, und nenne keinen Termin.\n\n## Werkzeuge am Telefon\nidentify_caller: rufe dies als Erstes auf, noch bevor du fragst, worum es geht. Ist der Anrufer bekannt, begruesse ihn mit Namen und nimm Bezug auf sein letztes Anliegen, statt bei null anzufangen. Ist er unbekannt, sage nichts darueber -- frag einfach, wie du helfen kannst.\nsend_sms: fuer alles, was man sich im Gespraech nicht merken kann -- ein Link, eine Vorgangsnummer, eine Adresse, ein Termin. Kuendige die SMS an (\"Ich schicke Ihnen das gerade per SMS\"). Du bestimmst den Text, nicht die Nummer.\nschedule_callback: wenn du jetzt nicht weiterhilfst oder der Anrufer keine Zeit hat. Notiere den Grund und den Zeitwunsch so, wie er ihn sagt. Sage zu, dass sich jemand meldet -- nenne aber nie eine feste Uhrzeit, die niemand zugesagt hat.\ntransfer_to_department: wenn eine Fachabteilung zustaendig ist. Nenne den Abteilungsnamen genau so, wie er unten steht. Nenne nie eine Rufnummer. Nutze es erst, wenn du weisst, worum es geht -- niemand mag es, dreimal weitergereicht zu werden.\n\n## Verfuegbare Abteilungen\n{{ ($json.departments ?? []).length ? ($json.departments ?? []).map(d => \"- \" + d.name + \": \" + d.description).join(\"\\n\") : \"Keine. Nutze transfer_to_department nicht; biete stattdessen escalate_to_human oder schedule_callback an.\" }}\n\n## Du sprichst, du schreibst nicht\nDiese Antwort wird vorgelesen. Deshalb:\n- Zwei bis drei Saetze. Wer am Telefon einen Absatz hoert, hat den Anfang vergessen.\n- Keine Aufzaehlungen, keine Formatierung, keine URLs, keine Klammern. Nichts, was man nicht sprechen kann.\n- Zahlen, Betraege und Daten so, wie man sie sagt: \"zweiundneunzig Euro\", \"am ersten Oktober\".\n- Eine Rueckfrage pro Antwort, nicht drei.\n- Bei einer laengeren Auskunft: das Wichtigste zuerst, dann den Rest per SMS schicken (send_sms). Was man sich nicht merken kann, gehoert nicht in eine gesprochene Antwort.\n- Wenn du etwas nicht verstanden hast, frag nach, statt zu raten. Der Anrufer wurde transkribiert, und Transkription irrt.\n\n## Bisheriger Gespraechsverlauf\n{{ JSON.stringify($(\"Normalize Request\").item.json.history ?? []) }}",
+          "systemMessage": "={{ $('Load Agent Config').first().json.system_prompt }}\n\n## Guardrails\nVerbotene Themen (freundlich ablehnen und ggf. eskalieren): {{ JSON.stringify($('Load Agent Config').first().json.guardrails?.forbidden_topics ?? []) }}\nErlaubte Themen (leer = keine Einschraenkung): {{ JSON.stringify($('Load Agent Config').first().json.guardrails?.allowed_topics ?? []) }}\nEskalationsregeln: {{ JSON.stringify($('Load Agent Config').first().json.escalation_rules ?? {}) }}\n\n## Werkzeuge\nKnowledge Base: fuer jede inhaltliche Frage zuerst hier nachschlagen. Erfinde niemals Richtlinien oder Fakten.\nlookup_record: fuer jede Aussage ueber konkrete Kundendaten. Rate niemals einen Status, einen Betrag oder ein Datum.\nlookup_order: fuer jede Frage nach einer konkreten Bestellung oder einem Auftrag. Nenne ausschliesslich die Angaben, die zurueckkommen -- was nicht darin steht, ist nicht freigegeben, auch wenn es harmlos wirkt.\nescalate_to_human: wenn der Kunde einen Menschen verlangt, du nicht weiterkommst, oder es eine Beschwerde ist.\nrequest_action: fuer jede folgenreiche Aktion. Das Tool fuehrt nichts aus, es reicht die Aktion zur Freigabe ein. Sage dem Kunden zu, dass ein Mitarbeiter prueft -- bestaetige niemals, dass die Aktion bereits erfolgt ist, und nenne keinen Termin.\n\n## Werkzeuge am Telefon\nidentify_caller: rufe dies als Erstes auf, noch bevor du fragst, worum es geht. Ist der Anrufer bekannt, begruesse ihn mit Namen und nimm Bezug auf sein letztes Anliegen, statt bei null anzufangen. Ist er unbekannt, sage nichts darueber -- frag einfach, wie du helfen kannst.\nsend_sms: fuer alles, was man sich im Gespraech nicht merken kann -- ein Link, eine Vorgangsnummer, eine Adresse, ein Termin. Kuendige die SMS an (\"Ich schicke Ihnen das gerade per SMS\"). Du bestimmst den Text, nicht die Nummer.\nschedule_callback: wenn du jetzt nicht weiterhilfst oder der Anrufer keine Zeit hat. Notiere den Grund und den Zeitwunsch so, wie er ihn sagt. Sage zu, dass sich jemand meldet -- nenne aber nie eine feste Uhrzeit, die niemand zugesagt hat.\ntransfer_to_department: wenn eine Fachabteilung zustaendig ist. Nenne den Abteilungsnamen genau so, wie er unten steht. Nenne nie eine Rufnummer. Nutze es erst, wenn du weisst, worum es geht -- niemand mag es, dreimal weitergereicht zu werden.\n\n## Verfuegbare Abteilungen\n{{ ($json.departments ?? []).length ? ($json.departments ?? []).map(d => \"- \" + d.name + \": \" + d.description).join(\"\\n\") : \"Keine. Nutze transfer_to_department nicht; biete stattdessen escalate_to_human oder schedule_callback an.\" }}\n\n## Du sprichst, du schreibst nicht\nDiese Antwort wird vorgelesen. Deshalb:\n- Zwei bis drei Saetze. Wer am Telefon einen Absatz hoert, hat den Anfang vergessen.\n- Keine Aufzaehlungen, keine Formatierung, keine URLs, keine Klammern. Nichts, was man nicht sprechen kann.\n- Zahlen, Betraege und Daten so, wie man sie sagt: \"zweiundneunzig Euro\", \"am ersten Oktober\".\n- Eine Rueckfrage pro Antwort, nicht drei.\n- Bei einer laengeren Auskunft: das Wichtigste zuerst, dann den Rest per SMS schicken (send_sms). Was man sich nicht merken kann, gehoert nicht in eine gesprochene Antwort.\n- Wenn du etwas nicht verstanden hast, frag nach, statt zu raten. Der Anrufer wurde transkribiert, und Transkription irrt.\n\n## Bisheriger Gespraechsverlauf\n{{ JSON.stringify($(\"Normalize Request\").item.json.history ?? []) }}",
           "maxIterations": 7,
           "enableStreaming": false,
           "returnIntermediateSteps": true
@@ -1291,6 +1291,94 @@
           ]
         }
       }
+    },
+    {
+      "id": "voice-tool-11",
+      "name": "lookup_order",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        1320,
+        400
+      ],
+      "parameters": {
+        "description": "Schlage eine Bestellung oder einen Auftrag anhand der genannten Nummer nach. Nutze das Tool, bevor du irgendetwas ueber eine konkrete Bestellung sagst -- Status, Liefertermin, Betrag. Rate nie und rechne nichts hoch. Nenne dem Kunden ausschliesslich die Angaben, die das Tool zurueckgibt: was nicht darin steht, ist nicht freigegeben, auch wenn du es fuer harmlos haeltst.",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "Norra – Tool: lookup_order"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "value": {
+            "organization_id": "={{ $('Normalize Request').item.json.organization_id }}",
+            "conversation_id": "={{ $('Normalize Request').item.json.conversation_id }}",
+            "agent_id": "={{ $('Normalize Request').item.json.agent_id }}",
+            "call_id": "={{ $('Normalize Request').item.json.call_id }}",
+            "order_ref": "={{ $fromAI('order_ref', 'Die Bestell- oder Auftragsnummer, genau so, wie der Kunde sie genannt hat. Buchstaben und Bindestriche gehoeren dazu. Ist sie unvollstaendig, frag nach, statt zu ergaenzen.', 'string') }}",
+            "source_label": "={{ ($('Load Agent Config').item.json.tools ?? []).find(t => t.slug === 'lookup_order')?.config?.source_label ?? '' }}"
+          },
+          "schema": [
+            {
+              "id": "organization_id",
+              "displayName": "organization_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "agent_id",
+              "displayName": "agent_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "call_id",
+              "displayName": "call_id",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "order_ref",
+              "displayName": "order_ref",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_label",
+              "displayName": "source_label",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      }
     }
   ],
   "connections": {
@@ -1504,6 +1592,17 @@
       ]
     },
     "transfer_to_person": {
+      "ai_tool": [
+        [
+          {
+            "node": "Voice Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "lookup_order": {
       "ai_tool": [
         [
           {

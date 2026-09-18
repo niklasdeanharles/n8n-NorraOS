@@ -124,7 +124,8 @@ export function OrderSources({ sources, canEdit }: { sources: Source[]; canEdit:
                 <input name="endpointUrl" required maxLength={500} placeholder="https://api.example.com/orders" />
                 <span className="field-hint">
                   Wird mit <code>?query=&lt;Bestellnummer&gt;</code> aufgerufen. Nur https — eine Bestellnummer
-                  ist ein Kundendatum.
+                  ist ein Kundendatum. Zurück darf ein Objekt, eine Liste oder ein Objekt mit{' '}
+                  <code>orders</code>, <code>data</code>, <code>items</code> oder <code>results</code> darin.
                 </span>
               </label>
             )}
@@ -133,7 +134,10 @@ export function OrderSources({ sources, canEdit }: { sources: Source[]; canEdit:
               <label>
                 Spalte mit der Bestellnummer
                 <input name="matchColumn" required maxLength={80} placeholder="Bestellnummer" />
-                <span className="field-hint">Danach wird gesucht</span>
+                <span className="field-hint">
+                  Danach wird in der Antwort gesucht — beim Endpunkt der Name des Feldes, nicht der des
+                  Query-Parameters.
+                </span>
               </label>
               <label>
                 Was der Kunde hören darf

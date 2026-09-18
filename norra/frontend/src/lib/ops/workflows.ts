@@ -26,6 +26,7 @@ export const EXPECTED_WORKFLOWS: readonly ExpectedWorkflow[] = [
   { file: 'sub-workflows/book-appointment.json', name: 'Norra – Tool: book_appointment', trigger: 'sub' },
   { file: 'sub-workflows/escalate-to-human.json', name: 'Norra – Tool: escalate_to_human', trigger: 'sub' },
   { file: 'sub-workflows/identify-caller.json', name: 'Norra – Tool: identify_caller', trigger: 'sub' },
+  { file: 'sub-workflows/lookup-order.json', name: 'Norra – Tool: lookup_order', trigger: 'sub' },
   { file: 'sub-workflows/lookup-record.json', name: 'Norra – Tool: lookup_record', trigger: 'sub' },
   { file: 'sub-workflows/notify-escalation.json', name: 'Norra – Notify Escalation', trigger: 'sub' },
   { file: 'sub-workflows/request-action.json', name: 'Norra – Tool: request_action', trigger: 'sub' },

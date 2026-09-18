@@ -1,0 +1,502 @@
+{
+  "name": "Norra – Tool: lookup_order",
+  "nodes": [
+    {
+      "name": "Order Requested",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "organization_id",
+              "type": "string"
+            },
+            {
+              "name": "conversation_id",
+              "type": "string"
+            },
+            {
+              "name": "agent_id",
+              "type": "string"
+            },
+            {
+              "name": "call_id",
+              "type": "string"
+            },
+            {
+              "name": "order_ref",
+              "type": "string"
+            },
+            {
+              "name": "source_label",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Load Sources",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "order_sources",
+        "returnAll": true,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.organization_id }}"
+            },
+            {
+              "keyName": "active",
+              "condition": "eq",
+              "keyValue": "true"
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "name": "Pick Source",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Welche Bestellquelle gemeint ist -- und was passiert, wenn keine eindeutig ist.\n//\n// `source_label` kommt aus der Tool-Konfiguration des Agenten, nicht vom\n// Modell. Ist es leer und es gibt genau eine aktive Quelle, ist die gemeint.\n// Gibt es mehrere und keine ist benannt, wird *nicht* geraten: die falsche\n// Tabelle vorzulesen ist schlimmer, als zu sagen, dass es gerade nicht geht.\nconst asked = $('Order Requested').first().json;\nconst wanted = String(asked.source_label ?? '').trim().toLowerCase();\nconst sources = $input.all().map((item) => item.json ?? {}).filter((row) => row.id);\n\nlet source = null;\nlet problem = null;\nif (sources.length === 0) {\n  problem = 'keine Bestellquelle hinterlegt';\n} else if (wanted) {\n  source = sources.find((row) => String(row.label ?? '').trim().toLowerCase() === wanted) ?? null;\n  if (!source) problem = 'die eingestellte Quelle gibt es nicht mehr';\n} else if (sources.length === 1) {\n  source = sources[0];\n} else {\n  problem = 'mehrere Quellen, im Agenten ist keine ausgewaehlt';\n}\n\nreturn [{\n  json: {\n    kind: source ? source.kind : 'none',\n    label: source ? source.label : null,\n    sheet_id: source ? source.sheet_id : null,\n    sheet_range: source ? source.sheet_range : null,\n    endpoint_url: source ? source.endpoint_url : null,\n    match_column: source ? source.match_column : null,\n    return_columns: source ? (source.return_columns ?? []) : [],\n    problem,\n  },\n}];"
+      }
+    },
+    {
+      "name": "Route By Kind",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "sheet",
+                    "leftValue": "={{ $json.kind }}",
+                    "rightValue": "google_sheet",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "sheet"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "http",
+                    "leftValue": "={{ $json.kind }}",
+                    "rightValue": "http",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "http"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "keine Quelle"
+        }
+      }
+    },
+    {
+      "name": "Read Sheet",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        880,
+        -180
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent($json.sheet_id) + '/values/' + encodeURIComponent($json.sheet_range) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "name": "Call Endpoint",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.endpoint_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "specifyQuery": "keypair",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{ $('Order Requested').first().json.order_ref }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "name": "No Source",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        880,
+        180
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "values",
+              "name": "values",
+              "value": "={{ [] }}",
+              "type": "array"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Find Order",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Die Stelle, an der entschieden wird, was der Anrufer hoeren darf.\n//\n// Aus der Quelle kommt die ganze Zeile: Einkaufspreis, Marge, interne Notiz,\n// oft auch die Adresse eines anderen Kunden in der Nachbarspalte. Weiter\n// gereicht wird ausschliesslich, was in `return_columns` steht. Die Auswahl\n// passiert hier und nicht im System-Prompt -- ein Prompt ist eine Bitte, eine\n// Projektion ist eine Tatsache.\nconst source = $('Pick Source').first().json;\nconst asked = $('Order Requested').first().json;\nconst ref = String(asked.order_ref ?? '').trim().toLowerCase();\nconst items = $input.all().map((item) => item.json ?? {});\n\nlet rows = [];\nif (source.kind === 'google_sheet') {\n  // Die Sheets-API liefert ein Raster, keine Objekte. Die erste Zeile sind die\n  // Ueberschriften -- ohne sie waere `match_column` nicht auffindbar.\n  const grid = Array.isArray(items[0]?.values) ? items[0].values : [];\n  const [header = [], ...body] = grid;\n  rows = body.map((row) => Object.fromEntries(\n    header.map((name, index) => [String(name).trim(), row[index] ?? '']),\n  ));\n} else if (source.kind === 'http') {\n  // Fremde Endpunkte antworten in jeder erdenklichen Form. Ein Array kommt bei\n  // n8n als mehrere Items an, ein Objekt mit Liste darin als eines.\n  const first = items[0] ?? {};\n  const nested = [first.orders, first.data, first.items, first.results].find((value) => Array.isArray(value));\n  rows = nested ?? items.filter((row) => row && Object.keys(row).length > 0);\n}\n\nconst hit = rows.find((row) => String(row?.[source.match_column] ?? '').trim().toLowerCase() === ref) ?? null;\nconst allowed = Array.isArray(source.return_columns) ? source.return_columns : [];\nconst order = hit ? Object.fromEntries(allowed.filter((column) => column in hit).map((column) => [column, hit[column]])) : null;\nconst released = order ? Object.keys(order).length : 0;\n\n// Vier Ausgaenge, vier Saetze. Der dritte ist der unangenehme: die Bestellung\n// gibt es, aber keine freigegebene Spalte steht in der Zeile -- ein Tippfehler\n// in der Konfiguration, kein Fehler des Anrufers. Er wird als `error`\n// protokolliert und taucht damit im Betriebs-Screen auf, statt jedem Anrufer\n// als \"nicht gefunden\" verkauft zu werden.\nlet status = 'success';\nlet result;\nif (source.problem) {\n  status = 'error';\n  result = 'Es laesst sich gerade keine Bestellung nachschlagen. Sage das offen, nenne keinen Grund aus der Technik, und biete die Uebergabe an einen Menschen an.';\n} else if (!hit) {\n  result = 'Zu dieser Nummer gibt es keine Bestellung. Frag nach, ob die Nummer stimmt, und biete sonst die Uebergabe an einen Menschen an.';\n} else if (released === 0) {\n  status = 'error';\n  result = 'Die Bestellung gibt es, aber es sind keine Angaben dazu freigegeben. Sage das offen und biete die Uebergabe an einen Menschen an.';\n} else {\n  result = 'Bestellung gefunden. Nenne ausschliesslich diese Angaben und erfinde nichts dazu: ' + JSON.stringify(order);\n}\n\nreturn [{\n  json: {\n    found: !!hit,\n    order,\n    source: source.label,\n    rows_scanned: rows.length,\n    diagnosis: source.problem ?? null,\n    status,\n    result,\n  },\n}];"
+      }
+    },
+    {
+      "name": "Log Tool Call",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "tool_calls_log",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "organization_id",
+              "fieldValue": "={{ $('Order Requested').item.json.organization_id }}"
+            },
+            {
+              "fieldId": "conversation_id",
+              "fieldValue": "={{ $('Order Requested').item.json.conversation_id }}"
+            },
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "={{ $('Order Requested').item.json.agent_id }}"
+            },
+            {
+              "fieldId": "tool_name",
+              "fieldValue": "lookup_order"
+            },
+            {
+              "fieldId": "n8n_workflow_id",
+              "fieldValue": "={{ $workflow.id }}"
+            },
+            {
+              "fieldId": "n8n_execution_id",
+              "fieldValue": "={{ $execution.id }}"
+            },
+            {
+              "fieldId": "input",
+              "fieldValue": "={{ JSON.stringify($('Order Requested').item.json) }}"
+            },
+            {
+              "fieldId": "output",
+              "fieldValue": "={{ JSON.stringify({ found: $('Find Order').item.json.found, order: $('Find Order').item.json.order, source: $('Find Order').item.json.source, rows_scanned: $('Find Order').item.json.rows_scanned, diagnosis: $('Find Order').item.json.diagnosis }).slice(0, 4000) }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "={{ $('Find Order').item.json.status }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Return To Agent",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1540,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "found",
+              "name": "found",
+              "value": "={{ $('Find Order').item.json.found }}",
+              "type": "boolean"
+            },
+            {
+              "id": "order",
+              "name": "order",
+              "value": "={{ $('Find Order').item.json.order }}",
+              "type": "object"
+            },
+            {
+              "id": "result",
+              "name": "result",
+              "value": "={{ $('Find Order').item.json.result }}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Sticky Note lookup order",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -320
+      ],
+      "parameters": {
+        "content": "## lookup_order – die Spaltenliste ist die Grenze\nDie Quelle steht in `order_sources` und wird vom Betreiber im Screen *Bestellungen* gepflegt, nicht im Agenten. Derselbe Workflow bedient damit ein Google Sheet und einen eigenen Endpunkt, ohne dass ein Kunde je eine Zeile Code sieht.\n\n**Was dieser Workflow wirklich tut, steht in Find Order:** aus der gefundenen Zeile verlassen ihn nur die Spalten aus `return_columns`. Eine Bestelltabelle traegt fast immer mehr als den Status -- Einkaufspreis, Marge, interne Notizen, in der Nachbarspalte die Adresse eines anderen Kunden. Die ganze Zeile ans Modell zu geben hiesse, sie frueher oder spaeter vorzulesen. Ein System-Prompt haette denselben Wortlaut, aber nicht dieselbe Wirkung: er ist eine Bitte, die Projektion ist eine Tatsache.\n\nZwei Faelle, die bewusst als `error` ins tool_calls_log gehen und damit im Betriebs-Screen auftauchen: keine nutzbare Quelle, und eine gefundene Bestellung, von der keine freigegebene Spalte existiert. Beides ist ein Konfigurationsfehler des Betreibers. Als 'nicht gefunden' getarnt wuerde ihn niemand je bemerken -- ausser jedem einzelnen Anrufer.\n\nMehrere Quellen und keine im Agenten ausgewaehlt heisst abbrechen, nicht die erste nehmen. Raten hiesse hier: die Bestellung eines anderen Mandanten-Bereichs vorlesen.",
+        "color": 4,
+        "width": 780,
+        "height": 420
+      }
+    },
+    {
+      "name": "Sticky Note endpoint",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        760,
+        320
+      ],
+      "parameters": {
+        "content": "## Was der eigene Endpunkt bekommt\nGET auf die hinterlegte URL mit genau einem Query-Parameter: `?query=<Bestellnummer>`. Derselbe Wortlaut steht im Screen *Bestellungen* -- der Betreiber sagt seinem Entwickler zu, was hier tatsaechlich hinausgeht.\n\nBewusst nicht der Name aus `match_column`: sonst muesste der Endpunkt umgebaut werden, sobald jemand eine Spalte umbenennt. `match_column` gilt fuer die Antwort, nicht fuer die Frage -- Find Order sucht damit die richtige Zeile heraus, auch wenn eine Liste zurueckkommt.\n\nZurueck darf ein Objekt, ein Array, oder ein Objekt mit `orders`/`data`/`items`/`results` darin. Die Authentifizierung ist Header-Auth, dieselbe Credential-Art wie bei lookup_record.\n\n`neverError` ist gesetzt: eine 404 soll als 'nicht gefunden' beim Anrufer ankommen, nicht als abgebrochener Turn.",
+        "color": 5,
+        "width": 560,
+        "height": 260
+      }
+    }
+  ],
+  "connections": {
+    "Order Requested": {
+      "main": [
+        [
+          {
+            "node": "Load Sources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Sources": {
+      "main": [
+        [
+          {
+            "node": "Pick Source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Source": {
+      "main": [
+        [
+          {
+            "node": "Route By Kind",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route By Kind": {
+      "main": [
+        [
+          {
+            "node": "Read Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Call Endpoint",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Sheet": {
+      "main": [
+        [
+          {
+            "node": "Find Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Endpoint": {
+      "main": [
+        [
+          {
+            "node": "Find Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No Source": {
+      "main": [
+        [
+          {
+            "node": "Find Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Order": {
+      "main": [
+        [
+          {
+            "node": "Log Tool Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Tool Call": {
+      "main": [
+        [
+          {
+            "node": "Return To Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "norra": {
+    "slug": "lookup-order"
+  },
+  "tags": [
+    "norra",
+    "norra:tool"
+  ]
+}

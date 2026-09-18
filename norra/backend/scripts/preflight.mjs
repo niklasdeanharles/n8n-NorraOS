@@ -44,6 +44,10 @@ const CREDENTIAL_BY_TYPE = {
   // beiden, ist eine Betriebsentscheidung; dass ueberhaupt eine haengt, ist die
   // Bedingung. ANY steht fuer genau diesen Fall.
   'n8n-nodes-base.gmail': { any: true, label: 'Gmail (OAuth2 oder Service-Account)' },
+  // Dieselbe Lage wie bei Gmail: beide Google-Nodes nehmen OAuth2 *oder* einen
+  // Service-Account. Der Sheets-Zugriff laeuft ueber den HTTP-Node und wird
+  // deshalb unten in `credentialFor` benannt, nicht hier.
+  'n8n-nodes-base.googleCalendar': { any: true, label: 'Google Calendar (OAuth2 oder Service-Account)' },
 };
 
 /** Nodes, die bewusst keine Credential brauchen. */
@@ -55,11 +59,16 @@ const NO_CREDENTIAL = new Set([
   '@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter',
   '@n8n/n8n-nodes-langchain.toolWorkflow',
   'n8n-nodes-base.aggregate',
+  'n8n-nodes-base.code',
   'n8n-nodes-base.executeWorkflow',
   'n8n-nodes-base.executeWorkflowTrigger',
   'n8n-nodes-base.if',
+  'n8n-nodes-base.scheduleTrigger',
   'n8n-nodes-base.set',
+  'n8n-nodes-base.splitInBatches',
+  'n8n-nodes-base.splitOut',
   'n8n-nodes-base.stickyNote',
+  'n8n-nodes-base.switch',
 ]);
 
 function requireEnv(name) {
@@ -117,9 +126,15 @@ function credentialFor(node) {
   }
   if (node.type === 'n8n-nodes-base.httpRequest') {
     const auth = node.parameters?.authentication;
-    return !auth || auth === 'none'
-      ? null
-      : { any: true, label: 'HTTP-Auth, wie im Node gewaehlt' };
+    if (!auth || auth === 'none') return null;
+    // Bei `predefinedCredentialType` steht der verlangte Typ im Node. Ihn zu
+    // uebernehmen ist der Unterschied zwischen "irgendeine HTTP-Auth fehlt"
+    // und "lege googleSheetsOAuth2Api an" -- wofuer dieses Skript da ist.
+    const predefined = node.parameters?.nodeCredentialType;
+    if (auth === 'predefinedCredentialType' && typeof predefined === 'string' && predefined) {
+      return { label: predefined };
+    }
+    return { any: true, label: 'HTTP-Auth, wie im Node gewaehlt' };
   }
   const entry = CREDENTIAL_BY_TYPE[node.type];
   if (!entry) return null;

@@ -125,6 +125,7 @@ Hostinger VPS, self-hosted Community Edition: `https://n8n-fdhh.srv1817599.hstgr
 | Outbound Call | `scheduled/outbound-call.json` | — | Zeitplan, alle 5 Minuten | Fällige Kampagnenziele anrufen |
 | Tool: book_appointment | `sub-workflows/book-appointment.json` | — | Sub-Workflow | Termin im Kalender eintragen, nach Verfügbarkeitsprüfung |
 | Tool: lookup_record | `sub-workflows/lookup-record.json` | `KHHKDV5CoyiDxuCO` | Sub-Workflow | Datensatz beim Kunden nachschlagen, read-only |
+| Tool: lookup_order | `sub-workflows/lookup-order.json` | — | Sub-Workflow | Bestellung aus `order_sources` nachschlagen, nur freigegebene Spalten |
 | Tool: escalate_to_human | `sub-workflows/escalate-to-human.json` | `pw6OzhBSG2oxagNt` | Sub-Workflow | Ticket anlegen, Konversation eskalieren |
 | Tool: request_action | `sub-workflows/request-action.json` | `LwyJZr8WFsjd0L9v` | Sub-Workflow | Folgenreiche Aktion zur **Freigabe** einreichen |
 | Notify Escalation | `sub-workflows/notify-escalation.json` | `zU1x0scrqFmPClmg` | Sub-Workflow | E-Mail an das Support-Team |
@@ -301,6 +302,7 @@ der Instanz ganz:
 | Norra Webhook Secret | `httpHeaderAuth` | alle drei Webhook-Nodes und `lookup_record` |
 | Twilio | `twilioApi` | `send_sms` |
 | Gmail | OAuth2 **oder** Service-Account | `notify-escalation`, `call-wrapup` |
+| Google Sheets | OAuth2 **oder** Service-Account | `lookup_order`, wenn eine Quelle vom Typ Google Sheet eingetragen ist |
 
 Die Header-Auth-Credential muss Header-Name `x-norra-secret` und als Wert
 denselben String tragen wie `N8N_WEBHOOK_SECRET` in Vercel — sonst weist der
@@ -465,6 +467,34 @@ Workflow liest sie zur Laufzeit aus `Load Agent Config`. Die Authentifizierung
 läuft über die n8n-Credential `httpHeaderAuth` — der Endpunkt selbst steht
 damit in der Datenbank, das Geheimnis nicht. Das Formular verlangt `https://`,
 weil der Aufruf Kundenkennungen trägt.
+
+### Die Spaltenliste, nicht der Prompt
+
+`lookup_order` schlägt eine Bestellung in der Quelle nach, die der Betreiber im
+Screen *Bestellungen* hinterlegt hat — ein Google Sheet oder ein eigener
+Endpunkt. Interessant daran ist nicht das Nachschlagen, sondern was den Workflow
+wieder verlässt.
+
+Eine Bestelltabelle trägt fast immer mehr als den Status: Einkaufspreis, Marge,
+interne Notiz, in der Nachbarspalte die Adresse eines anderen Kunden. Weiter
+gereicht wird deshalb ausschließlich, was in `order_sources.return_columns`
+steht. Die Projektion passiert im Node *Find Order*, nicht im System-Prompt:
+
+> Ein Prompt ist eine Bitte. Eine Projektion ist eine Tatsache.
+
+Dieselbe Regel wie beim Durchstellen, nur andersherum — dort bestimmt das Modell
+den Namen und nie die Nummer, hier bestimmt es die Frage und nie den Umfang der
+Antwort.
+
+Zwei Fälle gehen bewusst als `error` ins `tool_calls_log` und tauchen damit im
+Betriebs-Screen auf, obwohl der Anrufer eine höfliche Antwort bekommt:
+
+1. **Keine nutzbare Quelle** — keine hinterlegt, oder mehrere hinterlegt und im
+   Agenten keine ausgewählt. Dann wird *nicht* die erste genommen: die falsche
+   Tabelle vorzulesen ist schlimmer, als zu sagen, dass es gerade nicht geht.
+2. **Bestellung gefunden, aber keine freigegebene Spalte existiert** — ein
+   Tippfehler in der Spaltenliste. Als „nicht gefunden" getarnt bemerkte ihn
+   niemand je, außer jedem einzelnen Anrufer.
 
 ### Warum die History aus dem Proxy kommt
 

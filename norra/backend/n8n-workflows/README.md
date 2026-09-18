@@ -50,6 +50,7 @@ Workflows automatisch anwendet):
 | `take-message.json` | Agent-Tool `take_message` | **noch keine** | nur Telefon, braucht Einträge in `staff_members` |
 | `transfer-to-person.json` | Agent-Tool `transfer_to_person` | **noch keine** | nur Telefon, braucht Einträge in `staff_members` |
 | `book-appointment.json` | Agent-Tool `book_appointment` | **noch keine** | braucht ein Google-Calendar-Credential in n8n |
+| `lookup-order.json` | Agent-Tool `lookup_order` | **noch keine** | braucht Einträge in `order_sources`; beim Typ Google Sheet zusätzlich ein Google-Sheets-Credential |
 
 Die zehn Agent-Tools sind der Katalog aus `frontend/src/lib/tools.ts`;
 `notify-escalation` ist kein Tool, sondern der Mail-Versand, den

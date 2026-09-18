@@ -118,7 +118,7 @@
         "promptType": "define",
         "text": "={{ $(\"Normalize Request\").item.json.message }}",
         "options": {
-          "systemMessage": "={{ $json.system_prompt }}\n\n## Guardrails\nVerbotene Themen (freundlich ablehnen und ggf. eskalieren): {{ JSON.stringify($json.guardrails?.forbidden_topics ?? []) }}\nErlaubte Themen (leer = keine Einschraenkung): {{ JSON.stringify($json.guardrails?.allowed_topics ?? []) }}\nEskalationsregeln: {{ JSON.stringify($json.escalation_rules ?? {}) }}\n\n## Werkzeuge\nKnowledge Base: fuer jede inhaltliche Frage zuerst hier nachschlagen. Erfinde niemals Richtlinien oder Fakten.\nlookup_record: fuer jede Aussage ueber konkrete Kundendaten. Rate niemals einen Status, einen Betrag oder ein Datum.\nescalate_to_human: wenn der Kunde einen Menschen verlangt, du nicht weiterkommst, oder es eine Beschwerde ist.\nrequest_action: fuer jede folgenreiche Aktion. Das Tool fuehrt nichts aus, es reicht die Aktion zur Freigabe ein. Sage dem Kunden zu, dass ein Mitarbeiter prueft -- bestaetige niemals, dass die Aktion bereits erfolgt ist, und nenne keinen Termin.\n\n## Bisheriger Gespraechsverlauf\n{{ JSON.stringify($(\"Normalize Request\").item.json.history ?? []) }}",
+          "systemMessage": "={{ $json.system_prompt }}\n\n## Guardrails\nVerbotene Themen (freundlich ablehnen und ggf. eskalieren): {{ JSON.stringify($json.guardrails?.forbidden_topics ?? []) }}\nErlaubte Themen (leer = keine Einschraenkung): {{ JSON.stringify($json.guardrails?.allowed_topics ?? []) }}\nEskalationsregeln: {{ JSON.stringify($json.escalation_rules ?? {}) }}\n\n## Werkzeuge\nKnowledge Base: fuer jede inhaltliche Frage zuerst hier nachschlagen. Erfinde niemals Richtlinien oder Fakten.\nlookup_record: fuer jede Aussage ueber konkrete Kundendaten. Rate niemals einen Status, einen Betrag oder ein Datum.\nlookup_order: fuer jede Frage nach einer konkreten Bestellung oder einem Auftrag. Nenne ausschliesslich die Angaben, die zurueckkommen -- was nicht darin steht, ist nicht freigegeben, auch wenn es harmlos wirkt.\nescalate_to_human: wenn der Kunde einen Menschen verlangt, du nicht weiterkommst, oder es eine Beschwerde ist.\nrequest_action: fuer jede folgenreiche Aktion. Das Tool fuehrt nichts aus, es reicht die Aktion zur Freigabe ein. Sage dem Kunden zu, dass ein Mitarbeiter prueft -- bestaetige niemals, dass die Aktion bereits erfolgt ist, und nenne keinen Termin.\n\n## Bisheriger Gespraechsverlauf\n{{ JSON.stringify($(\"Normalize Request\").item.json.history ?? []) }}",
           "maxIterations": 10,
           "enableStreaming": true,
           "returnIntermediateSteps": false
@@ -798,6 +798,94 @@
           ]
         }
       }
+    },
+    {
+      "id": "chat-tool-5",
+      "name": "lookup_order",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        400
+      ],
+      "parameters": {
+        "description": "Schlage eine Bestellung oder einen Auftrag anhand der genannten Nummer nach. Nutze das Tool, bevor du irgendetwas ueber eine konkrete Bestellung sagst -- Status, Liefertermin, Betrag. Rate nie und rechne nichts hoch. Nenne dem Kunden ausschliesslich die Angaben, die das Tool zurueckgibt: was nicht darin steht, ist nicht freigegeben, auch wenn du es fuer harmlos haeltst.",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "Norra – Tool: lookup_order"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "value": {
+            "organization_id": "={{ $('Normalize Request').item.json.organization_id }}",
+            "conversation_id": "={{ $('Normalize Request').item.json.conversation_id }}",
+            "agent_id": "={{ $('Normalize Request').item.json.agent_id }}",
+            "call_id": "\"\"",
+            "order_ref": "={{ $fromAI('order_ref', 'Die Bestell- oder Auftragsnummer, genau so, wie der Kunde sie genannt hat. Buchstaben und Bindestriche gehoeren dazu. Ist sie unvollstaendig, frag nach, statt zu ergaenzen.', 'string') }}",
+            "source_label": "={{ ($('Load Agent Config').item.json.tools ?? []).find(t => t.slug === 'lookup_order')?.config?.source_label ?? '' }}"
+          },
+          "schema": [
+            {
+              "id": "organization_id",
+              "displayName": "organization_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "agent_id",
+              "displayName": "agent_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "call_id",
+              "displayName": "call_id",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "order_ref",
+              "displayName": "order_ref",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_label",
+              "displayName": "source_label",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      }
     }
   ],
   "connections": {
@@ -945,6 +1033,17 @@
       ]
     },
     "book_appointment": {
+      "ai_tool": [
+        [
+          {
+            "node": "Support Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "lookup_order": {
       "ai_tool": [
         [
           {
