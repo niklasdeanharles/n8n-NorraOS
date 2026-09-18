@@ -122,6 +122,7 @@ Hostinger VPS, self-hosted Community Edition: `https://n8n-fdhh.srv1817599.hstgr
 | KB Ingest | `webhooks/kb-ingest.json` | `Q3XhlP6eet9eqnm0` | `POST /webhook/norra/kb-ingest` | Dokument chunken, einbetten, speichern |
 | Call Wrapup | `webhooks/call-wrapup.json` | — | `POST /webhook/norra/call-wrapup` | Nach dem Auflegen: Variablen ziehen, zusammenfassen, Follow-up, Webhook |
 | KB Crawl | `webhooks/kb-crawl.json` | — | `POST /webhook/norra/kb-crawl` | Seitenliste holen, Text extrahieren, an KB Ingest geben |
+| Voicemail Transcribe | `webhooks/voicemail-transcribe.json` | — | `POST /webhook/norra/voicemail-transcribe` | Sprachnachricht herunterladen, verschriften, ins Ticket schreiben |
 | Outbound Call | `scheduled/outbound-call.json` | — | Zeitplan, alle 5 Minuten | Fällige Kampagnenziele anrufen |
 | Tool: book_appointment | `sub-workflows/book-appointment.json` | — | Sub-Workflow | Termin im Kalender eintragen, nach Verfügbarkeitsprüfung |
 | Tool: lookup_record | `sub-workflows/lookup-record.json` | `KHHKDV5CoyiDxuCO` | Sub-Workflow | Datensatz beim Kunden nachschlagen, read-only |
@@ -303,6 +304,7 @@ der Instanz ganz:
 | Twilio | `twilioApi` | `send_sms` |
 | Gmail | OAuth2 **oder** Service-Account | `notify-escalation`, `call-wrapup` |
 | Google Sheets | OAuth2 **oder** Service-Account | `lookup_order`, wenn eine Quelle vom Typ Google Sheet eingetragen ist |
+| Google AI Studio | `googlePalmApi` | `voicemail-transcribe` — der Gemini-API-Key; die Credential heißt in n8n noch nach PaLM |
 
 Die Header-Auth-Credential muss Header-Name `x-norra-secret` und als Wert
 denselben String tragen wie `N8N_WEBHOOK_SECRET` in Vercel — sonst weist der
@@ -467,6 +469,38 @@ Workflow liest sie zur Laufzeit aus `Load Agent Config`. Die Authentifizierung
 läuft über die n8n-Credential `httpHeaderAuth` — der Endpunkt selbst steht
 damit in der Datenbank, das Geheimnis nicht. Das Formular verlangt `https://`,
 weil der Aufruf Kundenkennungen trägt.
+
+### Eine Sprachnachricht, die man lesen kann
+
+`/api/voice/recording` legt weiterhin zuerst das Ticket an und stößt **danach**
+`voicemail-transcribe` an. Die Reihenfolge ist die ganze Aussage: eine
+Sprachnachricht muss im Posteingang landen, auch wenn n8n gerade steht. Der Link
+zur Aufnahme allein ist unbequem, aber vollständig.
+
+Der Workflow holt die Datei bei Twilio (`.mp3` an der Recording-URL, Basic Auth
+über die vorhandene `twilioApi`-Credential — keine zweite mit denselben
+Zugangsdaten), verschriftet sie mit Google AI Studio und schreibt zweimal: nach
+`calls.voicemail_transcript` und in die Beschreibung des Tickets, wo ein Mensch
+ohnehin hinsieht.
+
+Zwei Entscheidungen dahinter:
+
+1. **Scheitern ist ein Ausgang, kein Abbruch.** Kommt kein Text zurück, bekommt
+   das Ticket den Satz „konnte nicht automatisch verschriftet werden — bitte
+   anhören" statt gar nichts. Eine stille Fehlfunktion sähe sonst genauso aus
+   wie eine Nachricht, die niemand hinterlassen hat.
+2. **Keine Erkennung von Absagen des Modells.** Naheliegend wäre, ein „Es tut
+   mir leid, ich konnte nichts verstehen" als Nicht-Abschrift zu verwerfen.
+   Jedes Muster dafür trifft aber auch echte Nachrichten — „Leider muss ich den
+   Termin morgen absagen" ist genau der Anruf, den niemand verlieren darf. Eine
+   Absage anzuzeigen ist harmlos; der Link zur Aufnahme steht darunter. Eine
+   echte Nachricht wegzuwerfen ist es nicht. Der Test in
+   `tests/workflow-expressions.mjs` hält beides fest.
+
+Das Modell steht als fester Wert im Node, nicht in der Auswahlliste der
+Instanz: ein Workflow im Repository muss ohne Instanzverbindung lesbar sein,
+und ein Wechsel ist so eine Zeile in Git statt eines Klicks, den niemand
+wiederfindet.
 
 ### Die Spaltenliste, nicht der Prompt
 

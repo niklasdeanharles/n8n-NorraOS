@@ -218,11 +218,44 @@ await scenario('Außerhalb der Zeiten: Anrufbeantworter legt Ticket an', async (
   check('Ansage wird gesprochen', xml.includes('Bitte hinterlassen Sie eine Nachricht.'));
 
   store.calls.push({ id: 'call-vm', organization_id: ORG, conversation_id: null, agent_id: AGENT, provider_call_id: 'CA7', from_e164: '+4917612345678' });
+  n8n = await startN8n(54322, { ok: true, chars: 42 });
   const rec = await post('/api/voice/recording', { CallSid: 'CA7', RecordingUrl: 'https://api.twilio.test/RE1' });
   check('Recording quittiert', rec.status === 200);
   check('Ticket angelegt', store.tickets.length === 1, JSON.stringify(store.tickets));
   check('Aufnahme-URL im Ticket', store.tickets[0]?.description?.includes('https://api.twilio.test/RE1'));
   check('Call als voicemail markiert', store.calls.find((c) => c.provider_call_id === 'CA7')?.status === 'voicemail');
+
+  // Die Verschriftung läuft in n8n und wird nur angestoßen: Twilio wiederholt
+  // diesen Callback, wenn er zu lange braucht, und jede Wiederholung wäre eine
+  // zweite Sprachnachricht im Posteingang.
+  const deadline = Date.now() + 2000;
+  while (n8n.seen.length === 0 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  const job = n8n.seen.find((entry) => entry.path === '/webhook/norra/voicemail-transcribe');
+  check('Verschriftung angestoßen', Boolean(job), n8n.seen.map((e) => e.path).join(', '));
+  check('mit dem Header-Auth-Secret', job?.secret === '0123456789abcdef0123');
+  // Ohne Ticket-ID wüsste der Workflow nicht, wohin mit der Abschrift; ohne
+  // Organisations-ID liefe er ohne Mandantenfilter.
+  check('Ticket-ID im Body', job?.body?.ticket_id === store.tickets[0]?.id, JSON.stringify(job?.body));
+  check('Organisations-ID im Body', job?.body?.organization_id === ORG, JSON.stringify(job?.body));
+  check('Aufnahme-URL im Body', job?.body?.recording_url === 'https://api.twilio.test/RE1', JSON.stringify(job?.body));
+  await n8n.stop();
+});
+
+await scenario('Ohne Aufnahme wird keine Verschriftung angestoßen', async () => {
+  seed({ business_hours: { mon: [['03:00', '03:01']] }, after_hours: 'voicemail' });
+  store.calls.push({ id: 'call-vm2', organization_id: ORG, conversation_id: null, agent_id: AGENT, provider_call_id: 'CA7b', from_e164: '+4917612345678' });
+  n8n = await startN8n(54322, { ok: true });
+  const rec = await post('/api/voice/recording', { CallSid: 'CA7b', RecordingUrl: '' });
+  check('Recording quittiert', rec.status === 200);
+  // Das Ticket entsteht trotzdem -- es ist der Hinweis, dass jemand angerufen
+  // hat. Ein Lauf in n8n, der am Ende feststellt, dass es nichts zu holen gab,
+  // entsteht nicht.
+  check('Ticket trotzdem angelegt', store.tickets.length === 1, JSON.stringify(store.tickets));
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  check('n8n nicht gerufen', n8n.seen.length === 0, n8n.seen.map((e) => e.path).join(', '));
+  await n8n.stop();
 });
 
 await scenario('Gesprochener Turn: Agent antwortet', async () => {

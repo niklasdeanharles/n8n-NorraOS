@@ -40,6 +40,7 @@ export const EXPECTED_WORKFLOWS: readonly ExpectedWorkflow[] = [
   { file: 'webhooks/kb-crawl.json', name: 'Norra – KB Crawl', trigger: 'webhook' },
   { file: 'webhooks/kb-ingest.json', name: 'Norra – KB Ingest', trigger: 'webhook' },
   { file: 'webhooks/voice-turn.json', name: 'Norra – Voice Turn', trigger: 'webhook' },
+  { file: 'webhooks/voicemail-transcribe.json', name: 'Norra – Voicemail Transcribe', trigger: 'webhook' },
 ] as const;
 
 /**

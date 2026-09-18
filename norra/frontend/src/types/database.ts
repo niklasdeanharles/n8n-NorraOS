@@ -122,6 +122,12 @@ export type CallRow = {
   duration_seconds: number | null;
   turn_count: number;
   recording_url: string | null;
+  /**
+   * Die Sprachnachricht in Worten. Null heißt „noch nicht verschriftet" —
+   * der leere String ist in der Datenbank verboten, weil er wie eine
+   * Abschrift aussähe und keine ist.
+   */
+  voicemail_transcript: string | null;
   transferred_to: string | null;
   /** Ansage für den Mitarbeiter vor dem Verbinden. Der Anrufer hört sie nicht. */
   transfer_briefing: string | null;

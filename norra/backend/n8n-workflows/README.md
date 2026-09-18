@@ -34,6 +34,7 @@ Workflows automatisch anwendet):
 | `kb-ingest.json` | `norra/kb-ingest` | `Q3XhlP6eet9eqnm0` | angelegt, **nicht aktiviert** |
 | `call-wrapup.json` | `norra/call-wrapup` | **noch keine** | Nachbereitung nach dem Auflegen |
 | `kb-crawl.json` | `norra/kb-crawl` | **noch keine** | Seitenliste in die Wissensbasis |
+| `voicemail-transcribe.json` | `norra/voicemail-transcribe` | **noch keine** | Sprachnachricht verschriften, braucht `googlePalmApi` und `twilioApi` |
 
 ### `sub-workflows/` — vom Agent bzw. von einem Workflow aufgerufen
 

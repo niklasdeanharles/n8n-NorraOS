@@ -328,5 +328,58 @@ const field = (node, id) =>
     !('Marge' in find(pick([httpSource]), shapes['ein einzelnes Objekt'], 'A-1234').order));
 }
 
+// ---------------------------------------------------------------------------
+// voicemail-transcribe: eine leere Abschrift ist keine
+// ---------------------------------------------------------------------------
+
+{
+  const voicemail = nodesOf(load('webhooks/voicemail-transcribe.json'));
+  const shape = (payload, url = 'https://api.twilio.test/RE1') => runCode(voicemail['Shape Transcript'], {
+    items: [payload],
+    nodes: { 'Normalize Request': { recording_url: url } },
+  })[0].json;
+
+  group('voicemail: woher der Text kommt');
+  // Die Form der Antwort hängt an Node-Version und `simplify`. Statt eine davon
+  // zu raten, muss jede bekannte Stelle gelesen werden.
+  check('aus `text`', shape({ text: 'Hier ist Frau Berger.' }).transcript === 'Hier ist Frau Berger.');
+  check('aus `content`', shape({ content: 'Hier ist Frau Berger.' }).transcript === 'Hier ist Frau Berger.');
+  check('aus der rohen Gemini-Antwort',
+    shape({ candidates: [{ content: { parts: [{ text: 'Hier ist Frau Berger.' }] } }] }).transcript
+      === 'Hier ist Frau Berger.');
+
+  group('voicemail: was nicht als Abschrift durchgeht');
+  // Der leere String ist in `calls.voicemail_transcript` verboten; käme er hier
+  // durch, scheiterte erst die Datenbank -- und die Abschrift wäre verloren,
+  // obwohl die Aufnahme noch da ist.
+  check('gar keine Antwort', shape({}).ok === false);
+  check('nur Leerzeichen', shape({ text: '   ' }).ok === false);
+  check('nichts davon landet in der Spalte', shape({ text: '  ' }).transcript === null);
+
+  // Die Gegenprobe zu einer Versuchung, die hier zuerst im Code stand: eine
+  // Erkennung von Absagen des Modells ("Es tut mir leid, ich konnte nichts
+  // verstehen"). Jedes Muster dafür trifft auch echte Nachrichten -- und
+  // ausgerechnet die dringendste fängt oft so an.
+  check('„Leider" ist ein ganz normaler Anfang',
+    shape({ text: 'Leider muss ich den Termin morgen absagen.' }).ok === true);
+  check('und die Nachricht bleibt vollständig',
+    shape({ text: 'Leider muss ich den Termin morgen absagen.' }).transcript
+      === 'Leider muss ich den Termin morgen absagen.');
+
+  group('voicemail: der Ticket-Text sagt in beiden Fällen die Wahrheit');
+  const good = shape({ text: 'Bitte rufen Sie zurueck.' });
+  check('mit Abschrift steht sie im Ticket', good.description.includes('Bitte rufen Sie zurueck.'));
+  check('und die Aufnahme bleibt verlinkt', good.description.includes('https://api.twilio.test/RE1'));
+  const bad = shape({});
+  // Ohne diesen Satz sähe ein Fehlschlag genauso aus wie eine Nachricht, die
+  // niemand hinterlassen hat.
+  check('ohne Abschrift steht der Hinweis darin', bad.description.includes('bitte anhoeren'));
+  check('und die Aufnahme erst recht', bad.description.includes('https://api.twilio.test/RE1'));
+
+  group('voicemail: die Obergrenze der Spalte wird eingehalten');
+  const long = shape({ text: 'a'.repeat(25000) });
+  check('abgeschnitten statt abgewiesen', long.ok === true && long.chars === 20000, String(long.chars));
+}
+
 console.log(`\n${checks} Prüfungen, ${failures} Fehler`);
 process.exit(failures === 0 ? 0 : 1);

@@ -37,6 +37,9 @@ const WORKFLOW_DIR = path.resolve(import.meta.dirname, '../n8n-workflows');
 const CREDENTIAL_BY_TYPE = {
   '@n8n/n8n-nodes-langchain.lmChatAnthropic': 'anthropicApi',
   '@n8n/n8n-nodes-langchain.embeddingsOpenAi': 'openAiApi',
+  // Google AI Studio. Der Credential-Typ heisst in n8n weiterhin nach PaLM,
+  // gemeint ist der Gemini-API-Key.
+  '@n8n/n8n-nodes-langchain.googleGemini': 'googlePalmApi',
   '@n8n/n8n-nodes-langchain.vectorStoreSupabase': 'supabaseApi',
   'n8n-nodes-base.supabase': 'supabaseApi',
   'n8n-nodes-base.twilio': 'twilioApi',

@@ -467,6 +467,17 @@ Die Weiterleitung *außerhalb* der Öffnungszeiten bekommt bewusst **keinen**
 Rückfall: dort steht kein Agent dahinter, der eine Nachricht aufnehmen könnte.
 Ihn trotzdem anzubieten hieße, etwas zu versprechen, das niemand einlöst.
 
+### Die Sprachnachricht, die man lesen kann
+
+`/api/voice/recording` legt das Ticket an und stößt **danach** den n8n-Workflow
+`voicemail-transcribe` an. Die Reihenfolge ist die Aussage: die Nachricht muss
+im Posteingang liegen, auch wenn n8n gerade steht — der Link zur Aufnahme allein
+ist unbequem, aber vollständig. Die Abschrift landet später in
+`calls.voicemail_transcript` und in der Beschreibung desselben Tickets.
+
+Ohne Aufnahme-URL wird gar nicht erst angestoßen: ein Lauf, der am Ende
+feststellt, dass es nichts zu holen gab, ist teurer als die Prüfung davor.
+
 ### Schließtage
 
 `business_hours` kennt nur die Woche. Am ersten Weihnachtstag steht dort
@@ -625,7 +636,7 @@ Die vier End-to-End-Suiten bauen die App selbst und fahren sie gegen
 In-Memory-Stand-ins hoch:
 
 ```bash
-node tests/voice/run.mjs      # 50 Szenarien vom eingehenden Anruf bis zur Nachbereitung
+node tests/voice/run.mjs      # 51 Szenarien vom eingehenden Anruf bis zur Nachbereitung
 node tests/widget/run.mjs     # 20 Szenarien von der Session bis zur Bewertung
 node tests/simulate/run.mjs   # 12 Szenarien der Testfall-Simulation, als angemeldeter Admin
 node tests/console/run.mjs    # 21 Szenarien der Konsolen-Routen (Agent-Turn, Wissens-Ingest, Betrieb)
