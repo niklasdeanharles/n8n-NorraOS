@@ -45,9 +45,15 @@ jobs:
     # geht.
     if: ${{ inputs.create_missing != true }}
     runs-on: ubuntu-latest
-    # A pull request only ever gets the dry run below, so a fork cannot reach
-    # the live instance.
-    environment: ${{ github.event_name == 'push' && 'production' || '' }}
+    # Hier stand `environment: ${{ github.event_name == 'push' && 'production'
+    # || '' }}`. Bei einem Pull Request wurde daraus ein *leerer*
+    # Umgebungsname, und dann erreichen die Repository-Secrets den Job nicht
+    # mehr: `N8N_BASE_URL` kam mit null Zeichen an, obwohl das Secret gesetzt
+    # war. Gemessen auf PR #1, mit einem frischen Lauf, nicht nur einem Re-Run.
+    #
+    # Die Schranke, die zählt, steht ohnehin am Schritt selbst: `Deploy` läuft
+    # nur, wenn das Ereignis kein Pull Request ist. Ein PR bekommt den Dry Run
+    # und sonst nichts -- dieselbe Wirkung, ohne den leeren Sonderfall.
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
