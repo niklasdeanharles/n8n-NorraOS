@@ -7,6 +7,8 @@ on:
 
 jobs:
   cleanup:
+    # Upstream-only: laeuft nicht in Forks (dieser hier hat die Secrets nicht).
+    if: github.repository == 'n8n-io/n8n'
     name: 'Delete stale CI images'
     runs-on: ubuntu-slim
     permissions:

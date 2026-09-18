@@ -43,6 +43,8 @@ jobs:
   # walks every eligible package, ranks rows by value, and returns the top-N
   # picks across all packages; the matrix maps one job per pick.
   setup:
+    # Upstream-only: laeuft nicht in Forks (dieser hier hat die Secrets nicht).
+    if: github.repository == 'n8n-io/n8n'
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.build.outputs.matrix }}

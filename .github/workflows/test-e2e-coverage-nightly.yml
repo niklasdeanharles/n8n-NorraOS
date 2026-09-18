@@ -14,6 +14,8 @@ jobs:
   # Downstream jobs call setup-nodejs with the default build-command and get
   # ~30s cache hits rather than racing to build in parallel from cold.
   build:
+    # Upstream-only: laeuft nicht in Forks (dieser hier hat die Secrets nicht).
+    if: github.repository == 'n8n-io/n8n'
     name: Install & Build
     runs-on: blacksmith-4vcpu-ubuntu-2204
     steps:
@@ -24,6 +26,8 @@ jobs:
         uses: ./.github/actions/setup-nodejs
 
   prepare-docker:
+    # Upstream-only: laeuft nicht in Forks (dieser hier hat die Secrets nicht).
+    if: github.repository == 'n8n-io/n8n'
     name: Prepare Docker (coverage)
     uses: ./.github/workflows/prepare-docker-reusable.yml
     with:
@@ -131,6 +135,8 @@ jobs:
   # Both Python packages in one job — they're fast and share the uv install
   # (each still pins its own Python version: 3.13 task-runner, 3.11 evals).
   python-coverage:
+    # Upstream-only: laeuft nicht in Forks (dieser hier hat die Secrets nicht).
+    if: github.repository == 'n8n-io/n8n'
     name: Python Coverage (task-runner + ai-workflow-builder)
     runs-on: ubuntu-latest
     steps:

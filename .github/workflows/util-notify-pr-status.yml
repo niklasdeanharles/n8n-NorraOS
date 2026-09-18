@@ -9,11 +9,13 @@ on:
 jobs:
   notify:
     runs-on: ubuntu-latest
+    # Upstream-only: laeuft nicht in Forks (dieser hier hat die Secrets nicht).
     if: >-
+      github.repository == 'n8n-io/n8n' && (
       (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') ||
       (github.event_name == 'pull_request_review' && github.event.review.state == 'dismissed') ||
       (github.event_name == 'pull_request' && github.event.pull_request.merged == true) ||
-      (github.event_name == 'pull_request' && github.event.pull_request.merged == false && github.event.action == 'closed')
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == false && github.event.action == 'closed'))
     env:
       NOTIFY_URL: ${{ secrets.N8N_NOTIFY_PR_STATUS_CHANGED_URL }}
     steps:
