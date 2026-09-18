@@ -11,6 +11,14 @@ genau deshalb steht hier eine Anleitung und kein Skript.
 Am Ende steht eine Probe, die ohne Raten sagt, ob es reicht:
 `node scripts/preflight.mjs` und der Screen **Betrieb** in der Konsole.
 
+> **Voraussetzung für alles mit einem Knopf:** die vier `norra-*`-Workflows
+> müssen auf `master` liegen. GitHub liest `workflow_dispatch` und `schedule`
+> ausschließlich aus dem Standard-Branch — solange sie nur im Feature-Branch
+> stehen, tauchen sie unter *Actions* gar nicht erst auf, und ein Auslösen
+> antwortet mit 404. Sie kommen mit dem Merge von PR #1 dorthin. Bis dahin
+> laufen sie nur als PR-Prüfung mit, und die Schritte 3 und 6 unten gehen von
+> Hand statt per Knopf.
+
 ---
 
 ## Wie weit willst du?
@@ -60,8 +68,8 @@ Repository → **Settings → Secrets and variables → Actions → New secret**
 
 ## 3 · Schema ausrollen
 
-Ein Push auf `master`, der `backend/supabase/` berührt, löst
-`norra-db-migrate.yml` aus: der Workflow spielt die Migrationen erst gegen ein
+Sobald `norra-db-migrate.yml` auf `master` liegt, löst ein Push, der
+`backend/supabase/` berührt, den Rollout aus: der Workflow spielt die Migrationen erst gegen ein
 Wegwerf-Postgres und rollt sie dann aus. Von Hand geht es auch:
 
 ```bash
