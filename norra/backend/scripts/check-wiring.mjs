@@ -64,11 +64,25 @@ async function readSchema() {
     for (const match of sql.matchAll(/create table (?:if not exists )?public\.(\w+)\s*\(([\s\S]*?)\n\);/gi)) {
       const [, table, body] = match;
       const columns = schema.get(table) ?? new Set();
+      // Klammertiefe über die Zeilen hinweg. Eine mehrzeilige CHECK-Bedingung
+      // sieht auf ihrer zweiten Zeile aus wie eine Spaltendefinition:
+      // `and array_position(...)` ist ein Wort, Leerzeichen, Kleinbuchstabe.
+      // Genau so erfand dieser Parser die Spalte `order_sources.and` und
+      // meldete sie als „niemand schreibt sie" — eine Falschmeldung, die
+      // irgendwann eine echte verdeckt hätte. Eine Zeile zählt deshalb nur,
+      // wenn sie auf oberster Ebene beginnt.
+      let depth = 0;
       for (const line of body.split('\n')) {
         const trimmed = line.trim();
+        const topLevel = depth === 0;
+        // Kommentare und Zeichenketten raus, bevor Klammern gezählt werden --
+        // sonst zählt ein `--` -Kommentar mit Klammer als geöffnete Ebene.
+        const code = line.replace(/--.*$/, '').replace(/'[^']*'/g, "''");
+        depth += (code.match(/\(/g) ?? []).length - (code.match(/\)/g) ?? []).length;
+
         // Column definitions start with the name; constraints and checks do not.
         const column = /^(\w+)\s+[a-z]/i.exec(trimmed);
-        if (column && !/^(constraint|primary|unique|check|foreign|create)\b/i.test(trimmed)) {
+        if (topLevel && column && !/^(constraint|primary|unique|check|foreign|create)\b/i.test(trimmed)) {
           columns.add(column[1]);
           // Only a *generating* default means the database supplies the real
           // value: now(), a uuid, a sequence, a generated column. A literal
@@ -844,6 +858,47 @@ async function checkExpectedWorkflows(workflows) {
   notes.push(`${workflows.length} Workflow-Einträge gegen die Sollliste der App geprüft`);
 }
 
+/**
+ * 9. Jedes Tool, das eine Vorlage vorschlägt, muss es im Katalog geben.
+ *
+ * Eine Branchen-Vorlage schaltet Tools vor. Nennt sie einen Slug, den
+ * `lib/tools.ts` nicht kennt, passiert nichts Lautes: das Häkchen fehlt
+ * einfach, der Agent hat das Tool nie, und niemand merkt es — bis ein Kunde
+ * fragt, warum die Bestellabfrage nicht geht. Beim Einbauen der sechs
+ * Branchen-Vorlagen wäre mir genau das passiert (`lookup_order` stand in den
+ * Vorlagen, bevor es im Katalog stand).
+ */
+async function checkTemplateTools() {
+  const catalogue = path.join(APP, 'src/lib/tools.ts');
+  const templates = path.join(APP, 'src/app/(console)/(admin)/agents/templates.ts');
+  if (!existsSync(catalogue) || !existsSync(templates)) {
+    problems.push('tools.ts oder templates.ts fehlt — Vorlagen-Tools nicht prüfbar');
+    return;
+  }
+
+  const known = new Set(
+    [...(await readFile(catalogue, 'utf8')).matchAll(/slug:\s*'([a-z_]+)'/g)].map((m) => m[1]),
+  );
+  if (known.size === 0) {
+    problems.push('lib/tools.ts: kein einziger Tool-Slug gefunden — Prüfung liefe ins Leere');
+    return;
+  }
+
+  const source = await readFile(templates, 'utf8');
+  let checked = 0;
+  // Nur die `tools:`-Zeilen, nicht jeder Bezeichner in der Datei: sonst
+  // schlüge die Prüfung auf Prosa im System-Prompt an.
+  for (const match of source.matchAll(/tools:\s*\[([^\]]*)\]/g)) {
+    for (const slug of match[1].matchAll(/'([a-z_]+)'/g)) {
+      checked += 1;
+      if (!known.has(slug[1])) {
+        problems.push(`agents/templates.ts: Vorlage schaltet "${slug[1]}" vor, das der Tool-Katalog nicht kennt`);
+      }
+    }
+  }
+  notes.push(`${checked} Tool-Verweise aus Vorlagen gegen den Katalog geprüft`);
+}
+
 if (APP_PRESENT) {
   const clientSource = await readFile(CLIENT, 'utf8');
   checkWebhookPaths(workflows, clientSource);
@@ -856,6 +911,7 @@ checkToolReferences(workflows);
 checkTenantFilters(workflows, schema);
 await checkSkillExamples(schema);
 if (APP_PRESENT) await checkExpectedWorkflows(workflows);
+if (APP_PRESENT) await checkTemplateTools();
 
 console.log(`Schema: ${schema.size} tables, ${[...schema.values()].reduce((n, c) => n + c.size, 0)} columns`);
 console.log(`Workflows: ${workflows.length}`);

@@ -23,6 +23,12 @@ const schema = z.object({
     .refine((v) => v === '' || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v), 'E-Mail-Adresse ist nicht gültig.'),
   timezone: z.string().trim().min(1, 'Zeitzone fehlt.').max(64),
   locale: z.string().trim().regex(/^[a-z]{2}(-[A-Z]{2})?$/, 'Sprache im Format de oder de-DE angeben.'),
+  // Leer ist überall erlaubt und wird zu null: ein Profil ist eine Hilfe, keine
+  // Pflicht. Die Obergrenzen spiegeln die Check-Constraints der Migration.
+  displayName: z.string().trim().max(200),
+  industry: z.string().trim().max(120),
+  about: z.string().trim().max(600),
+  hoursNote: z.string().trim().max(400),
 });
 
 export async function saveSettings(_prev: SettingsFormState, formData: FormData): Promise<SettingsFormState> {
@@ -31,6 +37,10 @@ export async function saveSettings(_prev: SettingsFormState, formData: FormData)
     escalationEmail: formData.get('escalationEmail') ?? '',
     timezone: formData.get('timezone'),
     locale: formData.get('locale'),
+    displayName: formData.get('displayName') ?? '',
+    industry: formData.get('industry') ?? '',
+    about: formData.get('about') ?? '',
+    hoursNote: formData.get('hoursNote') ?? '',
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Eingabe ungültig.' };
 
@@ -49,7 +59,7 @@ export async function saveSettings(_prev: SettingsFormState, formData: FormData)
 
   const { data: before } = await supabase
     .from('organizations')
-    .select('name, escalation_email, timezone, locale')
+    .select('name, display_name, industry, about, hours_note, escalation_email, timezone, locale')
     .eq('id', actor.organizationId)
     .single();
 
@@ -58,6 +68,12 @@ export async function saveSettings(_prev: SettingsFormState, formData: FormData)
     escalation_email: parsed.data.escalationEmail || null,
     timezone: parsed.data.timezone,
     locale: parsed.data.locale,
+    // `|| null` statt des leeren Strings: eine leere Zeichenkette in der Spalte
+    // sähe gepflegt aus und läse sich im Prompt als Leerstelle.
+    display_name: parsed.data.displayName || null,
+    industry: parsed.data.industry || null,
+    about: parsed.data.about || null,
+    hours_note: parsed.data.hoursNote || null,
   };
 
   const { error } = await supabase.from('organizations').update(next).eq('id', actor.organizationId);

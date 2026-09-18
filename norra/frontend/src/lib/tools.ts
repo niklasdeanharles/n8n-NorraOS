@@ -101,6 +101,19 @@ export const TOOL_CATALOGUE = [
     channel: 'voice',
   },
   {
+    slug: 'lookup_order',
+    hint: 'Bestellung oder Auftrag nachschlagen — aus der Quelle, die im Screen Bestellungen hinterlegt ist',
+    config: [
+      {
+        key: 'source_label', kind: 'text', required: false,
+        label: 'Welche Quelle, falls mehrere hinterlegt sind. Leer heißt: die einzige aktive.',
+        placeholder: 'Bestellungen 2026',
+      },
+    ],
+    // Beide Kanäle: eine Bestellnummer nennt man am Telefon genauso wie im Chat.
+    channel: 'both',
+  },
+  {
     slug: 'book_appointment',
     hint: 'Termin im Kalender eintragen — prüft erst die Verfügbarkeit, sagt nichts zu, was belegt ist',
     config: [

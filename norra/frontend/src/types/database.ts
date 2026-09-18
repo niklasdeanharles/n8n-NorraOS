@@ -13,6 +13,7 @@ export type UserRole = 'admin' | 'agent' | 'customer';
 export type AgentStatus = 'draft' | 'live' | 'archived';
 export type ConversationChannel = 'web' | 'email' | 'whatsapp' | 'voice' | 'slack' | 'api';
 export type ConversationStatus = 'open' | 'pending' | 'escalated' | 'resolved' | 'closed';
+export type OrderSourceKind = 'google_sheet' | 'http';
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 export type KbSourceType = 'upload' | 'url' | 'text' | 'api';
 export type KbDocumentStatus = 'pending' | 'processing' | 'ready' | 'failed';
@@ -54,6 +55,13 @@ export type OrganizationRow = {
   id: string;
   name: string;
   slug: string;
+  /** Wie der Agent das Haus nennt. Oft nicht `name`: Account „Müller GmbH", am Telefon „Bäckerei Müller". */
+  display_name: string | null;
+  /** Freitext, kein Enum — ein Hufschmied soll nicht auf eine Migration warten. */
+  industry: string | null;
+  about: string | null;
+  /** Öffnungszeiten in Worten, zum Vorlesen — nicht die Schaltlogik in `phone_numbers.business_hours`. */
+  hours_note: string | null;
   settings: Json;
   escalation_email: string | null;
   timezone: string;
@@ -513,6 +521,29 @@ export type PhoneLanguageRow = {
   updated_at: string;
 }
 
+/**
+ * Woher der Agent Bestellungen holt.
+ *
+ * `return_columns` ist die wichtigste Spalte: eine Bestelltabelle trägt fast
+ * immer mehr als den Status — Einkaufspreis, Marge, interne Notizen. Aufgezählt
+ * wird, was der Anrufer hören darf, und nichts sonst.
+ */
+export type OrderSourceRow = {
+  id: string;
+  organization_id: string;
+  label: string;
+  kind: OrderSourceKind;
+  sheet_id: string | null;
+  sheet_range: string | null;
+  endpoint_url: string | null;
+  match_column: string;
+  return_columns: string[];
+  active: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 /** A foreign key, in the shape PostgREST's select parser expects. */
 type Rel<Name extends string, Column extends string, Target extends string> = {
   foreignKeyName: Name;
@@ -747,6 +778,12 @@ export type Database = {
           Rel<'phone_languages_phone_number_id_fkey', 'phone_number_id', 'phone_numbers'>,
           Rel<'phone_languages_created_by_fkey', 'created_by', 'users'>,
         ]
+      >;
+
+      order_sources: Table<
+        OrderSourceRow,
+        'id' | 'created_at' | 'updated_at' | 'active',
+        [OrgRel<'order_sources'>, Rel<'order_sources_created_by_fkey', 'created_by', 'users'>]
       >;
 
       closure_days: Table<
