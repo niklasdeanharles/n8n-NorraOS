@@ -118,19 +118,24 @@ stillschweigend mit 403.
 ## 6 · n8n: Workflows anlegen und aktivieren
 
 Sieben der neunzehn Workflows liegen schon auf der Instanz und tragen ihre ID
-im Repository. **Zwölf nicht** — und der CI-Deploy legt bewusst nichts an, weil
-er die neuen IDs sonst in Dateien schriebe, die niemand mehr committet. Einmal
-von Hand:
+im Repository. **Zwölf nicht.** Der normale Deploy legt sie absichtlich nicht
+an — einer, der das bei jedem Push täte, legt sie irgendwann doppelt an. Einmal
+auf Knopfdruck:
+
+> GitHub → **Actions** → *Norra: n8n Deploy* → **Run workflow** →
+> Häkchen bei **create_missing** → **Run workflow**
+
+Der Lauf legt die zwölf an, schreibt die neuen IDs in die JSON-Dateien und
+committet sie zurück nach `master`. Der letzte Teil ist der wichtige: die
+Zuordnung Datei → Instanz steht ausschließlich in `norra.workflowId`, und ohne
+sie legt der nächste Lauf dieselben Workflows ein zweites Mal an.
+
+Dein API-Key bleibt dabei im GitHub-Secret — du tippst ihn nirgends in eine
+Kommandozeile. Am eigenen Rechner ginge es auch:
 
 ```bash
-cd backend
-node scripts/n8n-sync.mjs deploy --dry-run --create-missing   # erst anschauen
-node scripts/n8n-sync.mjs deploy --create-missing             # dann anlegen
-git add n8n-workflows && git commit -m "chore: Workflow-IDs der Instanz"
+cd backend && node scripts/n8n-sync.mjs deploy --create-missing
 ```
-
-Der letzte Schritt ist der wichtige: die IDs müssen ins Repository zurück, sonst
-legt der nächste Lauf dieselben Workflows ein zweites Mal an.
 
 Ab dann genügt ein Push auf `master` — `norra-n8n-deploy.yml` schiebt jede
 Änderung nach.

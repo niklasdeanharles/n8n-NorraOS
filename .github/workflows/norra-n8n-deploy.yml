@@ -23,6 +23,11 @@ on:
       - norra/frontend/src/app/api/**
       - .github/workflows/norra-n8n-deploy.yml
   workflow_dispatch:
+    inputs:
+      create_missing:
+        description: 'Fehlende Workflows auf der Instanz anlegen und die neuen IDs zurück ins Repository committen'
+        type: boolean
+        default: false
 
 concurrency:
   # Never let two deploys race the same instance.
@@ -35,6 +40,10 @@ permissions:
 jobs:
   deploy:
     name: Push workflows
+    # Beim Anlegen tritt dieser Job zurück: der Job darunter deployt ohnehin
+    # mit, und liefe dieser zuerst, überspränge er genau die Dateien, um die es
+    # geht.
+    if: ${{ inputs.create_missing != true }}
     runs-on: ubuntu-latest
     # A pull request only ever gets the dry run below, so a fork cannot reach
     # the live instance.
@@ -108,11 +117,75 @@ jobs:
       # Check, der bis dahin dauerhaft rot steht, erzieht dazu, rote Checks zu
       # übersehen. Das Ergebnis landet in der Job-Zusammenfassung.
       #
-      # Nicht mit --create-missing: der Deploy schriebe die neuen IDs in die
-      # Dateien, und die Änderung ginge mit dem Runner verloren. Anlegen bleibt
-      # ein bewusster Schritt am eigenen Rechner, dessen Ergebnis committet wird.
+      # Nicht mit --create-missing: ein Deploy, der bei jedem Push neue
+      # Workflows anlegt, legt sie irgendwann doppelt an. Anlegen ist deshalb
+      # ein eigener Knopf -- der Job `create-missing` weiter unten.
       - name: Startbereitschaft berichten
         if: steps.creds.outputs.configured == 'true'
+        continue-on-error: true
+        working-directory: norra/backend
+        env:
+          N8N_BASE_URL: ${{ secrets.N8N_BASE_URL }}
+          N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
+        run: |
+          {
+            echo '```'
+            node scripts/preflight.mjs || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Einmalig bei der Inbetriebnahme: die zwölf Workflows, die noch nicht auf der
+  # Instanz liegen, anlegen. Bewusst ein eigener Job und ein eigener Knopf --
+  # ein Deploy, der bei jedem Push neue Workflows anlegt, legt sie irgendwann
+  # doppelt an.
+  #
+  # Der Grund, warum das frueher nur am eigenen Rechner ging: `--create-missing`
+  # schreibt die neuen IDs in die JSON-Dateien, und die Aenderung ginge mit dem
+  # Runner verloren. Sie wird deshalb hier committet -- dieselbe Loesung, die
+  # `norra-n8n-backup.yml` fuer die Drift schon benutzt.
+  create-missing:
+    name: Fehlende Workflows anlegen
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.create_missing == true }}
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: '22'
+
+      - name: Validate workflow JSON
+        working-directory: norra/backend
+        run: node scripts/validate-workflows.mjs
+
+      - name: Anlegen und deployen
+        working-directory: norra/backend
+        env:
+          N8N_BASE_URL: ${{ secrets.N8N_BASE_URL }}
+          N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
+        run: node scripts/n8n-sync.mjs deploy --create-missing
+
+      # Ohne diesen Schritt legt der naechste Lauf dieselben Workflows ein
+      # zweites Mal an: die Zuordnung Datei -> Instanz steht ausschliesslich in
+      # `norra.workflowId`.
+      - name: Neue Workflow-IDs committen
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- norra/backend/n8n-workflows; then
+            echo "Keine neuen IDs -- es lag schon alles auf der Instanz."
+            exit 0
+          fi
+          git diff --stat -- norra/backend/n8n-workflows
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add norra/backend/n8n-workflows
+          git commit -m 'chore(norra): Workflow-IDs der n8n-Instanz'
+          git push
+
+      - name: Startbereitschaft berichten
         continue-on-error: true
         working-directory: norra/backend
         env:
