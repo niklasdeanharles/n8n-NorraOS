@@ -154,7 +154,11 @@ jobs:
   cleanup-ghcr:
     name: 'Cleanup GHCR Image'
     needs: [build, helm-e2e]
-    if: always()
+    # `always()` ueberlebt einen uebersprungenen Vorgaenger -- anders als ein
+    # blosses `needs`. Ohne das Gate bliebe dieser Job in der Warteschlange
+    # stehen, wenn `build` und `helm-e2e` gegated sind: er will einen
+    # Blacksmith-Runner, den es hier nicht gibt.
+    if: always() && github.repository == 'n8n-io/n8n'
     runs-on: blacksmith-2vcpu-ubuntu-2204
     permissions:
       packages: write
