@@ -66,6 +66,34 @@ Repository → **Settings → Secrets and variables → Actions → New secret**
 | `N8N_BASE_URL` | die URL deiner n8n-Instanz | Workflows ausrollen und sichern |
 | `N8N_API_KEY` | n8n → Settings → API | Workflows ausrollen und sichern |
 
+> **Dieser Schritt ist Bequemlichkeit, keine Voraussetzung.** Die fünf Secrets
+> automatisieren genau zwei Dinge: den Schema-Rollout (Schritt 3) und das
+> Ausrollen der Workflows (Schritt 6). Beides geht von Hand, und die Stufen A
+> bis D hängen an keinem davon. Wer hier hängenbleibt, überspringt den Schritt
+> und macht weiter — Norra läuft trotzdem.
+
+### Wenn die Secrets leer ankommen
+
+Gemessen auf `master`, Lauf `e3de87ec`: **alle fünf** kamen mit null Zeichen an,
+`supabase link --project-ref ""` eingeschlossen. Nicht vier von fünf, nicht die
+zwei n8n-Werte — alle. Ein einzelner vergessener Eintrag sieht anders aus.
+
+Zwei Ursachen erklären das, und beide sehen in der Oberfläche identisch aus:
+
+1. **Der falsche Reiter.** In der linken Spalte unter *Secrets and variables*
+   stehen drei Einträge untereinander: **Actions**, **Codespaces**,
+   **Dependabot**. Jeder hat eine eigene Liste mit der Überschrift
+   *Repository secrets*, und ein Secret im falschen davon ist für Actions
+   schlicht nicht vorhanden. Die Adresszeile ist der Beweis: sie muss auf
+   `/settings/secrets/actions` enden.
+2. **Das falsche Repository.** Derselbe Screenshot entsteht in jedem Repository.
+   Vor dem Namen muss `niklasdeanharles/n8n-NorraOS` stehen.
+
+`norra-secrets-check.yml` beantwortet das ohne Raten: der Lauf listet die
+*Namen* der Secrets, die tatsächlich ankommen — `toJSON(secrets)`, dessen Werte
+GitHub ohnehin maskiert. Liegt dort nur `github_token`, ist keines der fünf im
+Actions-Reiter dieses Repositories.
+
 ## 3 · Schema ausrollen
 
 Sobald `norra-db-migrate.yml` auf `master` liegt, löst ein Push, der
@@ -221,6 +249,7 @@ aktivieren, den Einbettungs-Code auf eine Seite legen und selbst schreiben.
 | Anruf bricht sofort ab | `NORRA_PUBLIC_URL` weicht von der bei Twilio eingetragenen URL ab |
 | Agent antwortet, aber die Auswertung bleibt leer | `anthropicApi` hängt nicht am Klassifikations-Node |
 | Wissensbasis findet nichts | `openAiApi` fehlt — ohne Einbettungen keine Vektorsuche |
+| GitHub-Action meldet ein leeres Secret | Secret liegt im Reiter *Codespaces* oder *Dependabot* statt *Actions* |
 | Sprachnachricht ohne Abschrift | `googlePalmApi` oder `twilioApi` fehlt an `voicemail-transcribe` |
 
 Der Reflex bei allem, was nach Verdrahtung riecht:
