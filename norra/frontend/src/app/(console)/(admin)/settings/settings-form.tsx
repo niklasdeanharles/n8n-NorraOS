@@ -21,6 +21,7 @@ const INDUSTRIES = [
   'Gastronomie', 'Bäckerei', 'Kfz-Werkstatt', 'Arztpraxis', 'Zahnarztpraxis',
   'Handwerk', 'Einzelhandel', 'Versandhandel', 'Rechtsanwaltskanzlei',
   'Steuerberatung', 'Immobilien', 'Fitnessstudio', 'Friseur', 'Hotel',
+  'Wellness & Spa',
 ];
 
 const TIMEZONES = ['Europe/Berlin', 'Europe/Vienna', 'Europe/Zurich', 'Europe/London', 'UTC'];
