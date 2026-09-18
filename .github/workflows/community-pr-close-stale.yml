@@ -23,6 +23,8 @@ permissions:
 
 jobs:
   close-stale-community-prs:
+    # Upstream-only: laeuft nicht in Forks (dieser hier hat die Secrets nicht).
+    if: github.repository == 'n8n-io/n8n'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

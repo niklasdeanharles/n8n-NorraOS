@@ -11,6 +11,8 @@ concurrency:
 
 jobs:
   prepare-docker:
+    # Upstream-only: laeuft nicht in Forks (dieser hier hat die Secrets nicht).
+    if: github.repository == 'n8n-io/n8n'
     uses: ./.github/workflows/prepare-docker-reusable.yml
     secrets: inherit
 

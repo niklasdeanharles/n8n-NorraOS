@@ -11,7 +11,8 @@ jobs:
   detect-new-packages:
     name: Check for new unpublished packages
     runs-on: ubuntu-latest
-    if: github.event.pull_request.merged == true
+    # Upstream-only: laeuft nicht in Forks (dieser hier hat die Secrets nicht).
+    if: github.repository == 'n8n-io/n8n' && github.event.pull_request.merged == true
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2

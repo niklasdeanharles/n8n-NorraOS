@@ -7,7 +7,9 @@ on:
 jobs:
   delete-release-branch:
     # Only if PR was closed without merge
+    # Upstream-only: laeuft nicht in Forks (dieser hier hat die Secrets nicht).
     if: >
+      github.repository == 'n8n-io/n8n' &&
       github.event.pull_request.merged == false
     runs-on: ubuntu-slim
     permissions:

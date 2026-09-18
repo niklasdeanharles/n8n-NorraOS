@@ -11,7 +11,8 @@ jobs:
   determine-version-info:
     name: Determine publishing track
     runs-on: ubuntu-latest
-    if: github.event.pull_request.merged == true
+    # Upstream-only: laeuft nicht in Forks (dieser hier hat die Secrets nicht).
+    if: github.repository == 'n8n-io/n8n' && github.event.pull_request.merged == true
     outputs:
       track: ${{ steps.determine-info.outputs.track }}
       previous_version: ${{ steps.determine-info.outputs.previous_version }}
