@@ -19,6 +19,12 @@ Jeder Ordner steht für sich: eigenes `README.md`, eigenes `CLAUDE.md`, eigenes
 `.github/workflows/`, weil GitHub Workflows ausschließlich aus dem
 Repository-Wurzelverzeichnis liest.
 
+## Inbetriebnahme
+
+Was nur ein Mensch tun kann — Supabase, Secrets, n8n-Credentials, Twilio —
+steht in [SETUP.md](SETUP.md), nach Stufen geordnet: Konsole, Chat, Telefon,
+ganzer Empfang. Jede Stufe läuft für sich; man kann nach jeder aufhören.
+
 ## Was wo hingehört
 
 | Frage | Antwort |

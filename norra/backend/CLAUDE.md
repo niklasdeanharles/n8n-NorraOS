@@ -294,17 +294,24 @@ wurde.
 
 Von den zwölf Workflows liegen sieben auf der Instanz, **keiner ist aktiviert**,
 und **kein Node trägt bisher eine Credential** — auch nicht die Supabase- und
-OpenAI-Nodes, von denen man das annehmen könnte. Drei Credentials fehlen auf
-der Instanz ganz:
+OpenAI-Nodes, von denen man das annehmen könnte. Gebraucht werden zehn; welche
+davon, hängt davon ab, wie weit man gehen will — die Stufen stehen in
+[../SETUP.md](../SETUP.md).
+
+Diese Tabelle ist aus den Workflow-Dateien abgeleitet, nicht aus dem Gedächtnis:
 
 | Credential | Typ | Gebraucht von |
 |---|---|---|
-| Anthropic | `anthropicApi` | Claude Model in `agent-turn` und `voice-turn` |
-| Norra Webhook Secret | `httpHeaderAuth` | alle drei Webhook-Nodes und `lookup_record` |
-| Twilio | `twilioApi` | `send_sms` |
-| Gmail | OAuth2 **oder** Service-Account | `notify-escalation`, `call-wrapup` |
-| Google Sheets | OAuth2 **oder** Service-Account | `lookup_order`, wenn eine Quelle vom Typ Google Sheet eingetragen ist |
-| Google AI Studio | `googlePalmApi` | `voicemail-transcribe` — der Gemini-API-Key; die Credential heißt in n8n noch nach PaLM |
+| Supabase | `supabaseApi` | 19 Workflows — praktisch alles. Project-URL plus `service_role`-Key |
+| OpenAI | `openAiApi` | `agent-turn`, `kb-ingest`, `voice-turn` — nur die Einbettungen |
+| Anthropic | `anthropicApi` | `agent-turn`, `voice-turn`, `call-wrapup` |
+| Norra Webhook Secret | `httpHeaderAuth` | die sechs Webhook-Nodes, Header-Name `x-norra-secret` |
+| Twilio | `twilioApi` | `send-sms`, `outbound-call`, `voicemail-transcribe` |
+| Google Calendar | OAuth2 **oder** Service-Account | `book-appointment` |
+| Gmail | OAuth2 **oder** Service-Account | `notify-escalation`, `call-wrapup`, `take-message` |
+| Google Sheets | `googleSheetsOAuth2Api` | `lookup-order`, nur bei einer Quelle vom Typ Sheet |
+| Google AI Studio | `googlePalmApi` | `voicemail-transcribe` — der Gemini-Key; n8n nennt ihn noch nach PaLM |
+| Kunden-Endpunkt | `httpHeaderAuth`, eigene | `lookup-record`, `lookup-order`, nur bei einem eigenen Endpunkt |
 
 Die Header-Auth-Credential muss Header-Name `x-norra-secret` und als Wert
 denselben String tragen wie `N8N_WEBHOOK_SECRET` in Vercel — sonst weist der
