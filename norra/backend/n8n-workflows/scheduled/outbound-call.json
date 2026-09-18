@@ -1,0 +1,640 @@
+{
+  "name": "Norra – Outbound Call",
+  "nodes": [
+    {
+      "id": "every-five-minutes",
+      "name": "Every Five Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "load-running-campaigns",
+      "name": "Load Running Campaigns",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "call_campaigns",
+        "returnAll": true,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "status",
+              "condition": "eq",
+              "keyValue": "running"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "per-campaign",
+      "name": "Per Campaign",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "within-calling-window",
+      "name": "Within Calling Window?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        660,
+        120
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ (() => { const c = $json; const win = c.calling_window ?? {}; if (Object.keys(win).length === 0) return false; const parts = new Intl.DateTimeFormat(\"en-GB\", { timeZone: c.timezone, weekday: \"short\", hour: \"2-digit\", minute: \"2-digit\", hour12: false }).formatToParts(new Date()); const get = (t) => parts.find((p) => p.type === t)?.value ?? \"\"; const day = get(\"weekday\").toLowerCase().slice(0, 3); const now = get(\"hour\") + \":\" + get(\"minute\"); const span = win[day]; return Array.isArray(span) && span.length === 2 && now >= span[0] && now < span[1]; })() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true
+      }
+    },
+    {
+      "id": "load-due-targets",
+      "name": "Load Due Targets",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        880,
+        40
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "campaign_targets",
+        "returnAll": false,
+        "limit": "={{ $('Per Campaign').item.json.max_concurrent }}",
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Per Campaign').item.json.organization_id }}"
+            },
+            {
+              "keyName": "campaign_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Per Campaign').item.json.id }}"
+            },
+            {
+              "keyName": "outcome",
+              "condition": "eq",
+              "keyValue": "pending"
+            },
+            {
+              "keyName": "next_attempt_at",
+              "condition": "lte",
+              "keyValue": "={{ $now.toISO() }}"
+            },
+            {
+              "keyName": "attempts",
+              "condition": "lt",
+              "keyValue": "={{ $('Per Campaign').item.json.max_attempts }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "per-target",
+      "name": "Per Target",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1100,
+        40
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "resolve-twilio-account",
+      "name": "Resolve Twilio Account",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1320,
+        140
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.twilio.com/2010-04-01/Accounts.json",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "twilioApi",
+        "options": {
+          "timeout": 10000
+        }
+      }
+    },
+    {
+      "id": "load-number",
+      "name": "Load Number",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1540,
+        140
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "phone_numbers",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Per Campaign').item.json.phone_number_id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Per Campaign').item.json.organization_id }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "place-call",
+      "name": "Place Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1760,
+        140
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $('Resolve Twilio Account').item.json.accounts[0].sid }}/Calls.json",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "twilioApi",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $('Per Target').item.json.e164 }}"
+            },
+            {
+              "name": "From",
+              "value": "={{ $('Load Number').item.json.e164 }}"
+            },
+            {
+              "name": "Url",
+              "value": "={{ $env.NORRA_PUBLIC_URL }}/api/voice/outbound?target={{ $('Per Target').item.json.id }}"
+            },
+            {
+              "name": "StatusCallback",
+              "value": "={{ $env.NORRA_PUBLIC_URL }}/api/voice/status"
+            },
+            {
+              "name": "StatusCallbackEvent",
+              "value": "completed"
+            },
+            {
+              "name": "MachineDetection",
+              "value": "DetectMessageEnd"
+            },
+            {
+              "name": "AsyncAmd",
+              "value": "true"
+            },
+            {
+              "name": "AsyncAmdStatusCallback",
+              "value": "={{ $env.NORRA_PUBLIC_URL }}/api/voice/amd?target={{ $('Per Target').item.json.id }}"
+            },
+            {
+              "name": "Timeout",
+              "value": "25"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "mark-attempted",
+      "name": "Mark Attempted",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1980,
+        140
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "tableId": "campaign_targets",
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Per Target').item.json.id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Per Campaign').item.json.organization_id }}"
+            }
+          ]
+        },
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "attempts",
+              "fieldValue": "={{ ($('Per Target').item.json.attempts ?? 0) + 1 }}"
+            },
+            {
+              "fieldId": "last_attempt_at",
+              "fieldValue": "={{ $now.toISO() }}"
+            },
+            {
+              "fieldId": "next_attempt_at",
+              "fieldValue": "={{ $now.plus({ minutes: $('Per Campaign').item.json.retry_after_minutes }).toISO() }}"
+            },
+            {
+              "fieldId": "outcome",
+              "fieldValue": "={{ $('Place Call').item.json.sid ? \"pending\" : \"failed\" }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "count-open-targets",
+      "name": "Count Open Targets",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        880,
+        240
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "campaign_targets",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Per Campaign').item.json.organization_id }}"
+            },
+            {
+              "keyName": "campaign_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Per Campaign').item.json.id }}"
+            },
+            {
+              "keyName": "outcome",
+              "condition": "eq",
+              "keyValue": "pending"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "sticky-outbound",
+      "name": "Sticky Note outbound",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -380
+      ],
+      "parameters": {
+        "width": 1040,
+        "height": 300,
+        "content": "## Ausgehende Anrufe\n\nAlle fünf Minuten: laufende Kampagnen holen, prüfen ob **jetzt** im Anrufzeitfenster liegt, fällige Ziele wählen.\n\n**Das Zeitfenster wird in der Zeitzone der Kampagne gerechnet**, nicht in der des Containers — der läuft in UTC, und ein Werbeanruf um 22 Uhr ist in Deutschland eine Ordnungswidrigkeit.\n\n**`Load Running Campaigns` ist bewusst mandantenübergreifend.** Ein Zeitplan hat keine Organisation; er arbeitet alle ab. Deklariert unter `norra.crossTenant`, und `check-wiring.mjs` verlangt genau das — jede weitere Abfrage filtert wieder nach der `organization_id` der Kampagne.\n\n**Gewählt wird per REST, nicht per Twilio-Node.** Der Node kennt `MachineDetection` nicht. Ohne sie redet der Agent auf Band und der Lauf zählt als Gespräch.\n\n**`next_attempt_at` wird vor dem Gespräch fortgeschrieben**, nicht danach: sonst griffe der nächste Lauf dasselbe Ziel, während das erste Telefon noch klingelt.\n\n**Eine leergelaufene Kampagne schaltet sich selbst ab.** Bleibt kein offenes Ziel mehr, geht sie auf `done` — sonst fragte der Zeitplan sie alle fünf Minuten für nichts ab."
+      }
+    },
+    {
+      "id": "nothing-left",
+      "name": "Nothing Left?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        240
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true
+      }
+    },
+    {
+      "id": "finish-campaign",
+      "name": "Finish Campaign",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        300
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "tableId": "call_campaigns",
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Per Campaign').item.json.id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Per Campaign').item.json.organization_id }}"
+            }
+          ]
+        },
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "done"
+            },
+            {
+              "fieldId": "finished_at",
+              "fieldValue": "={{ $now.toISO() }}"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every Five Minutes": {
+      "main": [
+        [
+          {
+            "node": "Load Running Campaigns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Running Campaigns": {
+      "main": [
+        [
+          {
+            "node": "Per Campaign",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Per Campaign": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Within Calling Window?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Within Calling Window?": {
+      "main": [
+        [
+          {
+            "node": "Load Due Targets",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Count Open Targets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Due Targets": {
+      "main": [
+        [
+          {
+            "node": "Per Target",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Per Target": {
+      "main": [
+        [
+          {
+            "node": "Count Open Targets",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolve Twilio Account",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Twilio Account": {
+      "main": [
+        [
+          {
+            "node": "Load Number",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Number": {
+      "main": [
+        [
+          {
+            "node": "Place Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Place Call": {
+      "main": [
+        [
+          {
+            "node": "Mark Attempted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Attempted": {
+      "main": [
+        [
+          {
+            "node": "Per Target",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Count Open Targets": {
+      "main": [
+        [
+          {
+            "node": "Nothing Left?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Nothing Left?": {
+      "main": [
+        [
+          {
+            "node": "Finish Campaign",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Per Campaign",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finish Campaign": {
+      "main": [
+        [
+          {
+            "node": "Per Campaign",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "norra": {
+    "slug": "outbound-call",
+    "crossTenant": {
+      "Load Running Campaigns": "Ein Zeitplan hat keine Organisation. Dieser Node holt die laufenden Kampagnen aller Mandanten; jede weitere Abfrage im Lauf filtert wieder nach der organization_id der jeweiligen Kampagne."
+    }
+  }
+}

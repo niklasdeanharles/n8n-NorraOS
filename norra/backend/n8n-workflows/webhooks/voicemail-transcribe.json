@@ -1,0 +1,440 @@
+{
+  "name": "Norra – Voicemail Transcribe",
+  "nodes": [
+    {
+      "name": "Voicemail Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "norra/voicemail-transcribe",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "responseData": "firstEntryJson"
+      }
+    },
+    {
+      "name": "Normalize Request",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "organization_id",
+              "name": "organization_id",
+              "value": "={{ $json.body.organization_id }}",
+              "type": "string"
+            },
+            {
+              "id": "call_id",
+              "name": "call_id",
+              "value": "={{ $json.body.call_id }}",
+              "type": "string"
+            },
+            {
+              "id": "ticket_id",
+              "name": "ticket_id",
+              "value": "={{ $json.body.ticket_id ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "recording_url",
+              "name": "recording_url",
+              "value": "={{ $json.body.recording_url ?? '' }}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Fetch Recording",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.recording_url }}.mp3",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "twilioApi",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "name": "Transcribe",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "resource": "audio",
+        "operation": "transcribe",
+        "modelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "models/gemini-2.5-flash"
+        },
+        "inputType": "binary",
+        "binaryPropertyName": "data",
+        "simplify": true,
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "name": "Shape Transcript",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Was das Modell zurueckgibt, auf eine Abschrift eindampfen.\n//\n// Die Form der Antwort haengt an Node-Version und `simplify`; statt eine davon\n// zu raten, werden die bekannten Stellen der Reihe nach gelesen. Kommt nichts\n// Brauchbares heraus, ist das kein Grund zum Abbruch -- die Aufnahme selbst\n// liegt weiter im Ticket, und ein Mensch kann sie anhoeren.\nconst asked = $('Normalize Request').first().json;\nconst payload = $input.first()?.json ?? {};\n\nconst candidate =\n  payload.text ??\n  payload.content ??\n  payload.output ??\n  payload.candidates?.[0]?.content?.parts?.[0]?.text ??\n  '';\n\nlet transcript = String(typeof candidate === 'string' ? candidate : '').trim();\n\n// Die Obergrenze spiegelt den Check-Constraint auf `calls.voicemail_transcript`.\n// Sie faengt nicht den redseligen Anrufer -- `Record` laeuft 180 Sekunden --,\n// sondern ein Modell, das statt einer Abschrift seitenweise Entschuldigungen\n// zurueckgibt. Abschneiden statt Abweisen: die ersten 20.000 Zeichen sind\n// immer noch die Nachricht.\nif (transcript.length > 20000) transcript = transcript.slice(0, 20000);\n\n// Bewusst *keine* Erkennung von Absagen des Modells (\"Es tut mir leid, ich\n// konnte nichts verstehen\"). Ein Muster dafuer trifft unweigerlich auch echte\n// Nachrichten: \"Leider muss ich den Termin absagen\" ist genau der Anruf, den\n// niemand verlieren darf. Eine Absage als Abschrift anzuzeigen ist harmlos --\n// der Link zur Aufnahme steht direkt darunter. Eine echte Nachricht\n// wegzuwerfen ist es nicht.\nconst ok = transcript.length > 0;\nconst url = String(asked.recording_url ?? '');\n\nreturn [{\n  json: {\n    ok,\n    transcript: ok ? transcript : null,\n    chars: ok ? transcript.length : 0,\n    description: ok\n      ? 'Abschrift der Sprachnachricht:\\n\\n' + transcript + (url ? '\\n\\nAufnahme: ' + url : '')\n      : 'Die Aufnahme konnte nicht automatisch verschriftet werden -- bitte anhoeren.'\n        + (url ? '\\n\\nAufnahme: ' + url : ''),\n  },\n}];"
+      }
+    },
+    {
+      "name": "Has Text",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Save Transcript",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        -140
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "tableId": "calls",
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Normalize Request').item.json.call_id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Normalize Request').item.json.organization_id }}"
+            }
+          ]
+        },
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "voicemail_transcript",
+              "fieldValue": "={{ $('Shape Transcript').item.json.transcript }}"
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "name": "Describe Ticket",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1540,
+        -140
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "tableId": "tickets",
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Normalize Request').item.json.ticket_id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Normalize Request').item.json.organization_id }}"
+            }
+          ]
+        },
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "description",
+              "fieldValue": "={{ $('Shape Transcript').item.json.description }}"
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "name": "Note Failure",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        140
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "tableId": "tickets",
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Normalize Request').item.json.ticket_id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Normalize Request').item.json.organization_id }}"
+            }
+          ]
+        },
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "description",
+              "fieldValue": "={{ $('Shape Transcript').item.json.description }}"
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "name": "Return",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1760,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ok",
+              "name": "ok",
+              "value": "={{ $('Shape Transcript').item.json.ok }}",
+              "type": "boolean"
+            },
+            {
+              "id": "chars",
+              "name": "chars",
+              "value": "={{ $('Shape Transcript').item.json.chars }}",
+              "type": "number"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Sticky Note voicemail",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -360
+      ],
+      "parameters": {
+        "content": "## voicemail-transcribe – aus einem Link wird ein Text\nAngestossen von `/api/voice/recording`, nachdem das Ticket schon angelegt ist. Bewusst danach und nicht davor: eine Sprachnachricht muss im Posteingang landen, auch wenn die Verschriftung scheitert oder die Instanz gerade steht.\n\nDie Aufnahme liegt bei Twilio hinter Basic Auth. Der HTTP-Node nimmt dafuer die vorhandene `twilioApi`-Credential statt einer zweiten mit denselben Zugangsdaten -- die `.mp3`-Endung an der Recording-URL liefert die Audiodatei.\n\nVerschriftet wird mit Google AI Studio (`googlePalmApi`). Das Modell steht als fester Wert im Node und nicht in der Auswahlliste: ein Workflow im Repository muss ohne Instanzverbindung lesbar sein. Wer ein anderes will, aendert die Zeile hier -- das ist eine Zeile in Git und kein Klick, den niemand wiederfindet.\n\n**Scheitern ist ein Ausgang, kein Abbruch.** Kommt kein Text zurueck, bekommt das Ticket den Satz \"konnte nicht automatisch verschriftet werden -- bitte anhoeren\" statt gar nichts. Eine stille Fehlfunktion saehe genauso aus wie eine Nachricht, die niemand hinterlassen hat.",
+        "color": 4,
+        "width": 820,
+        "height": 320
+      }
+    }
+  ],
+  "connections": {
+    "Voicemail Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Request": {
+      "main": [
+        [
+          {
+            "node": "Fetch Recording",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Recording": {
+      "main": [
+        [
+          {
+            "node": "Transcribe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribe": {
+      "main": [
+        [
+          {
+            "node": "Shape Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Transcript": {
+      "main": [
+        [
+          {
+            "node": "Has Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Text": {
+      "main": [
+        [
+          {
+            "node": "Save Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Note Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Transcript": {
+      "main": [
+        [
+          {
+            "node": "Describe Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Describe Ticket": {
+      "main": [
+        [
+          {
+            "node": "Return",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Note Failure": {
+      "main": [
+        [
+          {
+            "node": "Return",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "norra": {
+    "slug": "voicemail-transcribe"
+  },
+  "tags": [
+    "norra",
+    "norra:core"
+  ]
+}

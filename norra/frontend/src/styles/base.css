@@ -1,0 +1,203 @@
+/*
+ * Norra – Basis: was jede Oberfläche braucht.
+ *
+ * Hier stehen nur die Design-Tokens, die Element-Resets und die Bausteine, die
+ * Konsole *und* eingebettetes Widget rendern. Was nur eine der beiden zeigt,
+ * liegt in `console.css` bzw. `widget.css` — das Widget läuft im iframe auf
+ * einer fremden Website und soll das Stylesheet der Konsole nicht mitladen.
+ *
+ * Tokens spiegeln die Produktseite, damit Konsole und Marketing als ein
+ * Produkt lesen: Waldgrün auf warmem Sand, Familjen Grotesk für Display,
+ * Instrument Sans für Text, JetBrains Mono für Daten.
+ *
+ * Farben liegen als blanke HSL-Kanäle und werden über hsl(var(--x)) benutzt —
+ * nur so trägt ein einzelnes Token auch seine Deckkraft-Varianten.
+ */
+@import url('https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  color-scheme: light;
+
+  --background: 45 30% 98%;
+  --foreground: 210 14% 12%;
+  --card: 0 0% 100%;
+  --card-foreground: 210 14% 12%;
+  --primary: 158 44% 18%;
+  --primary-foreground: 150 40% 97%;
+  --secondary: 44 24% 93%;
+  --muted: 44 24% 94%;
+  --muted-foreground: 210 9% 42%;
+  --accent: 152 30% 90%;
+  --accent-foreground: 158 45% 15%;
+  --success: 152 45% 30%;
+  --success-surface: 152 40% 93%;
+  --warning: 32 88% 42%;
+  --warning-surface: 38 80% 93%;
+  --danger: 4 62% 44%;
+  --danger-surface: 6 70% 95%;
+  --border: 44 16% 87%;
+  --input: 44 16% 84%;
+  --ring: 158 44% 26%;
+  --surface-mist: 212 56% 94%;
+  --surface-sage: 150 30% 92%;
+  --surface-band: 44 22% 94%;
+  --shadow-color: 40 25% 22%;
+
+  --chart-1: 158 40% 34%;
+  --chart-2: 214 70% 52%;
+  --chart-3: 28 88% 52%;
+  --chart-4: 336 58% 50%;
+  --chart-5: 262 44% 58%;
+
+  --font-display: 'Familjen Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --radius: 1rem;
+  --radius-sm: .625rem;
+  --radius-xs: .375rem;
+
+  --shadow-soft: 0 1px 2px hsl(var(--shadow-color) / .04), 0 4px 16px hsl(var(--shadow-color) / .06);
+  --shadow-lg: 0 2px 4px hsl(var(--shadow-color) / .04), 0 12px 32px hsl(var(--shadow-color) / .10);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --background: 200 12% 8%;
+    --foreground: 45 22% 94%;
+    --card: 200 10% 11%;
+    --card-foreground: 45 22% 94%;
+    --primary: 152 38% 62%;
+    --primary-foreground: 200 20% 9%;
+    --secondary: 200 8% 16%;
+    --muted: 200 8% 15%;
+    --muted-foreground: 45 8% 62%;
+    --accent: 158 26% 20%;
+    --accent-foreground: 152 40% 82%;
+    --success: 152 42% 58%;
+    --success-surface: 158 30% 15%;
+    --warning: 38 82% 62%;
+    --warning-surface: 34 40% 15%;
+    --danger: 6 70% 66%;
+    --danger-surface: 6 34% 17%;
+    --border: 200 8% 20%;
+    --input: 200 8% 24%;
+    --ring: 152 38% 52%;
+    --surface-mist: 212 26% 18%;
+    --surface-sage: 152 20% 17%;
+    --surface-band: 200 8% 14%;
+    --shadow-color: 200 30% 3%;
+    --shadow-soft: 0 1px 2px hsl(var(--shadow-color) / .4), 0 4px 16px hsl(var(--shadow-color) / .3);
+    --shadow-lg: 0 2px 4px hsl(var(--shadow-color) / .4), 0 12px 32px hsl(var(--shadow-color) / .45);
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: hsl(var(--primary)); text-decoration: none; }
+
+a:hover { text-decoration: underline; }
+
+h1, h2, h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -.018em;
+  text-wrap: balance;
+}
+
+h1 { font-size: 23px; }
+
+h2 { font-size: 18px; }
+
+h3 { font-size: 14.5px; }
+
+code, .mono { font-family: var(--font-mono); font-size: .875em; }
+
+:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; border-radius: var(--radius-xs); }
+
+/* ---------- Formular-Elemente ----------
+ * Nur die blanken Element-Resets. Die Varianten (`.btn-secondary`, `.notice`,
+ * …) rendert ausschließlich die Konsole und stehen deshalb dort.
+ */
+label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 550; color: hsl(var(--foreground)); }
+
+input, textarea, select {
+  padding: 9px 12px; border: 1px solid hsl(var(--input)); border-radius: var(--radius-sm);
+  background: hsl(var(--background)); color: hsl(var(--foreground));
+  font: inherit; font-size: 14px; font-weight: 400; width: 100%;
+  accent-color: hsl(var(--primary));
+}
+
+input:focus, textarea:focus, select:focus { outline: 2px solid hsl(var(--ring)); outline-offset: -1px; border-color: transparent; }
+
+textarea { resize: vertical; min-height: 92px; line-height: 1.55; }
+
+button, .btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 9px 16px; border: 1px solid transparent; border-radius: 999px;
+  background: hsl(var(--primary)); color: hsl(var(--primary-foreground));
+  font: inherit; font-size: 14px; font-weight: 550;
+  cursor: pointer; white-space: nowrap; text-decoration: none;
+  transition: filter .16s ease, background .16s ease;
+}
+
+button:hover:not(:disabled), .btn:hover { filter: brightness(1.14); text-decoration: none; }
+
+button:disabled { opacity: .5; cursor: default; }
+
+/* ---------- Bewegung: Primitive ----------
+ * Nur die Keyframes und die Kurve. Wer sie einsetzt, steht in der jeweiligen
+ * Oberfläche. Der reduced-motion-Block am Ende schaltet alles davon ab, und
+ * beide Oberflächen lesen sich mit null Animation weiterhin korrekt.
+ */
+:root { --ease-out: cubic-bezier(.22, .78, .3, 1); }
+
+@keyframes rise { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: none; } }
+
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+@keyframes shimmer { from { background-position: 180% 0; } to { background-position: -80% 0; } }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@keyframes pulse-soft { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+
+/* ---------- geteilte Bausteine ----------
+ * Der Tipp-Indikator läuft im Chat der Konsole und im Widget.
+ */
+.typing { display: inline-flex; gap: 4px; padding: 4px 0; }
+
+.typing i { width: 5px; height: 5px; border-radius: 999px; background: hsl(var(--muted-foreground)); animation: blink 1.3s infinite; }
+
+.typing i:nth-child(2) { animation-delay: .2s; }
+
+.typing i:nth-child(3) { animation-delay: .4s; }
+
+@keyframes blink { 0%, 60%, 100% { opacity: .25; } 30% { opacity: 1; } }
+
+/*
+ * Ein Schalter für alle, die ihrem Betriebssystem gesagt haben, es soll ruhiger
+ * werden. Animationen werden entfernt statt verkürzt: ein Schimmern mit 0.01s
+ * flackert immer noch. `console.css` ergänzt den Block um seine eigenen
+ * Elemente.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  .typing i { opacity: .6; }
+}

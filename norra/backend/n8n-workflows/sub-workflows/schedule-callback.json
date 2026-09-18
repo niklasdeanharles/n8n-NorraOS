@@ -1,0 +1,345 @@
+{
+  "name": "Norra – Tool: schedule_callback",
+  "nodes": [
+    {
+      "name": "Callback Requested",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "organization_id",
+              "type": "string"
+            },
+            {
+              "name": "conversation_id",
+              "type": "string"
+            },
+            {
+              "name": "agent_id",
+              "type": "string"
+            },
+            {
+              "name": "call_id",
+              "type": "string"
+            },
+            {
+              "name": "reason",
+              "type": "string"
+            },
+            {
+              "name": "requested_for",
+              "type": "string"
+            },
+            {
+              "name": "preference",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Load Call",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "calls",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $json.call_id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.organization_id }}"
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "name": "File Callback",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "callbacks",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "organization_id",
+              "fieldValue": "={{ $('Callback Requested').item.json.organization_id }}"
+            },
+            {
+              "fieldId": "conversation_id",
+              "fieldValue": "={{ $('Callback Requested').item.json.conversation_id }}"
+            },
+            {
+              "fieldId": "contact_id",
+              "fieldValue": "={{ $json.contact_id }}"
+            },
+            {
+              "fieldId": "e164",
+              "fieldValue": "={{ $json.from_e164 }}"
+            },
+            {
+              "fieldId": "reason",
+              "fieldValue": "={{ $('Callback Requested').item.json.reason.slice(0, 2000) }}"
+            },
+            {
+              "fieldId": "requested_for",
+              "fieldValue": "={{ $('Callback Requested').item.json.requested_for || null }}"
+            },
+            {
+              "fieldId": "preference",
+              "fieldValue": "={{ ($('Callback Requested').item.json.preference || '').slice(0, 300) || null }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "pending"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Mark Conversation Pending",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "tableId": "conversations",
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Callback Requested').item.json.conversation_id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Callback Requested').item.json.organization_id }}"
+            }
+          ]
+        },
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "pending"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Log Tool Call",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "tool_calls_log",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "organization_id",
+              "fieldValue": "={{ $('Callback Requested').item.json.organization_id }}"
+            },
+            {
+              "fieldId": "conversation_id",
+              "fieldValue": "={{ $('Callback Requested').item.json.conversation_id }}"
+            },
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "={{ $('Callback Requested').item.json.agent_id }}"
+            },
+            {
+              "fieldId": "tool_name",
+              "fieldValue": "schedule_callback"
+            },
+            {
+              "fieldId": "n8n_workflow_id",
+              "fieldValue": "={{ $workflow.id }}"
+            },
+            {
+              "fieldId": "n8n_execution_id",
+              "fieldValue": "={{ $execution.id }}"
+            },
+            {
+              "fieldId": "input",
+              "fieldValue": "={{ JSON.stringify($('Callback Requested').item.json) }}"
+            },
+            {
+              "fieldId": "output",
+              "fieldValue": "={{ JSON.stringify({ callback_id: $('File Callback').item.json.id ?? null }) }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "={{ $('File Callback').item.json.id ? 'success' : 'error' }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Return To Agent",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1100,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "scheduled",
+              "name": "scheduled",
+              "value": "={{ !!$('File Callback').item.json.id }}",
+              "type": "boolean"
+            },
+            {
+              "id": "callback_id",
+              "name": "callback_id",
+              "value": "={{ $('File Callback').item.json.id ?? null }}",
+              "type": "string"
+            },
+            {
+              "id": "result",
+              "name": "result",
+              "value": "={{ $('File Callback').item.json.id ? 'Der Rueckruf ist notiert. Sage zu, dass sich jemand meldet -- nenne aber keine feste Uhrzeit, die niemand zugesagt hat.' : 'Der Rueckruf konnte nicht notiert werden. Biete stattdessen die Uebergabe an einen Menschen an.' }}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Sticky Note callback",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -50,
+        -60
+      ],
+      "parameters": {
+        "content": "## schedule_callback – ein Wunsch, kein Termin\nDer Agent traegt ein, worum gebeten wurde. Er bucht nichts in einem Kalender und sagt keine Uhrzeit zu: requested_for ist nullable, preference nimmt 'heute Nachmittag' im Wortlaut auf. Ein Mensch bestaetigt.\n\nDie Nummer kommt aus dem Anruf, nicht aus der Eingabe -- wie bei den anderen Telefon-Tools.\n\nWozu das auf dem Telefon: ein Chatfenster kann offen bleiben, eine Leitung nicht. Ohne Rueckruf endet jeder Anruf ohne sofortige Antwort als verlorener Kunde.",
+        "color": 4,
+        "width": 760,
+        "height": 300
+      }
+    }
+  ],
+  "connections": {
+    "Callback Requested": {
+      "main": [
+        [
+          {
+            "node": "Load Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Call": {
+      "main": [
+        [
+          {
+            "node": "File Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "File Callback": {
+      "main": [
+        [
+          {
+            "node": "Mark Conversation Pending",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Conversation Pending": {
+      "main": [
+        [
+          {
+            "node": "Log Tool Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Tool Call": {
+      "main": [
+        [
+          {
+            "node": "Return To Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "norra": {
+    "slug": "schedule-callback"
+  },
+  "tags": [
+    "norra",
+    "norra:tool"
+  ]
+}

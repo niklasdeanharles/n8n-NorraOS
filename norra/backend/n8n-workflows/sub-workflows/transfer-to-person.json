@@ -1,0 +1,550 @@
+{
+  "name": "Norra – Tool: transfer_to_person",
+  "nodes": [
+    {
+      "id": "transfer-requested",
+      "name": "Transfer Requested",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "organization_id",
+              "type": "string"
+            },
+            {
+              "name": "conversation_id",
+              "type": "string"
+            },
+            {
+              "name": "agent_id",
+              "type": "string"
+            },
+            {
+              "name": "call_id",
+              "type": "string"
+            },
+            {
+              "name": "person",
+              "type": "string"
+            },
+            {
+              "name": "reason",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "normalize-request",
+      "name": "Normalize Request",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "org",
+              "name": "organization_id",
+              "type": "string",
+              "value": "={{ $('Transfer Requested').item.json.organization_id }}"
+            },
+            {
+              "id": "conv",
+              "name": "conversation_id",
+              "type": "string",
+              "value": "={{ $('Transfer Requested').item.json.conversation_id }}"
+            },
+            {
+              "id": "agent",
+              "name": "agent_id",
+              "type": "string",
+              "value": "={{ $('Transfer Requested').item.json.agent_id }}"
+            },
+            {
+              "id": "call",
+              "name": "call_id",
+              "type": "string",
+              "value": "={{ $('Transfer Requested').item.json.call_id ?? \"\" }}"
+            },
+            {
+              "id": "person",
+              "name": "person",
+              "type": "string",
+              "value": "={{ $('Transfer Requested').item.json.person ?? \"\" }}"
+            },
+            {
+              "id": "reason",
+              "name": "reason",
+              "type": "string",
+              "value": "={{ ($('Transfer Requested').item.json.reason ?? \"\").trim() }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "load-directory",
+      "name": "Load Directory",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "staff_members",
+        "returnAll": true,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Normalize Request').item.json.organization_id }}"
+            },
+            {
+              "keyName": "active",
+              "condition": "eq",
+              "keyValue": "true"
+            },
+            {
+              "keyName": "accepts_transfers",
+              "condition": "eq",
+              "keyValue": "true"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "collect-directory",
+      "name": "Collect Directory",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "data",
+        "options": {}
+      }
+    },
+    {
+      "id": "match-person",
+      "name": "Match Person",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "match",
+              "name": "match",
+              "type": "object",
+              "value": "={{ (() => { const people = ($('Collect Directory').item.json.data ?? [])  .filter(p => p.active && p.accepts_transfers); const said = String($('Normalize Request').item.json.person ?? '').toLowerCase().trim(); const names = people.map(p => p.name); if (!said || people.length === 0) return { found: false, ambiguous: false, candidates: names }; const bare = said.replace(/\\b(herr|herrn|frau|die|der|den|zu|mit|an|von)\\b/g, ' ')  .replace(/\\s+/g, ' ').trim(); const norm = (value) => String(value ?? \"\").toLowerCase().trim(); const digits = said.replace(/[^0-9]/g, \"\"); const exact = people.filter(p => norm(p.name) === bare); const byExtension = digits ? people.filter(p => norm(p.extension) === digits) : []; const bySurname = people.filter(p => {  const parts = norm(p.name).split(\" \").filter(Boolean);  const surname = parts[parts.length - 1];  return surname && (bare === surname || bare.split(\" \").includes(surname)); }); const contains = bare.length >= 3 ? people.filter(p => norm(p.name).includes(bare)) : []; const stages = [exact, byExtension, bySurname, contains]; const hit = stages.find(list => list.length === 1); if (!hit) return { found: false, ambiguous: stages.some(l => l.length > 1), candidates: names }; return { found: true, ambiguous: false, candidates: names, person: hit[0] }; })() }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "person-found",
+      "name": "Person Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Match Person').item.json.match.found }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true
+      }
+    },
+    {
+      "id": "log-transfer",
+      "name": "Log Transfer",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        -100
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "tool_calls_log",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "organization_id",
+              "fieldValue": "={{ $('Normalize Request').item.json.organization_id }}"
+            },
+            {
+              "fieldId": "conversation_id",
+              "fieldValue": "={{ $('Normalize Request').item.json.conversation_id }}"
+            },
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "={{ $('Normalize Request').item.json.agent_id }}"
+            },
+            {
+              "fieldId": "tool_name",
+              "fieldValue": "transfer_to_person"
+            },
+            {
+              "fieldId": "n8n_workflow_id",
+              "fieldValue": "={{ $workflow.id }}"
+            },
+            {
+              "fieldId": "n8n_execution_id",
+              "fieldValue": "={{ $execution.id }}"
+            },
+            {
+              "fieldId": "input",
+              "fieldValue": "={{ JSON.stringify($('Transfer Requested').item.json) }}"
+            },
+            {
+              "fieldId": "output",
+              "fieldValue": "={{ JSON.stringify({ person: $('Match Person').item.json.match.person.name, reason: $('Normalize Request').item.json.reason }) }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "success"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "return-person",
+      "name": "Return Person",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1540,
+        -100
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "transfer",
+              "name": "transfer_to_person",
+              "type": "string",
+              "value": "={{ $('Match Person').item.json.match.person.name }}"
+            },
+            {
+              "id": "briefing",
+              "name": "briefing",
+              "type": "string",
+              "value": "={{ ($('Load Call').item.json.from_e164 ? 'Anruf von ' + $('Load Call').item.json.from_e164 : 'Ein Anrufer') + ($('Normalize Request').item.json.reason ? '. ' + $('Normalize Request').item.json.reason : '.') }}"
+            },
+            {
+              "id": "message",
+              "name": "message",
+              "type": "string",
+              "value": "={{ 'Ich verbinde mit ' + $('Match Person').item.json.match.person.name + '. Sag das dem Anrufer in einem Satz und warte dann.' }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "load-call",
+      "name": "Load Call",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        -240
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "calls",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Normalize Request').item.json.call_id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Normalize Request').item.json.organization_id }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "log-unclear",
+      "name": "Log Unclear",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        180
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "tool_calls_log",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "organization_id",
+              "fieldValue": "={{ $('Normalize Request').item.json.organization_id }}"
+            },
+            {
+              "fieldId": "conversation_id",
+              "fieldValue": "={{ $('Normalize Request').item.json.conversation_id }}"
+            },
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "={{ $('Normalize Request').item.json.agent_id }}"
+            },
+            {
+              "fieldId": "tool_name",
+              "fieldValue": "transfer_to_person"
+            },
+            {
+              "fieldId": "n8n_workflow_id",
+              "fieldValue": "={{ $workflow.id }}"
+            },
+            {
+              "fieldId": "n8n_execution_id",
+              "fieldValue": "={{ $execution.id }}"
+            },
+            {
+              "fieldId": "input",
+              "fieldValue": "={{ JSON.stringify($('Transfer Requested').item.json) }}"
+            },
+            {
+              "fieldId": "output",
+              "fieldValue": "={{ JSON.stringify({ transferred: false, person: $('Normalize Request').item.json.person }) }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "success"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "return-unclear",
+      "name": "Return Unclear",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1540,
+        180
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "transfer",
+              "name": "transfer_to_person",
+              "type": "string",
+              "value": "={{ null }}"
+            },
+            {
+              "id": "message",
+              "name": "message",
+              "type": "string",
+              "value": "={{ (() => { if ($('Match Person').item.json.match.ambiguous) return 'Mehrere Personen passen auf den Namen. Frag nach dem Vornamen oder der Durchwahl.'; if (($('Match Person').item.json.match.candidates ?? []).length === 0) return 'Es nimmt gerade niemand Anrufe entgegen. Biete an, eine Nachricht aufzunehmen.'; return 'Diese Person nimmt keine Anrufe entgegen oder es gibt sie hier nicht. Erreichbar sind: ' + ($('Match Person').item.json.match.candidates ?? []).join(', ') + '. Biete sonst an, eine Nachricht aufzunehmen.'; })() }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "sticky-transfer",
+      "name": "Sticky Note transfer",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -400
+      ],
+      "parameters": {
+        "width": 900,
+        "height": 300,
+        "content": "## Tool: transfer_to_person\n\n**Gibt einen Namen zurück, nie eine Nummer.** `/api/voice/turn` schlägt ihn ein zweites Mal im Verzeichnis nach, unmittelbar vor dem Wählen. Eine vom Modell erfundene Rufnummer kann damit nirgends ankommen — es gibt keinen Pfad, auf dem sie in ein `<Dial>` gerät. Dieselbe Bauweise wie `transfer_to_department`, und aus demselben Grund.\n\n**`briefing` ist der Unterschied zwischen durchgestellt und übergeben.** Der Satz wird nur der *angerufenen* Seite vorgespielt, bevor die Leitungen zusammengeschaltet werden — der Anrufer hört ihn nicht. So weiß der Mitarbeiter beim Abheben, worum es geht, statt mit \"Hallo?\" zu beginnen.\n\n**Wer keine Anrufe annimmt, taucht nicht auf.** `accepts_transfers` ist ein eigener Schalter neben `accepts_messages`: eine Geschäftsführerin nimmt vielleicht keine Anrufe entgegen, Nachrichten aber sehr wohl."
+      }
+    }
+  ],
+  "connections": {
+    "Transfer Requested": {
+      "main": [
+        [
+          {
+            "node": "Normalize Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Request": {
+      "main": [
+        [
+          {
+            "node": "Load Directory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Directory": {
+      "main": [
+        [
+          {
+            "node": "Collect Directory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Directory": {
+      "main": [
+        [
+          {
+            "node": "Match Person",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match Person": {
+      "main": [
+        [
+          {
+            "node": "Person Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Person Found?": {
+      "main": [
+        [
+          {
+            "node": "Load Call",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Unclear",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Call": {
+      "main": [
+        [
+          {
+            "node": "Log Transfer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Transfer": {
+      "main": [
+        [
+          {
+            "node": "Return Person",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Unclear": {
+      "main": [
+        [
+          {
+            "node": "Return Unclear",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "norra": {
+    "slug": "transfer-to-person"
+  }
+}

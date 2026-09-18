@@ -1,0 +1,732 @@
+{
+  "name": "Norra – Call Wrapup",
+  "nodes": [
+    {
+      "id": "wrapup-webhook",
+      "name": "Wrapup Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "norra-call-wrapup-webhook",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "norra/call-wrapup",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "responseData": "firstEntryJson"
+      }
+    },
+    {
+      "id": "normalize-request",
+      "name": "Normalize Request",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "organization-id",
+              "name": "organization_id",
+              "type": "string",
+              "value": "={{ $json.body?.organization_id ?? $json.organization_id }}"
+            },
+            {
+              "id": "call-id",
+              "name": "call_id",
+              "type": "string",
+              "value": "={{ $json.body?.call_id ?? $json.call_id }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "load-call",
+      "name": "Load Call",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "calls",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Normalize Request').item.json.call_id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Normalize Request').item.json.organization_id }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "load-agent",
+      "name": "Load Agent",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "agents",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Load Call').item.json.agent_id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Normalize Request').item.json.organization_id }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "plan-wrapup",
+      "name": "Plan Wrapup",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "schema",
+              "name": "schema",
+              "type": "string",
+              "value": "={{ JSON.stringify({ type: \"object\", properties: ($('Load Agent').item.json.voice_config?.extract ?? []).reduce((acc, f) => { acc[f.name] = { type: \"string\", description: f.prompt }; return acc; }, { summary: { type: \"string\", description: \"Worum es im Gespraech ging und was vereinbart wurde, zwei bis drei Saetze aus Sicht des Kunden. Keine Anrede, keine Floskeln.\" } }), required: [\"summary\"] }) }}"
+            },
+            {
+              "id": "has-work",
+              "name": "has_work",
+              "type": "boolean",
+              "value": "={{ ($('Load Agent').item.json.voice_config?.extract ?? []).length > 0 || Boolean($('Load Agent').item.json.voice_config?.followup?.address) || Boolean($('Load Agent').item.json.voice_config?.webhook?.url) }}"
+            },
+            {
+              "id": "followup-to",
+              "name": "followup_to",
+              "type": "string",
+              "value": "={{ $('Load Agent').item.json.voice_config?.followup?.address ?? \"\" }}"
+            },
+            {
+              "id": "webhook-url",
+              "name": "webhook_url",
+              "type": "string",
+              "value": "={{ $('Load Agent').item.json.voice_config?.webhook?.url ?? \"\" }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "anything-to-do",
+      "name": "Anything To Do?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.has_work }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true
+      }
+    },
+    {
+      "id": "load-transcript",
+      "name": "Load Transcript",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        -120
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "messages",
+        "returnAll": true,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "conversation_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Load Call').item.json.conversation_id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Normalize Request').item.json.organization_id }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "collect-transcript",
+      "name": "Collect Transcript",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        1560,
+        -120
+      ],
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "transcript",
+        "options": {}
+      }
+    },
+    {
+      "id": "extract-from-call",
+      "name": "Extract From Call",
+      "type": "@n8n/n8n-nodes-langchain.informationExtractor",
+      "typeVersion": 1.2,
+      "position": [
+        1780,
+        -120
+      ],
+      "parameters": {
+        "text": "={{ ($json.transcript ?? []).map(m => (m.role === \"user\" ? \"Anrufer: \" : \"Agent: \") + m.content).join(\"\\n\") }}",
+        "schemaType": "manual",
+        "inputSchema": "={{ $('Plan Wrapup').item.json.schema }}",
+        "options": {
+          "systemPromptTemplate": "Du wertest ein abgeschlossenes Telefonat aus. Gib nur wieder, was tatsaechlich gesagt wurde. Ist ein Feld im Gespraech nicht vorgekommen, lass es leer -- rate nicht und leite nichts ab. Eine erfundene Bestellnummer ist schlimmer als eine fehlende."
+        }
+      }
+    },
+    {
+      "id": "wrapup-model",
+      "name": "Wrapup Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.5,
+      "position": [
+        1780,
+        80
+      ],
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "claude-opus-5"
+        },
+        "options": {
+          "maxTokensToSample": 1024,
+          "temperature": 0
+        }
+      }
+    },
+    {
+      "id": "store-wrapup",
+      "name": "Store Wrapup",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2000,
+        -120
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "tableId": "calls",
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Normalize Request').item.json.call_id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Normalize Request').item.json.organization_id }}"
+            }
+          ]
+        },
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "extracted_variables",
+              "fieldValue": "={{ Object.fromEntries(Object.entries($('Extract From Call').item.json.output ?? {}).filter(([key]) => key !== \"summary\")) }}"
+            },
+            {
+              "fieldId": "summary",
+              "fieldValue": "={{ $('Extract From Call').item.json.output?.summary ?? null }}"
+            },
+            {
+              "fieldId": "wrapup_status",
+              "fieldValue": "done"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "followup-wanted",
+      "name": "Followup Wanted?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2220,
+        -120
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Plan Wrapup').item.json.followup_to }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true
+      }
+    },
+    {
+      "id": "send-wrapup-email",
+      "name": "Send Wrapup Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2460,
+        -220
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $('Plan Wrapup').item.json.followup_to }}",
+        "subject": "=[Norra] Anruf von {{ $('Load Call').item.json.from_e164 ?? 'unbekannt' }}",
+        "emailType": "html",
+        "message": "=<p><strong>Zusammenfassung:</strong><br>{{ $('Extract From Call').item.json.output?.summary ?? 'keine' }}</p><p><strong>Aus dem Gespraech:</strong><br>{{ Object.entries($('Extract From Call').item.json.output ?? {}).filter(([key]) => key !== \"summary\").map(([key, value]) => key + \": \" + (value || \"-\")).join(\"<br>\") || \"nichts extrahiert\" }}</p><p>Anrufer: {{ $('Load Call').item.json.from_e164 ?? 'unbekannt' }}<br>Dauer: {{ $('Load Call').item.json.duration_seconds ?? 0 }} Sekunden<br>Anruf: <code>{{ $('Normalize Request').item.json.call_id }}</code></p>",
+        "options": {
+          "appendAttribution": false
+        }
+      }
+    },
+    {
+      "id": "mark-skipped",
+      "name": "Mark Skipped",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        140
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "tableId": "calls",
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Normalize Request').item.json.call_id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Normalize Request').item.json.organization_id }}"
+            }
+          ]
+        },
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "wrapup_status",
+              "fieldValue": "skipped"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "return-result",
+      "name": "Return Result",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2700,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "status",
+              "name": "wrapup_status",
+              "type": "string",
+              "value": "={{ $('Plan Wrapup').item.json.has_work ? \"done\" : \"skipped\" }}"
+            },
+            {
+              "id": "call-id",
+              "name": "call_id",
+              "type": "string",
+              "value": "={{ $('Normalize Request').item.json.call_id }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "sticky-wrapup",
+      "name": "Sticky Note wrapup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -320
+      ],
+      "parameters": {
+        "width": 900,
+        "height": 240,
+        "content": "## Nachbereitung eines Telefonats\n\nLaeuft **nach** dem Auflegen, angestossen von `/api/voice/status`. Der Anrufer wartet hier auf nichts mehr — deshalb darf dieser Lauf Zeit kosten.\n\n**Das Schema ist nicht fest.** Welche Felder gezogen werden, steht pro Agent in `agents.voice_config.extract` und wird in *Plan Wrapup* zu einem JSON-Schema. Eine feste Attributliste waere ein Workflow pro Kunde.\n\n**`skipped` ist kein Fehler.** Ein Agent ohne Extraktionsfelder und ohne Follow-up hat nichts nachzubereiten. Ohne diesen Zustand waere ein leeres `extracted_variables` nicht von einem gescheiterten Lauf zu unterscheiden.\n\n**Der Webhook ist die Zustellung, nicht der Vorgang.** Antwortet das Fremdsystem nicht, bleibt das Ergebnis trotzdem in `calls` — deshalb `onError: continueRegularOutput`."
+      }
+    },
+    {
+      "id": "webhook-wanted",
+      "name": "Webhook Wanted?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2460,
+        -20
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Plan Wrapup').item.json.webhook_url }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true
+      }
+    },
+    {
+      "id": "post-to-customer",
+      "name": "Post To Customer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2700,
+        -120
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Plan Wrapup').item.json.webhook_url }}",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ call_id: $('Normalize Request').item.json.call_id, organization_id: $('Normalize Request').item.json.organization_id, direction: $('Load Call').item.json.direction, from: $('Load Call').item.json.from_e164, to: $('Load Call').item.json.to_e164, duration_seconds: $('Load Call').item.json.duration_seconds, answered_by: $('Load Call').item.json.answered_by, summary: $('Extract From Call').item.json.output?.summary ?? null, variables: Object.fromEntries(Object.entries($('Extract From Call').item.json.output ?? {}).filter(([key]) => key !== \"summary\")) }) }}",
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Wrapup Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Request": {
+      "main": [
+        [
+          {
+            "node": "Load Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Call": {
+      "main": [
+        [
+          {
+            "node": "Load Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Agent": {
+      "main": [
+        [
+          {
+            "node": "Plan Wrapup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan Wrapup": {
+      "main": [
+        [
+          {
+            "node": "Anything To Do?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anything To Do?": {
+      "main": [
+        [
+          {
+            "node": "Load Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Skipped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Transcript": {
+      "main": [
+        [
+          {
+            "node": "Collect Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Transcript": {
+      "main": [
+        [
+          {
+            "node": "Extract From Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wrapup Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Extract From Call",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract From Call": {
+      "main": [
+        [
+          {
+            "node": "Store Wrapup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Wrapup": {
+      "main": [
+        [
+          {
+            "node": "Followup Wanted?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Followup Wanted?": {
+      "main": [
+        [
+          {
+            "node": "Send Wrapup Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Webhook Wanted?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Wrapup Email": {
+      "main": [
+        [
+          {
+            "node": "Webhook Wanted?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Skipped": {
+      "main": [
+        [
+          {
+            "node": "Return Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Wanted?": {
+      "main": [
+        [
+          {
+            "node": "Post To Customer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post To Customer": {
+      "main": [
+        [
+          {
+            "node": "Return Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "norra": {
+    "slug": "call-wrapup"
+  }
+}

@@ -1,0 +1,370 @@
+{
+  "name": "Norra – KB Ingest",
+  "nodes": [
+    {
+      "id": "869a77a0-f398-4b66-8428-e39822bca5fd",
+      "name": "KB Ingest Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "norra/kb-ingest",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "responseData": "firstEntryJson"
+      },
+      "webhookId": "98ba57c9-c56d-4411-bf39-2565b1705e63"
+    },
+    {
+      "id": "200bbdd6-5a56-4e27-9a85-1679e39b9dd4",
+      "name": "Normalize Ingest",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "organization-id",
+              "name": "organization_id",
+              "value": "={{ $json.body?.organization_id ?? $json.organization_id }}",
+              "type": "string"
+            },
+            {
+              "id": "document-id",
+              "name": "document_id",
+              "value": "={{ $json.body?.document_id ?? $json.document_id }}",
+              "type": "string"
+            },
+            {
+              "id": "agent-id",
+              "name": "agent_id",
+              "value": "={{ $json.body?.agent_id ?? $json.agent_id ?? \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "title",
+              "name": "title",
+              "value": "={{ $json.body?.title ?? $json.title ?? \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "content",
+              "name": "content",
+              "value": "={{ $json.body?.content ?? $json.content ?? \"\" }}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "bba45fb3-a81c-4f7e-8af8-dcd3f764aa57",
+      "name": "Mark Document Processing",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "tableId": "knowledge_base_documents",
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $json.document_id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.organization_id }}"
+            }
+          ]
+        },
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "processing"
+            },
+            {
+              "fieldId": "error",
+              "fieldValue": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "11676e1b-b68f-425c-87a3-09fca8449605",
+      "name": "Insert Chunks",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.3,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "mode": "insert",
+        "tableName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "knowledge_base_chunks",
+          "cachedResultName": "knowledge_base_chunks"
+        },
+        "embeddingBatchSize": 200,
+        "options": {
+          "queryName": "match_kb_chunks"
+        }
+      }
+    },
+    {
+      "id": "b33f653a-3fd7-4ba6-82e7-691de9f6d483",
+      "name": "Ingest Embeddings",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        620,
+        400
+      ],
+      "parameters": {
+        "model": "text-embedding-3-small",
+        "options": {
+          "dimensions": 1536
+        }
+      }
+    },
+    {
+      "id": "2df2e7c3-8024-4b8a-92ad-69f9540900f6",
+      "name": "Document Loader",
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [
+        820,
+        400
+      ],
+      "parameters": {
+        "dataType": "json",
+        "jsonMode": "expressionData",
+        "jsonData": "={{ $(\"Normalize Ingest\").item.json.content }}",
+        "textSplittingMode": "custom",
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "organization_id",
+                "value": "={{ $(\"Normalize Ingest\").item.json.organization_id }}"
+              },
+              {
+                "name": "document_id",
+                "value": "={{ $(\"Normalize Ingest\").item.json.document_id }}"
+              },
+              {
+                "name": "agent_id",
+                "value": "={{ $(\"Normalize Ingest\").item.json.agent_id }}"
+              },
+              {
+                "name": "title",
+                "value": "={{ $(\"Normalize Ingest\").item.json.title }}"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "a0fbccab-f9b8-4671-b857-804b19359cd2",
+      "name": "Chunk Splitter",
+      "type": "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter",
+      "typeVersion": 1,
+      "position": [
+        900,
+        620
+      ],
+      "parameters": {
+        "chunkSize": 1000,
+        "chunkOverlap": 200
+      }
+    },
+    {
+      "id": "9f4a7b80-472c-4b22-8fe3-e7e75c3efd9f",
+      "name": "Mark Document Ready",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        900,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "tableId": "knowledge_base_documents",
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $(\"Normalize Ingest\").item.json.document_id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $(\"Normalize Ingest\").item.json.organization_id }}"
+            }
+          ]
+        },
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "ready"
+            }
+          ]
+        }
+      },
+      "executeOnce": true
+    },
+    {
+      "id": "eb71b5d0-c9d6-497e-bcb5-28fd3bf4b9ea",
+      "name": "Sticky Note 2ea90f88",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -50,
+        -50
+      ],
+      "parameters": {
+        "content": "## Ingestion\nchunk_count pflegt ein Trigger in der DB, nicht dieser Workflow. status faehrt pending -> processing -> ready, damit ein haengender Lauf im Dashboard sichtbar bleibt.",
+        "color": 4,
+        "width": 740,
+        "height": 200
+      }
+    },
+    {
+      "id": "3506e339-545e-4d6c-a7a0-4f90bf2db3d8",
+      "name": "Sticky Note aeb6fc3f",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        770,
+        350
+      ],
+      "parameters": {
+        "content": "## Warum die Metadaten zwingend sind\nLangChain schreibt beim Insert nur content, embedding und metadata. organization_id und document_id MUESSEN hier in den Metadaten stehen -- ein BEFORE-INSERT-Trigger projiziert sie in echte Spalten. Fehlen sie, lehnt die DB den Chunk ab.",
+        "color": 5,
+        "width": 300,
+        "height": 200
+      }
+    }
+  ],
+  "connections": {
+    "KB Ingest Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Ingest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Ingest": {
+      "main": [
+        [
+          {
+            "node": "Mark Document Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Document Processing": {
+      "main": [
+        [
+          {
+            "node": "Insert Chunks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Chunks": {
+      "main": [
+        [
+          {
+            "node": "Mark Document Ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ingest Embeddings": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Insert Chunks",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Document Loader": {
+      "ai_document": [
+        [
+          {
+            "node": "Insert Chunks",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chunk Splitter": {
+      "ai_textSplitter": [
+        [
+          {
+            "node": "Document Loader",
+            "type": "ai_textSplitter",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "norra": {
+    "workflowId": "Q3XhlP6eet9eqnm0",
+    "slug": "kb-ingest"
+  },
+  "tags": [
+    "norra",
+    "norra:core"
+  ]
+}

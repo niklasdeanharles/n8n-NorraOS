@@ -1,0 +1,48 @@
+name: 'n8n Backup'
+
+# Pulls the Norra workflows off the n8n instance daily and commits any drift, so
+# a change clicked together in the n8n UI still ends up in git.
+on:
+  schedule:
+    # 03:17 UTC -- off the hour, where scheduled-run contention is worst.
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: norra-n8n-backup
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  backup:
+    name: Export workflows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: '22'
+
+      - name: Export from n8n
+        env:
+          N8N_BASE_URL: ${{ secrets.N8N_BASE_URL }}
+          N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
+        run: node scripts/n8n-sync.mjs export
+
+      - name: Commit drift
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- n8n-workflows; then
+            echo "No drift; the instance matches the repository."
+            exit 0
+          fi
+          echo "Drift detected:"
+          git diff --stat -- n8n-workflows
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add n8n-workflows
+          git commit -m 'chore: sync n8n workflows from instance'
+          git push

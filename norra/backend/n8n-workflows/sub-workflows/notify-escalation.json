@@ -1,0 +1,261 @@
+{
+  "name": "Norra – Notify Escalation",
+  "nodes": [
+    {
+      "name": "Escalation To Notify",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "organization_id",
+              "type": "string"
+            },
+            {
+              "name": "conversation_id",
+              "type": "string"
+            },
+            {
+              "name": "ticket_number",
+              "type": "string"
+            },
+            {
+              "name": "subject",
+              "type": "string"
+            },
+            {
+              "name": "summary",
+              "type": "string"
+            },
+            {
+              "name": "priority",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Load Org Settings",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "organizations",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $json.organization_id }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Recipient Configured?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.escalation_email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true
+      }
+    },
+    {
+      "name": "Send Escalation Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        660,
+        -100
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $(\"Load Org Settings\").item.json.escalation_email }}",
+        "subject": "=[Norra {{ $(\"Escalation To Notify\").item.json.priority }}] Ticket #{{ $(\"Escalation To Notify\").item.json.ticket_number }}: {{ $(\"Escalation To Notify\").item.json.subject }}",
+        "emailType": "html",
+        "message": "=<p>Der Agent hat eine Konversation an das Support-Team uebergeben.</p><p><strong>Ticket:</strong> #{{ $(\"Escalation To Notify\").item.json.ticket_number }}<br><strong>Prioritaet:</strong> {{ $(\"Escalation To Notify\").item.json.priority }}<br><strong>Betreff:</strong> {{ $(\"Escalation To Notify\").item.json.subject }}</p><p><strong>Zusammenfassung des Agenten:</strong><br>{{ $(\"Escalation To Notify\").item.json.summary }}</p><p>Konversation: <code>{{ $(\"Escalation To Notify\").item.json.conversation_id }}</code></p>",
+        "options": {
+          "appendAttribution": false
+        }
+      }
+    },
+    {
+      "name": "Return Sent",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        880,
+        -100
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "notified",
+              "name": "notified",
+              "value": "={{ true }}",
+              "type": "boolean"
+            },
+            {
+              "id": "recipient",
+              "name": "recipient",
+              "value": "={{ $(\"Load Org Settings\").item.json.escalation_email }}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Return Skipped",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        660,
+        100
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "notified",
+              "name": "notified",
+              "value": "={{ false }}",
+              "type": "boolean"
+            },
+            {
+              "id": "reason",
+              "name": "reason",
+              "value": "Die Organisation hat keine escalation_email hinterlegt.",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Sticky Note notify",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -50,
+        -50
+      ],
+      "parameters": {
+        "content": "## Empfaenger ist Konfiguration, kein Code\nDie Adresse kommt aus der Spalte organizations.escalation_email, nicht aus diesem Workflow. Jede Organisation benachrichtigt damit ihr eigenes Team, ohne dass jemand den Workflow anfasst.\n\nIst keine Adresse hinterlegt, endet der Lauf sauber ueber Return Skipped statt zu scheitern -- das Ticket ist da, nur die Mail nicht.",
+        "color": 4,
+        "width": 740,
+        "height": 240
+      }
+    }
+  ],
+  "connections": {
+    "Escalation To Notify": {
+      "main": [
+        [
+          {
+            "node": "Load Org Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Org Settings": {
+      "main": [
+        [
+          {
+            "node": "Recipient Configured?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recipient Configured?": {
+      "main": [
+        [
+          {
+            "node": "Send Escalation Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Skipped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Escalation Email": {
+      "main": [
+        [
+          {
+            "node": "Return Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "norra": {
+    "workflowId": "zU1x0scrqFmPClmg",
+    "slug": "notify-escalation"
+  },
+  "tags": [
+    "norra",
+    "norra:notify"
+  ]
+}

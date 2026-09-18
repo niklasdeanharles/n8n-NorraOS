@@ -1,0 +1,509 @@
+{
+  "name": "Norra – KB Crawl",
+  "nodes": [
+    {
+      "id": "crawl-webhook",
+      "name": "Crawl Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "norra-kb-crawl-webhook",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "norra/kb-crawl",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "responseData": "firstEntryJson"
+      }
+    },
+    {
+      "id": "normalize-request",
+      "name": "Normalize Request",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "org",
+              "name": "organization_id",
+              "type": "string",
+              "value": "={{ $json.body?.organization_id ?? $json.organization_id }}"
+            },
+            {
+              "id": "agent",
+              "name": "agent_id",
+              "type": "string",
+              "value": "={{ $json.body?.agent_id ?? $json.agent_id ?? \"\" }}"
+            },
+            {
+              "id": "urls",
+              "name": "urls",
+              "type": "array",
+              "value": "={{ ($json.body?.urls ?? $json.urls ?? []).filter(url => typeof url === \"string\" && /^https?:\\/\\//.test(url)).slice(0, 50) }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "split-urls",
+      "name": "Split Urls",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "fieldToSplitOut": "urls",
+        "destinationFieldName": "url",
+        "options": {}
+      }
+    },
+    {
+      "id": "per-page",
+      "name": "Per Page",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "fetch-page",
+      "name": "Fetch Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        880,
+        100
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.url }}",
+        "options": {
+          "timeout": 15000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": true,
+              "maxRedirects": 5
+            }
+          },
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "text",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "extract-text",
+      "name": "Extract Text",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1100,
+        100
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "title",
+              "name": "title",
+              "type": "string",
+              "value": "={{ (() => { const match = String($json.data ?? \"\").match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i); const title = match ? match[1].replace(/\\s+/g, \" \").trim() : \"\"; return (title || $('Per Page').item.json.url).slice(0, 200); })() }}"
+            },
+            {
+              "id": "content",
+              "name": "content",
+              "type": "string",
+              "value": "={{ (() => { const html = String($json.data ?? \"\"); const withoutHead = html.replace(/<head[\\s\\S]*?<\\/head>/i, \" \"); const body = withoutHead.replace(/<(script|style|noscript|svg|template)[\\s\\S]*?<\\/\\1>/gi, \" \").replace(/<!--[\\s\\S]*?-->/g, \" \").replace(/<(nav|header|footer|form|aside)[\\s\\S]*?<\\/\\1>/gi, \" \"); const named = { nbsp: \" \", amp: \"&\", lt: \"<\", gt: \">\", quot: \"\\\"\", apos: \"'\", auml: \"ä\", ouml: \"ö\", uuml: \"ü\", Auml: \"Ä\", Ouml: \"Ö\", Uuml: \"Ü\", szlig: \"ß\", euro: \"€\", deg: \"°\", laquo: \"«\", raquo: \"»\", bdquo: \"„\", ldquo: \"\\u201c\", rdquo: \"\\u201d\", ndash: \"\\u2013\", mdash: \"\\u2014\", hellip: \"…\", shy: \"\", middot: \"·\" }; return body.replace(/<[^>]+>/g, \" \").replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16))).replace(/&#(\\d+);/g, (_, dec) => String.fromCodePoint(Number(dec))).replace(/&([a-z]+);/gi, (match, name) => named[name] ?? match).replace(/[ \\t\\u00a0]+/g, \" \").replace(/\\n\\s*\\n\\s*\\n+/g, \"\\n\\n\").trim(); })() }}"
+            },
+            {
+              "id": "url",
+              "name": "url",
+              "type": "string",
+              "value": "={{ $('Per Page').item.json.url }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "worth-keeping",
+      "name": "Worth Keeping?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1320,
+        100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.content.length }}",
+              "rightValue": 200,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true
+      }
+    },
+    {
+      "id": "create-document",
+      "name": "Create Document",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1540,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "knowledge_base_documents",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "organization_id",
+              "fieldValue": "={{ $('Normalize Request').item.json.organization_id }}"
+            },
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "={{ $('Normalize Request').item.json.agent_id || null }}"
+            },
+            {
+              "fieldId": "title",
+              "fieldValue": "={{ $json.title }}"
+            },
+            {
+              "fieldId": "source_type",
+              "fieldValue": "url"
+            },
+            {
+              "fieldId": "source_url",
+              "fieldValue": "={{ $json.url }}"
+            },
+            {
+              "fieldId": "checksum",
+              "fieldValue": "={{ $json.content.hash(\"sha256\") }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "pending"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "hand-to-ingest",
+      "name": "Hand To Ingest",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1760,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "Norra – KB Ingest"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "value": {
+            "organization_id": "={{ $('Normalize Request').item.json.organization_id }}",
+            "document_id": "={{ $json.id }}",
+            "agent_id": "={{ $('Normalize Request').item.json.agent_id }}",
+            "title": "={{ $('Extract Text').item.json.title }}",
+            "content": "={{ $('Extract Text').item.json.content }}"
+          },
+          "schema": [
+            {
+              "id": "organization_id",
+              "displayName": "organization_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "document_id",
+              "displayName": "document_id",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "agent_id",
+              "displayName": "agent_id",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "content",
+              "displayName": "content",
+              "type": "string",
+              "required": true,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "collect-results",
+      "name": "Collect Results",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        880,
+        -140
+      ],
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "pages",
+        "options": {}
+      }
+    },
+    {
+      "id": "return-result",
+      "name": "Return Result",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1100,
+        -140
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "requested",
+              "name": "requested",
+              "type": "number",
+              "value": "={{ ($('Normalize Request').item.json.urls ?? []).length }}"
+            },
+            {
+              "id": "indexed",
+              "name": "indexed",
+              "type": "number",
+              "value": "={{ ($json.pages ?? []).length }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "sticky-crawl",
+      "name": "Sticky Note crawl",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -420
+      ],
+      "parameters": {
+        "width": 900,
+        "height": 250,
+        "content": "## Website in die Wissensbasis\n\n**Eine Liste von Seiten, keine Tiefensuche.** Ein Crawler, der Links folgt, liest irgendwann das Impressum, den Blog von 2017 und die Seite eines fremden Anbieters im iframe. Wer die Seiten benennt, bekommt die Wissensbasis, die er meint.\n\n**Aus HTML wird Text, bevor eingebettet wird.** Ohne das landen Navigation, Skripte und Cookie-Banner als Wissen in der Vektorsuche — und der Agent zitiert sie.\n\n**Unter 200 Zeichen wird verworfen.** Das ist keine Seite, sondern eine Weiterleitung oder eine leere Hülle mit JavaScript.\n\n**Der Checksum ist der Wiederholungsschutz.** Eine unveränderte Seite ein zweites Mal einzulesen scheitert am Eindeutigkeitsindex, statt jeden Chunk zu verdoppeln."
+      }
+    }
+  ],
+  "connections": {
+    "Crawl Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Request": {
+      "main": [
+        [
+          {
+            "node": "Split Urls",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Urls": {
+      "main": [
+        [
+          {
+            "node": "Per Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Per Page": {
+      "main": [
+        [
+          {
+            "node": "Collect Results",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Page": {
+      "main": [
+        [
+          {
+            "node": "Extract Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Text": {
+      "main": [
+        [
+          {
+            "node": "Worth Keeping?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Worth Keeping?": {
+      "main": [
+        [
+          {
+            "node": "Create Document",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Per Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Document": {
+      "main": [
+        [
+          {
+            "node": "Hand To Ingest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hand To Ingest": {
+      "main": [
+        [
+          {
+            "node": "Per Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Results": {
+      "main": [
+        [
+          {
+            "node": "Return Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "norra": {
+    "slug": "kb-crawl"
+  }
+}

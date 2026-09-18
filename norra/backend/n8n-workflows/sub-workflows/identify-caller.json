@@ -1,0 +1,321 @@
+{
+  "name": "Norra – Tool: identify_caller",
+  "nodes": [
+    {
+      "name": "Identify Requested",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "organization_id",
+              "type": "string"
+            },
+            {
+              "name": "conversation_id",
+              "type": "string"
+            },
+            {
+              "name": "agent_id",
+              "type": "string"
+            },
+            {
+              "name": "call_id",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Load Call",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "calls",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $json.call_id }}"
+            },
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.organization_id }}"
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "name": "Load Contact",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "contacts",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Identify Requested').item.json.organization_id }}"
+            },
+            {
+              "keyName": "e164",
+              "condition": "eq",
+              "keyValue": "={{ $json.from_e164 }}"
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "name": "Load History",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "conversations",
+        "returnAll": false,
+        "limit": 5,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "organization_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Identify Requested').item.json.organization_id }}"
+            },
+            {
+              "keyName": "contact_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.id }}"
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "name": "Log Tool Call",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "tool_calls_log",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "organization_id",
+              "fieldValue": "={{ $('Identify Requested').item.json.organization_id }}"
+            },
+            {
+              "fieldId": "conversation_id",
+              "fieldValue": "={{ $('Identify Requested').item.json.conversation_id }}"
+            },
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "={{ $('Identify Requested').item.json.agent_id }}"
+            },
+            {
+              "fieldId": "tool_name",
+              "fieldValue": "identify_caller"
+            },
+            {
+              "fieldId": "n8n_workflow_id",
+              "fieldValue": "={{ $workflow.id }}"
+            },
+            {
+              "fieldId": "n8n_execution_id",
+              "fieldValue": "={{ $execution.id }}"
+            },
+            {
+              "fieldId": "input",
+              "fieldValue": "={{ JSON.stringify($('Identify Requested').item.json) }}"
+            },
+            {
+              "fieldId": "output",
+              "fieldValue": "={{ JSON.stringify({ known: !!$('Load Contact').item.json.id, prior: $input.all().length }) }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "={{ $('Load Call').item.json.id ? 'success' : 'error' }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Return To Agent",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1100,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "known",
+              "name": "known",
+              "value": "={{ !!$('Load Contact').item.json.id }}",
+              "type": "boolean"
+            },
+            {
+              "id": "display_name",
+              "name": "display_name",
+              "value": "={{ $('Load Contact').item.json.display_name ?? null }}",
+              "type": "string"
+            },
+            {
+              "id": "call_count",
+              "name": "call_count",
+              "value": "={{ $('Load Contact').item.json.call_count ?? 0 }}",
+              "type": "number"
+            },
+            {
+              "id": "note",
+              "name": "note",
+              "value": "={{ $('Load Contact').item.json.note ?? null }}",
+              "type": "string"
+            },
+            {
+              "id": "result",
+              "name": "result",
+              "value": "={{ $('Load Contact').item.json.id ? ['Bekannter Anrufer' + ($('Load Contact').item.json.display_name ? ': ' + $('Load Contact').item.json.display_name : ' (Name unbekannt)') + '. Bisher ' + ($('Load Contact').item.json.call_count ?? 0) + ' Anruf(e).' + ($('Load Contact').item.json.note ? ' Notiz: ' + $('Load Contact').item.json.note : '') + ($('Load History').all().filter(i => i.json.id).length    ? ' Letzte Themen: ' + $('Load History').all().filter(i => i.json.id).map(i => i.json.topic ?? i.json.subject ?? 'ohne Thema').join(', ') + '.'    : ' Keine frueheren Vorgaenge hinterlegt.') ].join('') : 'Der Anrufer ist noch nicht bekannt. Frage hoeflich nach dem Namen, wenn du ihn brauchst.' }}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Sticky Note identify",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -50,
+        -60
+      ],
+      "parameters": {
+        "content": "## identify_caller – die Nummer kommt aus dem Anruf\nDas Tool nimmt eine call_id, keine Rufnummer. Duerfte das Modell die Nummer nennen, waere dies eine freie Abfrage auf die Kontaktliste des Mandanten -- es koennte nach jedem Kunden fragen, nicht nur nach dem in der Leitung.\n\nLoad Call und Load Contact filtern beide zusaetzlich auf organization_id. n8n verbindet sich mit service_role und umgeht damit RLS; die Trennung haengt hier an genau diesen Filtern.\n\nalwaysOutputData ist gesetzt, damit ein unbekannter Anrufer als leeres Ergebnis ankommt statt den Turn abzubrechen -- 'noch nicht bekannt' ist eine Antwort, kein Fehler.",
+        "color": 4,
+        "width": 760,
+        "height": 300
+      }
+    }
+  ],
+  "connections": {
+    "Identify Requested": {
+      "main": [
+        [
+          {
+            "node": "Load Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Call": {
+      "main": [
+        [
+          {
+            "node": "Load Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Contact": {
+      "main": [
+        [
+          {
+            "node": "Load History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load History": {
+      "main": [
+        [
+          {
+            "node": "Log Tool Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Tool Call": {
+      "main": [
+        [
+          {
+            "node": "Return To Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "norra": {
+    "slug": "identify-caller"
+  },
+  "tags": [
+    "norra",
+    "norra:tool"
+  ]
+}
