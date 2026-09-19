@@ -1,0 +1,208 @@
+@import 'tailwindcss';
+
+/*
+ * Norra Design System
+ *
+ * Eine Quelle fuer Farbe, Radius, Schatten und Typografie. Komponenten nennen
+ * nur semantische Namen (`bg-surface`, `text-muted`), nie einen Hex-Wert --
+ * sonst muesste jeder Dark-Mode-Fall an jeder Stelle einzeln nachgezogen
+ * werden, und eine vergessene Stelle faellt erst dem Nutzer auf.
+ */
+
+/* Dark Mode haengt an einer Klasse, nicht nur an der Systemeinstellung: die
+   Oberflaeche hat einen eigenen Umschalter, und der muss die Systemvorgabe
+   ueberstimmen koennen. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  /* --- Markenfarben, unveraenderlich --- */
+  --norra-navy: #0f2747;
+  --norra-navy-dark: #091a31;
+  --norra-green: #3e7c59;
+  --norra-green-light: #ddeade;
+  --norra-beige: #f6f1e8;
+  --norra-sand: #e9dfc9;
+
+  /* --- Semantische Ebene, hell --- */
+  --bg: #faf8f3;
+  --bg-subtle: var(--norra-beige);
+  --surface: #ffffff;
+  --surface-muted: #fbf9f5;
+  --border: #e6e1d7;
+  --border-strong: #d8d1c2;
+
+  --text: #152238;
+  --text-muted: #5f6c7b;
+  --text-faint: #8a95a3;
+
+  --brand: var(--norra-navy);
+  --brand-hover: var(--norra-navy-dark);
+  --brand-fg: #ffffff;
+  --brand-subtle: #eaeef4;
+
+  --accent: var(--norra-green);
+  --accent-fg: #ffffff;
+  --accent-subtle: var(--norra-green-light);
+
+  --success: #2e8b57;
+  --warning: #d69e2e;
+  --error: #d64545;
+  --info: #3b82f6;
+
+  --ring: color-mix(in oklab, var(--norra-navy) 35%, transparent);
+
+  /* Schatten sind warm getoent, nicht neutralgrau: auf beigem Grund wirkt ein
+     grauer Schatten schmutzig. */
+  --shadow-soft: 0 1px 2px rgb(21 34 56 / 0.04), 0 2px 8px rgb(21 34 56 / 0.04);
+  --shadow-card: 0 1px 3px rgb(21 34 56 / 0.05), 0 8px 24px -8px rgb(21 34 56 / 0.08);
+  --shadow-lift: 0 2px 6px rgb(21 34 56 / 0.07), 0 16px 40px -12px rgb(21 34 56 / 0.14);
+}
+
+.dark {
+  /* Kein reines Schwarz: Norras Navy bleibt auch im Dunkeln die Grundfarbe,
+     sonst verliert die Marke genau da ihren Ton, wo am meisten Flaeche ist. */
+  --bg: #0a1220;
+  --bg-subtle: #0d1826;
+  --surface: #111d2e;
+  --surface-muted: #16243a;
+  --border: #22334a;
+  --border-strong: #2f4459;
+
+  --text: #eceae4;
+  --text-muted: #9aa7b8;
+  --text-faint: #6b7a8d;
+
+  /* Ein Knopf in #0F2747 waere auf #0A1220 unsichtbar. Im Dunkeln uebernimmt
+     eine aufgehellte Variante die Rolle der Marke. */
+  --brand: #4e7fbd;
+  --brand-hover: #6795cf;
+  --brand-fg: #08121f;
+  --brand-subtle: #16283f;
+
+  --accent: #5fa67d;
+  --accent-fg: #07130d;
+  --accent-subtle: #17301f;
+
+  --success: #4cae76;
+  --warning: #e0b155;
+  --error: #e26a6a;
+  --info: #5f9bf7;
+
+  --ring: color-mix(in oklab, #4e7fbd 45%, transparent);
+
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.35), 0 8px 24px -8px rgb(0 0 0 / 0.45);
+  --shadow-lift: 0 2px 6px rgb(0 0 0 / 0.4), 0 16px 40px -12px rgb(0 0 0 / 0.6);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-subtle: var(--bg-subtle);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-border-hair: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  --color-text: var(--text);
+  --color-muted: var(--text-muted);
+  --color-faint: var(--text-faint);
+
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-fg: var(--brand-fg);
+  --color-brand-subtle: var(--brand-subtle);
+
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-subtle: var(--accent-subtle);
+
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-error: var(--error);
+  --color-info: var(--info);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* 12-20px, wie in der Markenvorgabe. `sm` bleibt fuer Chips und Inputs. */
+  --radius-sm: 10px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+
+  --shadow-soft: var(--shadow-soft);
+  --shadow-card: var(--shadow-card);
+  --shadow-lift: var(--shadow-lift);
+
+  --ease-norra: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv05' 1, 'ss01' 1;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Ziffern in Kennzahlen duerfen beim Aktualisieren nicht springen. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+  }
+
+  /* Jede Animation hier haengt an einer echten Eigenschaft, die im
+     Ausgangszustand unsichtbar ist. Wer sie nur verkuerzt statt sie
+     zurueckzusetzen, laesst diese Nutzergruppe leere Karten sehen. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer utilities {
+  /* Dezent, nicht dekorativ: nur dort, wo eine Flaeche ueber Inhalt liegt. */
+  .glass {
+    background-color: color-mix(in oklab, var(--surface) 72%, transparent);
+    backdrop-filter: blur(16px) saturate(140%);
+  }
+
+  @supports not (backdrop-filter: blur(1px)) {
+    .glass {
+      background-color: var(--surface);
+    }
+  }
+}
+
+/*
+ * Solange der Altbestand mitlaeuft, gilt fuer jede neue Komponente eine Regel:
+ * **nichts als Vorgabe annehmen.** `base.css` faerbt jeden <button> ein und
+ * gibt ihm `padding: 9px 16px`. Wer sich darauf verlaesst, dass ohne Klasse
+ * nichts passiert, bekommt einen gruenen Kreis -- und bei einem 28px grossen
+ * Icon-Knopf frisst das Polster den gesamten Inhalt: die Flaeche wird breiter,
+ * das Symbol verschwindet.
+ *
+ * Also: Flaeche immer setzen (`bg-transparent`, wenn keine gewollt ist), und
+ * an jedem Knopf ohne Textlabel ausdruecklich `p-0`.
+ *
+ * Beides nachgemessen am Theme-Umschalter im Seitenfuss, der genau so aussah,
+ * nicht aus der Regel abgeleitet.
+ */

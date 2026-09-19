@@ -52,6 +52,83 @@ nie hierher. Hierher gehört, was der Betreiber *sieht* und was ein Besucher
 | `tests/voice/`, `tests/widget/`, `tests/simulate/`, `tests/console/` | End-to-End gegen die gebaute App |
 | `tests/mocks/` | Geteilte Stand-ins für PostgREST, GoTrue und n8n |
 
+## Das Design-System
+
+Marke, Farbe, Radius, Schatten und Typografie stehen an genau einer Stelle:
+`src/styles/theme.css`. Komponenten nennen **nur semantische Namen**
+(`bg-surface`, `text-muted`, `border-border-hair`), nie einen Hex-Wert — sonst
+müsste jeder Dark-Mode-Fall an jeder Stelle einzeln nachgezogen werden, und die
+eine vergessene Stelle fällt erst dem Nutzer auf.
+
+| Ebene | Beispiel | Wofür |
+|---|---|---|
+| Markenfarben | `--norra-navy`, `--norra-green`, `--norra-beige` | unveränderlich, die Identität |
+| Semantik | `--surface`, `--text-muted`, `--brand`, `--accent` | pro Farbschema gesetzt |
+| Utility | `bg-surface`, `text-muted` | was die Komponente schreibt |
+
+**Dark Mode ist gewählt, nicht gespiegelt.** Ein Knopf in `#0F2747` wäre auf
+`#0A1220` unsichtbar; im Dunkeln übernimmt deshalb eine aufgehellte Variante
+(`#4E7FBD`) die Rolle der Marke. Der Umschalter steht im Seitenfuß, die Wahl
+liegt in `localStorage` — eine reine Darstellungsvorliebe gehört nicht in die
+Datenbank. `ThemeScript` setzt die Klasse vor dem ersten Bild, sonst blitzt die
+helle Oberfläche auf.
+
+### Die Schichtreihenfolge ist die ganze Miete
+
+`console.entry.css` beginnt mit einer Zeile, die nach Kleinkram aussieht und es
+nicht ist:
+
+```css
+@layer theme, base, legacy, components, utilities;
+```
+
+Zwei Dinge müssen gleichzeitig stimmen, solange `base.css` und `console.css`
+die noch nicht umgestellten Screens tragen:
+
+1. **Tailwinds Preflight darf den Altbestand nicht überfahren.** Ohne die Zeile
+   stand `legacy` vor Tailwinds `base`, und der Reset gewann: Knöpfe wurden zu
+   Text, Eingabefelder verloren ihren Rahmen, Karten ihr Polster. Im Screenshot
+   von `/knowledge` nachgemessen, nicht vermutet.
+2. **Die Utilities müssen den Altbestand schlagen.** Sonst verliert ein
+   `bg-brand` am `<button>` gegen eine Element-Regel aus `base.css`.
+
+Beides zugleich gilt nur in dieser Anordnung. Nicht eingeschichtetes CSS
+schlägt eingeschichtetes, deshalb reicht es nicht, die Dateien einfach in einer
+bestimmten Reihenfolge zu importieren.
+
+### Zwei Regeln für jede neue Komponente
+
+Sie folgen beide aus demselben Satz: **nichts als Vorgabe annehmen.**
+`base.css` färbt jeden `<button>` ein und gibt ihm `padding: 9px 16px`.
+
+- **Fläche immer setzen**, auch wenn keine gewollt ist: `bg-transparent`. Ohne
+  sie erbt der Knopf das Grün aus dem Altbestand.
+- **`p-0` an jedem Knopf ohne Textlabel.** Bei einem 28px großen Icon-Knopf
+  frisst das geerbte Polster den gesamten Inhalt: die Fläche wird breiter, das
+  Symbol verschwindet.
+
+Beides am Theme-Umschalter im Seitenfuß gesehen, der genau so aussah.
+
+### Was schon umgestellt ist
+
+| Umgestellt | Noch auf `console.css` |
+|---|---|
+| Shell (Sidebar, Kopf, Fuß), Dashboard, die sieben Platzhalter-Screens | Gespräche, Analytics, Assistenten, Wissen, Rufnummern, Empfang, Bestellungen, Kampagnen, Governance, Team, Systemzustand, Einstellungen, Login |
+
+Die Navigation führt alle Bereiche auf, auch die sieben ohne Screen dahinter.
+Sie tragen ein „bald" und sagen auf der Seite selbst, was dort entstehen soll —
+ein Menüpunkt, der auf eine 404 führt, kostet mehr Vertrauen als ein ehrlicher
+Platzhalter.
+
+### Das Logo
+
+Drei Bögen, die von einem Punkt ausgehen, nach außen leiser werdend
+(`components/norra-logo.tsx`). Kein Buchstabe, kein Tier, rein geometrisch. Die
+Abstufung liegt in der Deckkraft, nicht in drei Farben — so bleibt die Marke
+einfarbig und funktioniert geätzt, gestickt und einfarbig gedruckt. Lesbar als
+Nordlicht über dem Horizont und als Stimme, die sich ausbreitet; beides passt,
+und genau deshalb steht nirgends eine Erklärung.
+
 ### Zwei Root-Layouts, zwei Stylesheets
 
 Konsole und Widget sind zwei getrennte Oberflächen, kein gemeinsames

@@ -1,0 +1,25 @@
+/*
+ * Reihenfolge ist hier keine Geschmacksfrage, sondern die ganze Datei.
+ *
+ * Die beiden alten Stylesheets tragen noch die Screens, die auf das neue
+ * Design-System warten. Zwei Dinge muessen gleichzeitig stimmen:
+ *
+ *   1. Tailwinds Preflight darf sie nicht ueberfahren. Ohne die Zeile unten
+ *      stand `legacy` vor Tailwinds `base` -- und der Reset gewann: Knoepfe
+ *      wurden zu Text, Eingabefelder verloren ihren Rahmen, Karten ihr
+ *      Polster. Nachgemessen im Screenshot von /knowledge, nicht vermutet.
+ *   2. Die Utilities muessen den Altbestand schlagen. Sonst verliert ein
+ *      `bg-brand` am <button> gegen eine Element-Regel aus base.css.
+ *
+ * Beides zugleich gilt nur in dieser einen Anordnung: Tailwinds `base`, dann
+ * `legacy`, dann Tailwinds `utilities`. Eine blosse `@layer`-Anweisung legt
+ * die Reihenfolge fest, egal wo die Schichten spaeter gefuellt werden.
+ *
+ * Wenn der letzte Screen umgestellt ist, verschwinden die legacy-Zeilen -- und
+ * mit ihnen diese Datei.
+ */
+@layer theme, base, legacy, components, utilities;
+
+@import './base.css' layer(legacy);
+@import './console.css' layer(legacy);
+@import './theme.css';
