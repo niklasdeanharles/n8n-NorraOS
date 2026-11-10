@@ -1,4 +1,8 @@
 {
+  "installCommand": "",
+  "buildCommand": "",
+  "outputDirectory": ".",
+  "framework": null,
   "headers": [
     {
       "source": "/assets/(.*)",
